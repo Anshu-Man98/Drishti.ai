@@ -18,11 +18,23 @@ export interface Provider {
   lng: number;
 }
 
+export interface ExtractedEntity {
+  field_name: string;
+  text: string;
+  bbox?: [number, number, number, number] | null;
+  page: number;
+  confidence: number;
+  source: 'docai' | 'gemini';
+}
+
 export interface LineItem {
   description: string;
   qty: number;
   unit_price: number;
   amount: number;
+  bbox?: [number, number, number, number] | null;
+  page?: number;
+  source?: string;
 }
 
 export interface Document {
@@ -31,6 +43,7 @@ export interface Document {
   doc_type: DocType;
   sha256: string;
   filename?: string;
+  page_count?: number;
 }
 
 export interface Claim {
@@ -48,6 +61,8 @@ export interface Claim {
   tax: number;
   total_claimed: number;
   documents: Document[];
+  extracted_entities?: ExtractedEntity[];
+  field_sources?: Record<string, string>;
   created_at?: string;
 }
 

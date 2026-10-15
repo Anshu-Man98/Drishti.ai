@@ -81,5 +81,26 @@ ADK Root: SequentialAgent
 
 ---
 
+## 📄 Feature 2 (F2): Document AI Extraction + Bounding-Box Citations
+
+FinShield grounds every claim audit in the visual source document using **Google Cloud Document AI** and interactive SVG bounding box overlays:
+
+### Capabilities & Architecture
+- **High-Resolution Page Rendering:**
+  - `pypdfium2` renders PDF pages to crisp 150 DPI PNG images (`/claims/{claim_id}/pages/{page_num}`).
+- **Normalized Entity & Table Extraction (`backend/tools/docai.py`):**
+  - Maps invoice headers, patient profile, policy clauses, line items, and totals into structured schema with normalized bounding boxes `[x0, y0, x1, y1]`.
+  - Seamlessly integrates with Google Cloud Document AI Invoice Processor, with deterministic layout engine fallback for local evaluation.
+- **Evidence Grounding via `locate_field`:**
+  - `locate_field(doc_id, field_path, claim) -> Evidence`: Maps any logical claim field (e.g. `total_claimed`, `subtotal`, `line_items.room_rent`) to its exact coordinates on the page.
+  - Forensic font tampering detections, subtotal sum discrepancies, and room rent cap breaches carry precise bounding boxes in `finding.evidence`.
+- **Interactive Document Viewer (`frontend/src/components/DocumentViewer.tsx`):**
+  - Side-by-side split layout in `ClaimDetail.tsx`.
+  - SVG overlay with color-coded bounding boxes by severity (Red: Critical, Orange: High, Yellow: Medium, Blue: Low, Slate: Extracted fields).
+  - Bi-directional interactivity: Clicking an anomaly in the dossier focuses and pulses the citation on the document; clicking a box on the document selects the anomaly card.
+  - Controls: Zoom (75%–200%), Page Navigation, View mode toggle (Split / Document Focus / Audit Focus), and "Flags Only" vs "Show All Fields" toggle.
+
+---
+
 ## 🚀 Getting Started
 Refer to [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the implementation roadmap and architecture details.

@@ -15,11 +15,14 @@ def validate_arithmetic(
     tax: float,
     total: float,
     doc_id: str = "doc_main",
-    page: int = 1
+    page: int = 1,
+    subtotal_bbox: Optional[List[float]] = None,
+    total_bbox: Optional[List[float]] = None
 ) -> List[Finding]:
     """
     Validates line item products, line item sums, and total amount.
     Tolerance: +-1.0 INR for rounding.
+    Carries bounding boxes in evidence for visual audit citations.
     """
     findings: List[Finding] = []
     TOLERANCE = 1.0
@@ -31,6 +34,7 @@ def validate_arithmetic(
         qty = float(item.get("qty", 1.0))
         unit_price = float(item.get("unit_price", 0.0))
         amount = float(item.get("amount", 0.0))
+        item_bbox = item.get("bbox")
 
         expected_amount = round(qty * unit_price, 2)
         diff = abs(expected_amount - amount)
@@ -46,7 +50,12 @@ def validate_arithmetic(
                     f"Line item '{desc}' claims ₹{amount:,.2f}, but {qty} × ₹{unit_price:,.2f} "
                     f"equals ₹{expected_amount:,.2f} (Discrepancy: ₹{diff:,.2f})."
                 ),
-                evidence=[Evidence(doc_id=doc_id, page=page, quote=f"{desc}: claimed {amount}, expected {expected_amount}")],
+                evidence=[Evidence(
+                    doc_id=doc_id,
+                    page=item.get("page", page),
+                    bbox=item_bbox,
+                    quote=f"{desc}: claimed {amount}, expected {expected_amount}"
+                )],
                 confidence=1.0
             ))
 
@@ -65,7 +74,12 @@ def validate_arithmetic(
                 f"The sum of all line items is ₹{calculated_subtotal:,.2f}, but the printed subtotal is "
                 f"₹{subtotal:,.2f} (Discrepancy: ₹{subtotal_diff:,.2f})."
             ),
-            evidence=[Evidence(doc_id=doc_id, page=page, quote=f"Calculated sum: {calculated_subtotal}, Printed subtotal: {subtotal}")],
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=page,
+                bbox=subtotal_bbox,
+                quote=f"Calculated sum: {calculated_subtotal}, Printed subtotal: {subtotal}"
+            )],
             confidence=1.0
         ))
 
@@ -83,7 +97,12 @@ def validate_arithmetic(
                 f"The invoice claims total payable of ₹{total:,.2f}, but subtotal (₹{subtotal:,.2f}) + "
                 f"tax (₹{tax:,.2f}) equals ₹{expected_total:,.2f} (Unjustified inflation: ₹{total_diff:,.2f})."
             ),
-            evidence=[Evidence(doc_id=doc_id, page=page, quote=f"Claimed total: {total}, Expected total: {expected_total}")],
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=page,
+                bbox=total_bbox,
+                quote=f"Claimed total: {total}, Expected total: {expected_total}"
+            )],
             confidence=1.0
         ))
 

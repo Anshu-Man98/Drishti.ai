@@ -28,14 +28,21 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     findings: List[Finding] = []
     doc_id = claim.documents[0].doc_id if claim.documents else "doc_main"
 
-    # 1. Validate Arithmetic
+    from backend.tools.docai import locate_field
+
+    # 1. Validate Arithmetic with bounding boxes
     line_items_dict = [it.model_dump() for it in claim.line_items]
+    sub_evidence = locate_field(doc_id, "subtotal", claim)
+    tot_evidence = locate_field(doc_id, "total_claimed", claim)
+
     math_findings = validate_arithmetic(
         line_items=line_items_dict,
         subtotal=claim.subtotal,
         tax=claim.tax,
         total=claim.total_claimed,
-        doc_id=doc_id
+        doc_id=doc_id,
+        subtotal_bbox=sub_evidence.bbox if sub_evidence else None,
+        total_bbox=tot_evidence.bbox if tot_evidence else None
     )
     findings.extend(math_findings)
 

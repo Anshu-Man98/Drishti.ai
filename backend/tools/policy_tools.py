@@ -72,7 +72,8 @@ def check_policy_caps(
                         ),
                         evidence=[Evidence(
                             doc_id=doc_id,
-                            page=1,
+                            page=item.get("page", 1),
+                            bbox=item.get("bbox"),
                             quote=f"{item.get('description')}: billed ₹{unit_price}/day vs cap ₹{room_cap_limit}/day"
                         )],
                         confidence=1.0
@@ -97,7 +98,12 @@ def check_policy_caps(
                             f"ICU billed at ₹{unit_price:,.2f}/day exceeds the policy ceiling of ₹{icu_limit:,.2f}/day. "
                             f"Cited: {icu_cap_rule['clause_id']} — {icu_cap_rule['description']}"
                         ),
-                        evidence=[Evidence(doc_id=doc_id, page=1, quote=f"Billed ICU: ₹{unit_price}/day, Limit: ₹{icu_limit}/day")],
+                        evidence=[Evidence(
+                            doc_id=doc_id,
+                            page=item.get("page", 1),
+                            bbox=item.get("bbox"),
+                            quote=f"Billed ICU: ₹{unit_price}/day, Limit: ₹{icu_limit}/day"
+                        )],
                         confidence=1.0
                     ))
 

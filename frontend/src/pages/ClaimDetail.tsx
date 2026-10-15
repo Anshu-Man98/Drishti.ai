@@ -3,10 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert,
   FileText, Building2, User, Calendar, RefreshCw,
-  ExternalLink, Layers
+  ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2
 } from 'lucide-react';
 import { Claim, Dossier } from '../types';
-import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl } from '../services/api';
+import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities } from '../services/api';
+import { DocumentViewer } from '../components/DocumentViewer';
 
 export const ClaimDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,8 @@ export const ClaimDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeFindingId, setActiveFindingId] = useState<string | null>(null);
+  const [layoutMode, setLayoutMode] = useState<'split' | 'doc' | 'audit'>('split');
 
   const loadClaimData = async () => {
     if (!id) return;
@@ -22,6 +25,18 @@ export const ClaimDetail: React.FC = () => {
       setLoading(true);
       setError(null);
       const c = await fetchClaim(id);
+      
+      // If entities not present on claim, fetch via entities endpoint
+      if (!c.extracted_entities || c.extracted_entities.length === 0) {
+        try {
+          const entityData = await fetchClaimEntities(id);
+          c.extracted_entities = entityData.entities;
+          c.field_sources = entityData.field_sources;
+        } catch (e) {
+          console.warn('Could not fetch extra entities:', e);
+        }
+      }
+
       setClaim(c);
       const d = await fetchDossier(id);
       setDossier(d);
@@ -53,7 +68,7 @@ export const ClaimDetail: React.FC = () => {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center text-slate-400 space-y-4">
         <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500" />
-        <p>Loading claim dossier...</p>
+        <p>Loading claim dossier & visual document citations...</p>
       </div>
     );
   }
@@ -106,9 +121,9 @@ export const ClaimDetail: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      {/* Top Header / Breadcrumb */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Top Header / Breadcrumb & View Toggle Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
         <div className="flex items-center space-x-3">
           <Link to="/" className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" />
@@ -128,6 +143,37 @@ export const ClaimDetail: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* View Mode Toggle */}
+          <div className="hidden md:flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              onClick={() => setLayoutMode('split')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                layoutMode === 'split' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <SplitSquareVertical className="w-3.5 h-3.5" />
+              <span>Split View</span>
+            </button>
+            <button
+              onClick={() => setLayoutMode('doc')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                layoutMode === 'doc' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Document Focus</span>
+            </button>
+            <button
+              onClick={() => setLayoutMode('audit')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                layoutMode === 'audit' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Audit Focus</span>
+            </button>
+          </div>
+
           <button
             onClick={handleRunAnalysis}
             disabled={analyzing}
@@ -143,281 +189,353 @@ export const ClaimDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Grid: Left Dossier / Agents, Right Metadata & Documents */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Copilot Dossier & Multi-Agent Findings */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Dossier Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-800">
-              <div className="flex items-center space-x-4">
-                <div className={`w-16 h-16 rounded-2xl border flex flex-col items-center justify-center ${dossier ? getRiskScoreColor(dossier.risk_score) : 'border-slate-800 bg-slate-950 text-slate-500'}`}>
-                  <span className="text-2xl font-black font-mono leading-none">
-                    {dossier ? dossier.risk_score : '--'}
-                  </span>
-                  <span className="text-[10px] tracking-wider uppercase font-semibold mt-1">Risk</span>
+      {/* Main Content Area: Side-by-side or Selected Layout Mode */}
+      <div className={`grid gap-6 ${
+        layoutMode === 'split'
+          ? 'grid-cols-1 lg:grid-cols-12'
+          : 'grid-cols-1'
+      }`}>
+        {/* Left Side: Document AI Viewer with Interactive SVG Bounding Boxes */}
+        {(layoutMode === 'split' || layoutMode === 'doc') && (
+          <div className={`${layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6' : 'w-full'} space-y-6`}>
+            <DocumentViewer
+              claimId={claim.claim_id}
+              pageCount={claim.documents[0]?.page_count || 1}
+              findings={dossier?.findings || []}
+              entities={claim.extracted_entities || []}
+              activeFindingId={activeFindingId}
+              onSelectFinding={(fId) => setActiveFindingId(fId)}
+            />
+
+            {/* Attached Documents Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+              <h3 className="font-bold text-sm text-white flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-emerald-400" />
+                <span>Uploaded Documents ({claim.documents.length})</span>
+              </h3>
+
+              {claim.documents.length === 0 ? (
+                <p className="text-xs text-slate-500">No documents attached to this claim.</p>
+              ) : (
+                <div className="space-y-2">
+                  {claim.documents.map((doc) => (
+                    <div key={doc.doc_id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-white">{doc.filename || doc.doc_id}</p>
+                        <p className="text-[11px] text-slate-500 font-mono">
+                          {doc.doc_type} • SHA: {doc.sha256.slice(0, 12)}...
+                        </p>
+                      </div>
+                      <a
+                        href={getDocumentUrl(claim.claim_id, doc.doc_id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
+                        title="Open Document Raw PDF"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center space-x-2">
-                    <span>Audit Verdict</span>
-                  </h2>
-                  <div className="mt-1">
-                    {dossier ? getVerdictBadge(dossier.verdict) : (
-                      <span className="text-xs text-slate-400">Click "Analyze Claim" to trigger agent audit</span>
-                    )}
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Right Side: Copilot Dossier, Agent Inspection, Flagged Anomalies, Bill Table */}
+        {(layoutMode === 'split' || layoutMode === 'audit') && (
+          <div className={`${layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6' : 'w-full'} space-y-6`}>
+            {/* Dossier Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-800">
+                <div className="flex items-center space-x-4">
+                  <div className={`w-16 h-16 rounded-2xl border flex flex-col items-center justify-center ${dossier ? getRiskScoreColor(dossier.risk_score) : 'border-slate-800 bg-slate-950 text-slate-500'}`}>
+                    <span className="text-2xl font-black font-mono leading-none">
+                      {dossier ? dossier.risk_score : '--'}
+                    </span>
+                    <span className="text-[10px] tracking-wider uppercase font-semibold mt-1">Risk</span>
                   </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+                      <span>Audit Verdict</span>
+                    </h2>
+                    <div className="mt-1">
+                      {dossier ? getVerdictBadge(dossier.verdict) : (
+                        <span className="text-xs text-slate-400">Click "Analyze Claim" to trigger agent audit</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {dossier?.ml_score !== null && dossier?.ml_score !== undefined && (
+                  <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right">
+                    <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold block">BigQuery ML Score</span>
+                    <span className="text-sm font-mono font-bold text-blue-400">
+                      {(dossier.ml_score * 100).toFixed(1)}% fraud probability
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Executive Summary */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                  <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Synthesis & Adjuster Summary</span>
+                </h3>
+                <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                  {dossier?.summary || 'No audit findings generated yet. Run the multi-agent pipeline to examine document forensics, policy limits, cross-insurer submissions, and trajectory spacetime feasibility.'}
+                </p>
+              </div>
+
+              {/* 4 Agent Pipeline Status Cards */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>ADK Multi-Agent Specialized Inspection</span>
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { id: 'forensics', name: 'Forensics', role: 'Metadata / Font / ELA' },
+                    { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
+                    { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
+                    { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
+                  ].map((agent) => {
+                    const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
+                    const count = agentFindings.length;
+                    const isDone = !!dossier;
+                    const isRunning = analyzing;
+
+                    return (
+                      <div
+                        key={agent.id}
+                        className={`p-3 rounded-xl border transition-all ${
+                          isRunning
+                            ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/20 animate-pulse'
+                            : isDone
+                            ? count > 0
+                              ? 'bg-slate-950 border-amber-500/30'
+                              : 'bg-slate-950 border-slate-800'
+                            : 'bg-slate-950/40 border-slate-900 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-white">{agent.name}</span>
+                          {isRunning ? (
+                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+                          ) : isDone ? (
+                            <span
+                              className={`w-2 h-2 rounded-full ${count > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                              title={count > 0 ? `${count} flags` : 'Clean'}
+                            ></span>
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-slate-600"></span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">{agent.role}</p>
+                        <div className="mt-2 text-[10px] font-mono">
+                          {isRunning ? (
+                            <span className="text-blue-400">running...</span>
+                          ) : isDone ? (
+                            <span className={count > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                              {count > 0 ? `${count} flag${count > 1 ? 's' : ''}` : 'no flags'}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">pending</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {dossier?.ml_score !== null && dossier?.ml_score !== undefined && (
-                <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold block">BigQuery ML Score</span>
-                  <span className="text-sm font-mono font-bold text-blue-400">
-                    {(dossier.ml_score * 100).toFixed(1)}% fraud probability
-                  </span>
+              {/* Findings List with Interactive Bounding Box Linkage */}
+              {dossier?.findings && dossier.findings.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Flagged Anomalies ({dossier.findings.length})
+                    </h3>
+                    <span className="text-[11px] text-slate-500">
+                      Click any card to highlight on document
+                    </span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {dossier.findings.map((f) => {
+                      const isSelected = f.finding_id === activeFindingId;
+                      const hasEvidenceBbox = f.evidence?.some((ev) => ev.bbox && ev.bbox.length === 4);
+
+                      return (
+                        <div
+                          key={f.finding_id}
+                          onClick={() => setActiveFindingId(isSelected ? null : f.finding_id)}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start space-x-3 ${
+                            isSelected
+                              ? 'bg-sky-950/50 border-sky-500 shadow-lg shadow-sky-500/20 ring-1 ring-sky-500'
+                              : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${
+                            f.severity === 'critical'
+                              ? 'text-rose-400'
+                              : f.severity === 'high'
+                              ? 'text-orange-400'
+                              : 'text-amber-400'
+                          }`} />
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-white font-mono">{f.title}</span>
+                              <span
+                                className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border shrink-0 ${
+                                  f.severity === 'critical'
+                                    ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                                    : f.severity === 'high'
+                                    ? 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+                                    : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                }`}
+                              >
+                                {f.severity}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed">{f.explanation}</p>
+
+                            <div className="flex items-center justify-between pt-1 text-[11px]">
+                              <span className="font-mono text-slate-500 text-[10px] uppercase">{f.check_id}</span>
+                              {hasEvidenceBbox && (
+                                <span
+                                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                                    isSelected
+                                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                                      : 'bg-slate-900 text-slate-400 border border-slate-800'
+                                  }`}
+                                >
+                                  <Crosshair className="w-3 h-3 text-sky-400" />
+                                  <span>{isSelected ? 'Focused on Doc' : 'Document Citation'}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Executive Summary */}
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-                <FileText className="w-3.5 h-3.5 text-blue-400" />
-                <span>Synthesis & Adjuster Summary</span>
-              </h3>
-              <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
-                {dossier?.summary || 'No audit findings generated yet. Run the multi-agent pipeline to examine document forensics, policy limits, cross-insurer submissions, and trajectory spacetime feasibility.'}
-              </p>
-            </div>
-
-            {/* 4 Agent Pipeline Status Cards */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-                <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                <span>ADK Multi-Agent Specialized Inspection</span>
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { id: 'forensics', name: 'Forensics', role: 'Metadata / Font / ELA' },
-                  { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
-                  { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
-                  { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
-                ].map((agent) => {
-                  const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
-                  const count = agentFindings.length;
-                  const isDone = !!dossier;
-                  const isRunning = analyzing;
-
-                  return (
-                    <div
-                      key={agent.id}
-                      className={`p-3 rounded-xl border transition-all ${
-                        isRunning
-                          ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/20 animate-pulse'
-                          : isDone
-                          ? count > 0
-                            ? 'bg-slate-950 border-amber-500/30'
-                            : 'bg-slate-950 border-slate-800'
-                          : 'bg-slate-950/40 border-slate-900 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-white">{agent.name}</span>
-                        {isRunning ? (
-                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
-                        ) : isDone ? (
-                          <span
-                            className={`w-2 h-2 rounded-full ${count > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                            title={count > 0 ? `${count} flags` : 'Clean'}
-                          ></span>
-                        ) : (
-                          <span className="w-2 h-2 rounded-full bg-slate-600"></span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1">{agent.role}</p>
-                      <div className="mt-2 text-[10px] font-mono">
-                        {isRunning ? (
-                          <span className="text-blue-400">running...</span>
-                        ) : isDone ? (
-                          <span className={count > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                            {count > 0 ? `${count} flag${count > 1 ? 's' : ''}` : 'no flags'}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">pending</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Findings List */}
-            {dossier?.findings && dossier.findings.length > 0 && (
-              <div className="space-y-3 pt-4 border-t border-slate-800">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Flagged Anomalies ({dossier.findings.length})
-                </h3>
-                <div className="space-y-2">
-                  {dossier.findings.map((f) => (
-                    <div key={f.finding_id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white font-mono">{f.title}</span>
-                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            {f.severity}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-300">{f.explanation}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Itemized Bill Table */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <h3 className="text-sm font-bold text-white">Itemized Medical Bill Breakdown</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
-                  <tr>
-                    <th className="py-2.5 px-3">Description</th>
-                    <th className="py-2.5 px-3 text-right">Qty/Days</th>
-                    <th className="py-2.5 px-3 text-right">Unit Price (₹)</th>
-                    <th className="py-2.5 px-3 text-right">Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {claim.line_items.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/30">
-                      <td className="py-2.5 px-3 font-medium text-white">{item.description}</td>
-                      <td className="py-2.5 px-3 text-right font-mono">{item.qty}</td>
-                      <td className="py-2.5 px-3 text-right font-mono">₹{item.unit_price.toLocaleString('en-IN')}</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-100">
-                        ₹{item.amount.toLocaleString('en-IN')}
+            {/* Itemized Bill Table */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-sm font-bold text-white">Itemized Medical Bill Breakdown</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                    <tr>
+                      <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3 text-right">Qty/Days</th>
+                      <th className="py-2.5 px-3 text-right">Unit Price (₹)</th>
+                      <th className="py-2.5 px-3 text-right">Total (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {claim.line_items.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="py-2.5 px-3 font-medium text-white flex items-center space-x-2">
+                          <span>{item.description}</span>
+                          {item.bbox && (
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-mono" title="Document AI Extracted BBox">
+                              docai
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono">{item.qty}</td>
+                        <td className="py-2.5 px-3 text-right font-mono">₹{item.unit_price.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-100">
+                          ₹{item.amount.toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-950 font-semibold text-slate-200">
+                      <td colSpan={3} className="py-2.5 px-3 text-right text-slate-400">Subtotal:</td>
+                      <td className="py-2.5 px-3 text-right font-mono">₹{claim.subtotal.toLocaleString('en-IN')}</td>
+                    </tr>
+                    <tr className="bg-slate-950 text-slate-300">
+                      <td colSpan={3} className="py-2 px-3 text-right text-slate-400">Tax / GST:</td>
+                      <td className="py-2 px-3 text-right font-mono">₹{claim.tax.toLocaleString('en-IN')}</td>
+                    </tr>
+                    <tr className="bg-slate-950 font-bold text-white border-t border-slate-700">
+                      <td colSpan={3} className="py-3 px-3 text-right text-blue-400 text-sm">Total Claimed:</td>
+                      <td className="py-3 px-3 text-right font-mono text-base text-blue-400">
+                        ₹{claim.total_claimed.toLocaleString('en-IN')}
                       </td>
                     </tr>
-                  ))}
-                  <tr className="bg-slate-950 font-semibold text-slate-200">
-                    <td colSpan={3} className="py-2.5 px-3 text-right text-slate-400">Subtotal:</td>
-                    <td className="py-2.5 px-3 text-right font-mono">₹{claim.subtotal.toLocaleString('en-IN')}</td>
-                  </tr>
-                  <tr className="bg-slate-950 text-slate-300">
-                    <td colSpan={3} className="py-2 px-3 text-right text-slate-400">Tax / GST:</td>
-                    <td className="py-2 px-3 text-right font-mono">₹{claim.tax.toLocaleString('en-IN')}</td>
-                  </tr>
-                  <tr className="bg-slate-950 font-bold text-white border-t border-slate-700">
-                    <td colSpan={3} className="py-3 px-3 text-right text-blue-400 text-sm">Total Claimed:</td>
-                    <td className="py-3 px-3 text-right font-mono text-base text-blue-400">
-                      ₹{claim.total_claimed.toLocaleString('en-IN')}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Col: Metadata, Hospital Info, Attached Documents */}
-        <div className="space-y-6">
-          {/* Patient & Hospital Info Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 text-xs">
-            <h3 className="font-bold text-sm text-white flex items-center space-x-2">
-              <User className="w-4 h-4 text-blue-400" />
-              <span>Claimant Profile</span>
-            </h3>
-            <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Name:</span>
-                <span className="font-medium text-white">{claim.claimant.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Phone:</span>
-                <span className="font-mono text-slate-300">{claim.claimant.phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Bank Hash:</span>
-                <span className="font-mono text-slate-400">{claim.claimant.bank_account_hash.slice(0, 12)}...</span>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <h3 className="font-bold text-sm text-white flex items-center space-x-2 pt-2">
-              <Building2 className="w-4 h-4 text-indigo-400" />
-              <span>Healthcare Provider</span>
-            </h3>
-            <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Hospital:</span>
-                <span className="font-medium text-white">{claim.provider.name}</span>
+            {/* Patient & Hospital Info Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 text-xs">
+              <h3 className="font-bold text-sm text-white flex items-center space-x-2">
+                <User className="w-4 h-4 text-blue-400" />
+                <span>Claimant Profile</span>
+              </h3>
+              <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Name:</span>
+                  <span className="font-medium text-white">{claim.claimant.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Phone:</span>
+                  <span className="font-mono text-slate-300">{claim.claimant.phone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Bank Hash:</span>
+                  <span className="font-mono text-slate-400">{claim.claimant.bank_account_hash.slice(0, 12)}...</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">City / Geo:</span>
-                <span className="text-slate-300">{claim.provider.city} ({claim.provider.lat}, {claim.provider.lng})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Attending Doctor:</span>
-                <span className="font-mono text-slate-300">{claim.doctor_id}</span>
-              </div>
-            </div>
 
-            <h3 className="font-bold text-sm text-white flex items-center space-x-2 pt-2">
-              <Calendar className="w-4 h-4 text-cyan-400" />
-              <span>Hospitalization Timeline</span>
-            </h3>
-            <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Admission:</span>
-                <span className="text-slate-300">{new Date(claim.admission_ts).toLocaleString()}</span>
+              <h3 className="font-bold text-sm text-white flex items-center space-x-2 pt-2">
+                <Building2 className="w-4 h-4 text-indigo-400" />
+                <span>Healthcare Provider</span>
+              </h3>
+              <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Hospital:</span>
+                  <span className="font-medium text-white">{claim.provider.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">City / Geo:</span>
+                  <span className="text-slate-300">{claim.provider.city} ({claim.provider.lat}, {claim.provider.lng})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Attending Doctor:</span>
+                  <span className="font-mono text-slate-300">{claim.doctor_id}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Discharge:</span>
-                <span className="text-slate-300">{new Date(claim.discharge_ts).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Diagnosis Code:</span>
-                <span className="font-mono text-blue-400 font-bold">{claim.diagnosis_code}</span>
+
+              <h3 className="font-bold text-sm text-white flex items-center space-x-2 pt-2">
+                <Calendar className="w-4 h-4 text-cyan-400" />
+                <span>Hospitalization Timeline</span>
+              </h3>
+              <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Admission:</span>
+                  <span className="text-slate-300">{new Date(claim.admission_ts).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Discharge:</span>
+                  <span className="text-slate-300">{new Date(claim.discharge_ts).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Diagnosis Code:</span>
+                  <span className="font-mono text-blue-400 font-bold">{claim.diagnosis_code}</span>
+                </div>
               </div>
             </div>
           </div>
-
-          {/* Attached Documents Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-            <h3 className="font-bold text-sm text-white flex items-center space-x-2">
-              <FileText className="w-4 h-4 text-emerald-400" />
-              <span>Uploaded Documents ({claim.documents.length})</span>
-            </h3>
-
-            {claim.documents.length === 0 ? (
-              <p className="text-xs text-slate-500">No documents attached to this claim.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {claim.documents.map((doc) => (
-                  <div key={doc.doc_id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <p className="text-xs font-semibold text-white">{doc.filename || doc.doc_id}</p>
-                      <p className="text-[11px] text-slate-500 font-mono">
-                        {doc.doc_type} • {doc.sha256.slice(0, 10)}...
-                      </p>
-                    </div>
-                    <a
-                      href={getDocumentUrl(claim.claim_id, doc.doc_id)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
-                      title="Open Document"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

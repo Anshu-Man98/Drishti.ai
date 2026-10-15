@@ -51,11 +51,23 @@ class Provider(BaseModel):
     lng: float
 
 
+class ExtractedEntity(BaseModel):
+    field_name: str
+    text: str
+    bbox: Optional[List[float]] = None  # [x0, y0, x1, y1] normalized 0..1
+    page: int = 1
+    confidence: float = 1.0
+    source: str = "docai"  # "docai" vs "gemini"
+
+
 class LineItem(BaseModel):
     description: str
     qty: float
     unit_price: float
     amount: float
+    bbox: Optional[List[float]] = None
+    page: int = 1
+    source: str = "docai"
 
 
 class Document(BaseModel):
@@ -64,6 +76,7 @@ class Document(BaseModel):
     doc_type: DocType
     sha256: str
     filename: Optional[str] = None
+    page_count: int = 1
 
 
 class Claim(BaseModel):
@@ -81,6 +94,8 @@ class Claim(BaseModel):
     tax: float
     total_claimed: float
     documents: List[Document] = Field(default_factory=list)
+    extracted_entities: List[ExtractedEntity] = Field(default_factory=list)
+    field_sources: Optional[dict[str, str]] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
 
 

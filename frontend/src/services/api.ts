@@ -54,3 +54,20 @@ export async function uploadClaim(formData: FormData): Promise<{ claim_id: strin
 export function getDocumentUrl(claimId: string, docId: string): string {
   return `${API_BASE_URL}/claims/${claimId}/documents/${docId}`;
 }
+
+export function getClaimPageImageUrl(claimId: string, pageNum: number = 1): string {
+  return `${API_BASE_URL}/claims/${claimId}/pages/${pageNum}`;
+}
+
+export async function fetchClaimEntities(claimId: string): Promise<{
+  claim_id: string;
+  entities: import('../types').ExtractedEntity[];
+  field_sources: Record<string, string>;
+}> {
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/entities`);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch entities: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+

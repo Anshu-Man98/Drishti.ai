@@ -1,4 +1,4 @@
-# FinShield
+# FinShield — Build Plan & Gemini/Antigravity Prompts
 
 **Track:** BFSI: Intelligent Risk, Fraud & Financial Experiences
 **One-liner:** A multi-agent claims-fraud copilot that catches forged (including AI-generated) insurance claim documents, explains every flag with evidence on the page, and trains itself against an AI fraudster.
@@ -177,15 +177,42 @@ TASK: Build the project foundation. No agents yet.
    G4 same bill already submitted to another insurer last month
    G5 doctor billed in Delhi and Mumbai 90 minutes apart (impossible travel)
    G6 forged bill: edited total row (different font/size) + PDF producer = an image editor + mod date ≠ create date
-6. Three fictional policy PDFs (room-rent caps, exclusions, waiting periods, numbered clauses) in /data/policies
-   for Vertex AI Search.
+6. Policy documents in /data/policies for Vertex AI Search:
+   - The public IRDAI "Arogya Sanjeevani" standard health policy wording (I will download the PDF and place it
+     in /data/policies/real/ — do not fetch it yourself).
+   - Two fictional policy PDFs (room-rent caps, exclusions, waiting periods, numbered clauses) in
+     /data/policies/synthetic/.
+   - Extract caps and limits from all three into /data/policies/rules.json (clause_id, rule, value) for the
+     deterministic check_policy_caps tool.
 7. Seed script that loads the golden claims via the API.
+8. Real public datasets for EVALUATION (never shown in the live demo). I will download them manually into
+   /data/external/ — write loaders and checks only, do not scrape or auto-download.
+   a) /data/external/kaggle_provider_fraud/  — Kaggle "Healthcare Provider Fraud Detection Analysis"
+      (Train, Train_Beneficiarydata, Train_Inpatientdata, Train_Outpatientdata CSVs).
+      - Loader: aggregate to provider level (claim counts, avg reimbursement, distinct physicians,
+        avg length of stay, distinct diagnosis codes, inpatient/outpatient mix), join the PotentialFraud label.
+      - Load into BigQuery table finshield.ext_provider_fraud. Used in F3 to validate the modelling approach
+        on real claims data. Amounts are USD; keep them as-is and label the table "US Medicare, evaluation only".
+   b) /data/external/find_it_again/ — "Find it again!" forged-receipt dataset (scanned receipts with
+      forged/authentic labels and forgery annotations).
+   c) /data/external/aiforge_doc/ — AIForge-Doc benchmark (AI-forged receipt/form images with tamper masks).
+   - For (b) and (c): write a manifest builder /data/external/build_manifests.py producing
+     manifest.jsonl rows {image_path, label: forged|authentic, forgery_bbox or mask_path, source}.
+   - Write /backend/eval/forensics_eval.py (CLI, runs later once F1/F2 exist): sends N images through the
+     Forensics agent and reports precision, recall, and per-check hit rates (metadata, font, ELA, SynthID,
+     Gemini visual) to /docs/forensics_eval.md. Report results for (b) and (c) separately — the gap between
+     traditional and AI forgeries is a key pitch stat.
+   - Add /data/external/LICENSES.md noting each dataset's source and license terms; these are used for
+     non-commercial evaluation only.
 
 ACCEPTANCE
 - Backend runs on Cloud Run, frontend on Firebase Hosting, they talk to each other.
 - Uploading a PDF creates a claim visible in the Claims List.
 - BigQuery has all tables with the fraud labels; `SELECT fraud_type, COUNT(*)` looks right.
 - The 6 golden PDFs open and look like plausible hospital bills.
+- finshield.ext_provider_fraud exists with one row per provider and the fraud label.
+- manifest.jsonl files exist for both forgery datasets with correct label counts.
+- policies/rules.json contains caps extracted from the real Arogya Sanjeevani wording with clause ids.
 ```
 
 ### F1 — Four-agent core (Priority 1)
@@ -303,6 +330,9 @@ TASK: Add a trained ML fraud score next to the agent score.
            enable_global_explain=TRUE, data_split_method='AUTO_SPLIT')
    AS SELECT <engineered features from P0>, is_fraud FROM finshield.claims;
    Save ML.EVALUATE output (precision, recall, ROC AUC) to /docs/model_eval.md for the pitch deck.
+   Also train finshield.provider_fraud_model (same model type) on finshield.ext_provider_fraud — the real
+   Kaggle Medicare data — and record its ML.EVALUATE metrics in the same doc under "Validated on real claims
+   data". This is evaluation only; the live app uses fraud_model.
 2. backend/tools/bq.py: ml_score(claim_features) runs ML.PREDICT + ML.EXPLAIN_PREDICT (top_k_features=5)
    for a single claim; returns probability + top feature attributions.
 3. Add an ML step after the ParallelAgent: write ml_score and top_ml_features into the Dossier and
@@ -434,3 +464,18 @@ scored (Firestore listener). Add /data/stream_demo.py to submit 20 synthetic cla
 
 ---
 
+## 7. 30-hour schedule
+
+| Hours | Work | Checkpoint |
+|---|---|---|
+| 0–4 | P0 foundation + synthetic data + golden claims | Upload works end to end; BigQuery seeded |
+| 4–10 | F1 four-agent core | 5 of 6 golden claims flagged correctly |
+| 10–13 | F2 Document AI + citations | Boxes on the right rows |
+| 13–15 | F3 BigQuery ML score | AUC recorded, dual scores in UI |
+| 15–17 | F8 Conversational audit | Clickable citations |
+| 17–20 | F4 Spacetime check | Red line on the map for G5 |
+| **20–22** | **Buffer + bug fixing + run forensics_eval.py on Find it again! and AIForge-Doc — the cut decision for F6 happens here** | F1–F4 solid? Eval stats in /docs |
+| 22–26 | F6 Dueling AI (or polish if cut) | One full learn-loop round |
+| 26–30 | 3-min video, proposal PDF, rehearse twice | Submitted |
+
+---

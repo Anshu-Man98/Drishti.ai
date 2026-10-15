@@ -10,7 +10,7 @@ from google.adk.agents import LlmAgent
 
 from backend.app.schemas import Claim, Finding, Evidence, Severity, AgentName, TimelineEvent
 from backend.app.config import settings
-from backend.tools.geo import haversine_km, min_travel_hours, is_feasible
+from backend.tools.geo import haversine_km, min_travel_hours, is_feasible, normalize_to_utc
 from backend.tools.bq import bq_warehouse
 
 SPACETIME_SYSTEM_PROMPT = """You are FinShield's Spacetime Feasibility Agent.
@@ -28,24 +28,26 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
     events: List[TimelineEvent] = []
     doc_id = claim.documents[0].doc_id if claim.documents else "doc_bill"
 
+    adm_ts = normalize_to_utc(claim.admission_ts) or normalize_to_utc(datetime.utcnow())
+    dis_ts = normalize_to_utc(claim.discharge_ts) or adm_ts
+
     # 1. Patient Admission Event
     events.append(TimelineEvent(
-        ts=claim.admission_ts,
-        lat=claim.provider.lat,
-        lng=claim.provider.lng,
-        place=f"{claim.provider.name}, {claim.provider.city}",
+        ts=adm_ts,
+        lat=claim.provider.lat if claim.provider and claim.provider.lat is not None else 28.6139,
+        lng=claim.provider.lng if claim.provider and claim.provider.lng is not None else 77.2090,
+        place=f"{claim.provider.name if claim.provider else 'Hospital'}, {claim.provider.city if claim.provider else 'City'}",
         doc_id=doc_id,
-        actor=claim.claimant.name,
-        description=f"Patient Hospital Admission ({claim.diagnosis_code})"
+        actor=claim.claimant.name if claim.claimant and claim.claimant.name else "Claimant",
+        description=f"Patient Hospital Admission ({claim.diagnosis_code or 'ICD'})"
     ))
 
     # 2. Attending Doctor Event(s) for the current claim
-    doctor_name = "Dr. Rajesh Mehta" if claim.doctor_id in ["DOC-9021", "DOC-G5"] or "G5" in claim.claim_id else f"Doctor {claim.doctor_id}"
+    doctor_name = "Dr. Rajesh Mehta" if claim.doctor_id in ["DOC-9021", "DOC-G5"] or "G5" in claim.claim_id else f"Doctor {claim.doctor_id or 'Unknown'}"
 
     # Specifically for G5 (impossible travel demo claim): procedure at 14:10 on 20-Jul-2026
     if claim.doctor_id in ["DOC-9021", "DOC-G5"] or "G5" in claim.claim_id:
-        tz = claim.admission_ts.tzinfo or timezone.utc
-        proc_ts = datetime(2026, 7, 20, 14, 10, tzinfo=tz)
+        proc_ts = normalize_to_utc(datetime(2026, 7, 20, 14, 10))
         events.append(TimelineEvent(
             ts=proc_ts,
             lat=28.6448,  # Karol Bagh, New Delhi
@@ -57,12 +59,12 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
         ))
     else:
         # Standard procedure/consultation event shortly after admission
-        proc_ts = claim.admission_ts + timedelta(hours=2)
+        proc_ts = adm_ts + timedelta(hours=2)
         events.append(TimelineEvent(
             ts=proc_ts,
-            lat=claim.provider.lat,
-            lng=claim.provider.lng,
-            place=f"{claim.provider.name}, {claim.provider.city}",
+            lat=claim.provider.lat if claim.provider and claim.provider.lat is not None else 28.6139,
+            lng=claim.provider.lng if claim.provider and claim.provider.lng is not None else 77.2090,
+            place=f"{claim.provider.name if claim.provider else 'Hospital'}, {claim.provider.city if claim.provider else 'City'}",
             doc_id=doc_id,
             actor=doctor_name,
             description="Attending In-Patient Procedure & Care"
@@ -71,7 +73,7 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
     # 3. Query BigQuery claims warehouse for other billing events for the same doctor +-24h
     warehouse_events = bq_warehouse.get_doctor_events(
         doctor_id=claim.doctor_id,
-        target_ts=claim.admission_ts,
+        target_ts=adm_ts,
         window_hours=24
     )
 
@@ -92,12 +94,12 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
 
     # 4. Patient Discharge Event
     events.append(TimelineEvent(
-        ts=claim.discharge_ts,
-        lat=claim.provider.lat,
-        lng=claim.provider.lng,
-        place=f"{claim.provider.name}, {claim.provider.city}",
+        ts=dis_ts,
+        lat=claim.provider.lat if claim.provider and claim.provider.lat is not None else 28.6139,
+        lng=claim.provider.lng if claim.provider and claim.provider.lng is not None else 77.2090,
+        place=f"{claim.provider.name if claim.provider else 'Hospital'}, {claim.provider.city if claim.provider else 'City'}",
         doc_id=doc_id,
-        actor=claim.claimant.name,
+        actor=claim.claimant.name if claim.claimant and claim.claimant.name else "Claimant",
         description="Patient Hospital Discharge"
     ))
 

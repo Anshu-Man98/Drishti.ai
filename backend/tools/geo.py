@@ -4,8 +4,25 @@ Deterministic mathematical tools for Haversine distance and transit physics.
 """
 
 import math
-from datetime import datetime
-from typing import Tuple, Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Tuple, Dict, Any, Optional, Union
+
+
+def normalize_to_utc(dt: Union[datetime, str, None]) -> Optional[datetime]:
+    """
+    Normalizes a datetime object or ISO string to a timezone-aware UTC datetime.
+    Prevents TypeError when comparing or subtracting naive and aware datetimes.
+    """
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        s = dt.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 EARTH_RADIUS_KM = 6371.0
@@ -105,15 +122,20 @@ def is_feasible(event_a: Any, event_b: Any) -> Dict[str, Any]:
         "skipped": bool
       }
     """
-    # Extract timestamps
-    ts_a = getattr(event_a, "ts", None) if hasattr(event_a, "ts") else event_a.get("ts")
-    ts_b = getattr(event_b, "ts", None) if hasattr(event_b, "ts") else event_b.get("ts")
+    def _extract_parts(ev: Any) -> Tuple[Any, Optional[float], Optional[float]]:
+        if isinstance(ev, (tuple, list)):
+            ts = ev[0] if len(ev) > 0 else None
+            lat = float(ev[1]) if len(ev) > 1 and ev[1] is not None else None
+            lng = float(ev[2]) if len(ev) > 2 and ev[2] is not None else None
+            return ts, lat, lng
+        elif hasattr(ev, "ts"):
+            return getattr(ev, "ts", None), getattr(ev, "lat", None), getattr(ev, "lng", None)
+        elif isinstance(ev, dict):
+            return ev.get("ts"), ev.get("lat"), ev.get("lng")
+        return None, None, None
 
-    # Extract coordinates
-    lat_a = getattr(event_a, "lat", None) if hasattr(event_a, "lat") else event_a.get("lat")
-    lon_a = getattr(event_a, "lng", None) if hasattr(event_a, "lng") else event_a.get("lng")
-    lat_b = getattr(event_b, "lat", None) if hasattr(event_b, "lat") else event_b.get("lat")
-    lon_b = getattr(event_b, "lng", None) if hasattr(event_b, "lng") else event_b.get("lng")
+    ts_a, lat_a, lon_a = _extract_parts(event_a)
+    ts_b, lat_b, lon_b = _extract_parts(event_b)
 
     # Check for missing coordinates
     if (
@@ -128,11 +150,9 @@ def is_feasible(event_a: Any, event_b: Any) -> Dict[str, Any]:
             "skipped": True
         }
 
-    # Parse datetimes if strings
-    if isinstance(ts_a, str):
-        ts_a = datetime.fromisoformat(ts_a)
-    if isinstance(ts_b, str):
-        ts_b = datetime.fromisoformat(ts_b)
+    # Parse and normalize datetimes to timezone-aware UTC
+    ts_a = normalize_to_utc(ts_a)
+    ts_b = normalize_to_utc(ts_b)
 
     if not ts_a or not ts_b:
         return {
@@ -142,12 +162,6 @@ def is_feasible(event_a: Any, event_b: Any) -> Dict[str, Any]:
             "required_h": 0.0,
             "skipped": True
         }
-
-    # Normalize timezone awareness between ts_a and ts_b
-    if ts_a.tzinfo is None and ts_b.tzinfo is not None:
-        ts_a = ts_a.replace(tzinfo=ts_b.tzinfo)
-    elif ts_b.tzinfo is None and ts_a.tzinfo is not None:
-        ts_b = ts_b.replace(tzinfo=ts_a.tzinfo)
 
     # Available time in hours
     available_seconds = abs((ts_b - ts_a).total_seconds())

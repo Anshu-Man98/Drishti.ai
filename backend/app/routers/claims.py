@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from datetime import datetime
@@ -101,11 +102,11 @@ async def create_claim(
         elif any(e in fname_lower for e in [".jpg", ".jpeg", ".png"]):
             doc_type = DocType.PHOTO
 
-        # Extract entities and bounding boxes with Document AI / layout parser
+        # Extract entities and bounding boxes with Document AI / layout parser (offloaded to thread)
         if fname_lower.endswith(".pdf"):
             try:
                 from backend.tools.docai import process_document_docai
-                docai_claim, docai_ents = process_document_docai(contents, safe_filename, claim_id)
+                docai_claim, docai_ents = await asyncio.to_thread(process_document_docai, contents, safe_filename, claim_id)
                 extracted_entities.extend(docai_ents)
                 if not parsed_line_items and docai_claim.line_items:
                     parsed_line_items = docai_claim.line_items
@@ -126,23 +127,38 @@ async def create_claim(
             page_count=docai_claim.documents[0].page_count if docai_claim and docai_claim.documents else 1
         ))
 
+    # Validate and parse date fields safely
+    try:
+        if admission_ts:
+            parsed_admission_ts = datetime.fromisoformat(admission_ts.replace("Z", "+00:00"))
+        else:
+            parsed_admission_ts = docai_claim.admission_ts if docai_claim else datetime.utcnow()
+
+        if discharge_ts:
+            parsed_discharge_ts = datetime.fromisoformat(discharge_ts.replace("Z", "+00:00"))
+        else:
+            parsed_discharge_ts = docai_claim.discharge_ts if docai_claim else datetime.utcnow()
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format for admission_ts or discharge_ts: {e}"
+        )
+
     # Auto-populate missing fields from Document AI if available
     if docai_claim:
         policy_id = policy_id or docai_claim.policy_id
         insurer_id = insurer_id or docai_claim.insurer_id
-        claimant_id = claimant_id or docai_claim.claimant.claimant_id
-        claimant_name = claimant_name or docai_claim.claimant.name
-        claimant_phone = claimant_phone or docai_claim.claimant.phone
-        bank_account_hash = bank_account_hash or docai_claim.claimant.bank_account_hash
-        hospital_id = hospital_id or docai_claim.provider.hospital_id
-        hospital_name = hospital_name or docai_claim.provider.name
-        city = city or docai_claim.provider.city
-        lat = lat if lat is not None else docai_claim.provider.lat
-        lng = lng if lng is not None else docai_claim.provider.lng
-        doctor_id = doctor_id or docai_claim.doctor_id
-        parsed_admission_ts = datetime.fromisoformat(admission_ts) if admission_ts else docai_claim.admission_ts
-        parsed_discharge_ts = datetime.fromisoformat(discharge_ts) if discharge_ts else docai_claim.discharge_ts
-        diagnosis_code = diagnosis_code or docai_claim.diagnosis_code
+        claimant_id = claimant_id or (docai_claim.claimant.claimant_id if docai_claim.claimant else f"CLMNT-{uuid.uuid4().hex[:6]}")
+        claimant_name = claimant_name or (docai_claim.claimant.name if docai_claim.claimant else "Unknown Patient")
+        claimant_phone = claimant_phone or (docai_claim.claimant.phone if docai_claim.claimant else "+91-9999999999")
+        bank_account_hash = bank_account_hash or (docai_claim.claimant.bank_account_hash if docai_claim.claimant else "hash_default")
+        hospital_id = hospital_id or (docai_claim.provider.hospital_id if docai_claim.provider else f"HOSP-{uuid.uuid4().hex[:6]}")
+        hospital_name = hospital_name or (docai_claim.provider.name if docai_claim.provider else "General Hospital")
+        city = city or (docai_claim.provider.city if docai_claim.provider else "New Delhi")
+        lat = lat if lat is not None else (docai_claim.provider.lat if docai_claim.provider else 28.6139)
+        lng = lng if lng is not None else (docai_claim.provider.lng if docai_claim.provider else 77.2090)
+        doctor_id = doctor_id or docai_claim.doctor_id or "DOC-0001"
+        diagnosis_code = diagnosis_code or docai_claim.diagnosis_code or "Z00.0"
         subtotal = subtotal if subtotal is not None else docai_claim.subtotal
         tax = tax if tax is not None else docai_claim.tax
         total_claimed = total_claimed if total_claimed is not None else docai_claim.total_claimed
@@ -161,8 +177,6 @@ async def create_claim(
         lat = lat if lat is not None else 28.6139
         lng = lng if lng is not None else 77.2090
         doctor_id = doctor_id or "DOC-0001"
-        parsed_admission_ts = datetime.fromisoformat(admission_ts) if admission_ts else datetime.utcnow()
-        parsed_discharge_ts = datetime.fromisoformat(discharge_ts) if discharge_ts else datetime.utcnow()
         diagnosis_code = diagnosis_code or "Z00.0"
         subtotal = subtotal if subtotal is not None else 0.0
         tax = tax if tax is not None else 0.0
@@ -249,13 +263,16 @@ def create_claim_direct(claim: Claim):
 
 
 @router.get("", response_model=List[ClaimSummary])
-def list_claims(limit: int = 50):
-    return db_service.list_claims(limit=limit)
+def list_claims(limit: int = 50, offset: int = 0):
+    return db_service.list_claims(limit=limit, offset=offset)
 
 
 @router.get("/{claim_id}", response_model=Claim)
 def get_claim(claim_id: str):
-    claim = db_service.get_claim(claim_id)
+    try:
+        claim = db_service.get_claim(claim_id)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid claim data format: {e}")
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
     return claim
@@ -459,7 +476,7 @@ async def issue_claim_approval(
     }
 
     try:
-        pdf_bytes, payload = sign_and_mark(fields)
+        pdf_bytes, payload = await asyncio.to_thread(sign_and_mark, fields)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate signed document: {e}")
 

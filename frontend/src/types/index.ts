@@ -132,6 +132,14 @@ export interface Provenance {
   status: 'verified' | 'tampered' | 'unmarked' | 'not_applicable';
   issued_doc_id?: string | null;
   detail?: string | null;
+  diff?: {
+    field?: string;
+    issued?: number | string;
+    presented?: number | string;
+    issued_display?: string;
+    presented_display?: string;
+  } | null;
+  carrier?: string | null;
 }
 
 export interface Dossier {

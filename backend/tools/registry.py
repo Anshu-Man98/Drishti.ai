@@ -16,7 +16,12 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from backend.app.schemas import Claim, Evidence, Finding, Severity, AgentName, Verdict
-from backend.tools.geo import haversine_km as _raw_haversine, min_travel_hours as _raw_min_travel, is_feasible as _raw_is_feasible
+from backend.tools.geo import (
+    haversine_km as _raw_haversine,
+    min_travel_hours as _raw_min_travel,
+    is_feasible as _raw_is_feasible,
+    normalize_to_utc
+)
 from backend.tools.scoring import score_findings as _raw_score_findings
 from backend.tools.bq import bq_warehouse
 
@@ -27,11 +32,13 @@ TOOL_AUDIT_LOG: Dict[str, List[Dict[str, Any]]] = {}
 CLAIM_COMPUTED_STORE: Dict[str, Dict[str, Any]] = {}
 
 
-def to_paise(rupees: Union[float, int, str]) -> int:
+def to_paise(rupees: Union[float, int, str, None]) -> int:
     """Converts a currency amount in rupees to integer paise (1 INR = 100 paise)."""
+    if rupees is None:
+        return 0
     if isinstance(rupees, str):
         cleaned = rupees.replace("₹", "").replace(",", "").replace("INR", "").replace("Rs.", "").strip()
-        rupees = float(cleaned)
+        rupees = float(cleaned) if cleaned else 0.0
     return int(round(float(rupees) * 100))
 
 
@@ -46,9 +53,9 @@ def to_rupees(paise: int) -> float:
 
 def validate_arithmetic(
     line_items: List[Dict[str, Any]],
-    subtotal: float,
-    tax: float,
-    total: float,
+    subtotal: Optional[float] = 0.0,
+    tax: Optional[float] = 0.0,
+    total: Optional[float] = 0.0,
     doc_id: str = "doc_main",
     page: int = 1,
     subtotal_bbox: Optional[List[float]] = None,
@@ -119,11 +126,14 @@ def validate_arithmetic(
     # Compute formatting chip
     calc_sub_rupees = to_rupees(calculated_subtotal_paise)
     diff_rupees = to_rupees(max_diff_paise)
+    sub_rupees = subtotal if subtotal is not None else 0.0
+    tax_rupees = tax if tax is not None else 0.0
+    tot_rupees = total if total is not None else 0.0
 
     if subtotal_diff_paise > tolerance_paise or total_diff_paise > tolerance_paise:
-        chip = f"₹{calc_sub_rupees:,.0f} + ₹{tax:,.0f} ≠ ₹{total:,.0f} (Δ ₹{diff_rupees:,.0f})"
+        chip = f"₹{calc_sub_rupees:,.0f} + ₹{tax_rupees:,.0f} ≠ ₹{tot_rupees:,.0f} (Δ ₹{diff_rupees:,.0f})"
     else:
-        chip = f"₹{subtotal:,.0f} + ₹{tax:,.0f} = ₹{total:,.0f} (Exact match)"
+        chip = f"₹{sub_rupees:,.0f} + ₹{tax_rupees:,.0f} = ₹{tot_rupees:,.0f} (Exact match)"
 
     if subtotal_diff_paise > tolerance_paise:
         findings.append(Finding(
@@ -207,7 +217,7 @@ def validate_arithmetic(
 
 
 def check_policy_caps(
-    policy_id: str,
+    policy_id: Optional[str],
     claim: Union[Claim, Dict[str, Any]],
     doc_id: str = "doc_main"
 ) -> Dict[str, Any]:
@@ -220,10 +230,11 @@ def check_policy_caps(
     claim_data = claim if isinstance(claim, dict) else claim.model_dump()
     rules_catalog = _load_rules().get("policies", {})
 
+    safe_policy_id = (policy_id or "POL-AROGYA-SANJEEVANI").upper()
     policy_key = "AROGYA_SANJEEVANI"
-    if "CARE" in policy_id.upper():
+    if "CARE" in safe_policy_id:
         policy_key = "CARE_PLUS"
-    elif "OPTIMA" in policy_id.upper():
+    elif "OPTIMA" in safe_policy_id:
         policy_key = "OPTIMA_SHIELD"
 
     policy_profile = rules_catalog.get(policy_key, rules_catalog.get("AROGYA_SANJEEVANI", {}))
@@ -314,10 +325,16 @@ def check_dates(
     doc_id: str = "doc_main"
 ) -> Dict[str, Any]:
     """Validates chronological sequence of hospitalization admission and discharge."""
-    if isinstance(admission_ts, str):
-        admission_ts = datetime.fromisoformat(admission_ts)
-    if isinstance(discharge_ts, str):
-        discharge_ts = datetime.fromisoformat(discharge_ts)
+    admission_ts = normalize_to_utc(admission_ts)
+    discharge_ts = normalize_to_utc(discharge_ts)
+
+    if not admission_ts or not discharge_ts:
+        return {
+            "valid": True,
+            "findings": [],
+            "computed": {},
+            "chip": "Dates missing"
+        }
 
     findings: List[Finding] = []
     los_seconds = (discharge_ts - admission_ts).total_seconds()

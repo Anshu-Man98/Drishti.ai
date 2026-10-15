@@ -158,7 +158,9 @@ def run_claims_fraud_pipeline(
                 provenance_obj = Provenance(
                     status="tampered",
                     issued_doc_id=issued_id,
-                    detail=explanation
+                    detail=explanation,
+                    diff=diff,
+                    carrier=v_res.get("carrier")
                 )
                 break
             elif v_status == "unmarked":
@@ -199,7 +201,8 @@ def run_claims_fraud_pipeline(
                     provenance_obj = Provenance(
                         status="verified",
                         issued_doc_id=v_res.get("issued_doc_id"),
-                        detail=v_res.get("detail", "Cryptographically verified authentic outbound document.")
+                        detail=v_res.get("detail", "Cryptographically verified authentic outbound document."),
+                        carrier=v_res.get("carrier")
                     )
             elif v_status == "not_applicable":
                 if not provenance_obj:
@@ -216,6 +219,42 @@ def run_claims_fraud_pipeline(
 
         if status_callback:
             status_callback("provenance", "done")
+
+    # Check for unreadable/unparseable mandatory document fields (Manual Review Required)
+    missing_critical = []
+    if not claim.total_claimed or claim.total_claimed <= 0:
+        missing_critical.append("total claimed amount")
+    if not claim.claimant or not claim.claimant.name:
+        missing_critical.append("claimant details")
+    if not claim.provider or not claim.provider.name:
+        missing_critical.append("hospital provider details")
+    if not claim.admission_ts or not claim.discharge_ts:
+        missing_critical.append("admission/discharge dates")
+    if not claim.line_items:
+        missing_critical.append("itemized bill breakdown")
+
+    if missing_critical:
+        doc_id = claim.documents[0].doc_id if claim.documents else "DOC-UNKNOWN"
+        all_findings.append(Finding(
+            finding_id=f"F-DOC-UNREADABLE-{len(all_findings)+1}",
+            agent=AgentName.FORENSICS,
+            check_id="document_unreadable_manual_review",
+            severity=Severity.HIGH,
+            title="Document Unreadable / Manual Review Required",
+            explanation=(
+                f"Document text extraction could not identify mandatory claim fields: "
+                f"{', '.join(missing_critical)}. Adjuster manual inspection required."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=1,
+                layer="visible",
+                quote="Mandatory claim fields missing from extracted document layout"
+            )],
+            confidence=0.95,
+            computed_chip="Unreadable Fields",
+            computed_details={"missing_fields": missing_critical}
+        ))
 
     # 2. Parallel Specialist Agents
     # Forensics Agent

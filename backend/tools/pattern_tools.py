@@ -50,21 +50,30 @@ def build_claim_fingerprint(
     fingerprint_parts: List[str] = []
 
     # 1. Structural billing & diagnosis features
-    los_days = max(1, int((claim.discharge_ts - claim.admission_ts).total_seconds() // 86400))
-    fingerprint_parts.append(f"diagnosis_code:{claim.diagnosis_code}")
-    fingerprint_parts.append(f"total_claimed:{claim.total_claimed:.0f}")
+    from backend.tools.geo import normalize_to_utc
+    adm = normalize_to_utc(getattr(claim, "admission_ts", None))
+    dis = normalize_to_utc(getattr(claim, "discharge_ts", None))
+    if adm and dis:
+        los_days = max(1, int((dis - adm).total_seconds() // 86400))
+    else:
+        los_days = 1
+
+    total_val = float(getattr(claim, "total_claimed", 0.0) or 0.0)
+    fingerprint_parts.append(f"diagnosis_code:{claim.diagnosis_code or 'UNKNOWN'}")
+    fingerprint_parts.append(f"total_claimed:{total_val:.0f}")
     fingerprint_parts.append(f"length_of_stay:{los_days}")
 
     # Check for room rent rates
-    room_items = [it for it in claim.line_items if any(k in it.description.lower() for k in ["room", "ward", "suite", "bed"])]
+    room_items = [it for it in (claim.line_items or []) if any(k in (getattr(it, "description", "") or "").lower() for k in ["room", "ward", "suite", "bed"])]
     if room_items:
-        max_rate = max(it.unit_price for it in room_items)
+        max_rate = max(getattr(it, "unit_price", 0.0) or 0.0 for it in room_items)
         fingerprint_parts.append(f"max_room_rent_rate:{max_rate:.0f}")
         if max_rate > 5000:
             fingerprint_parts.append("room_rent_vs_cap_ratio_exceeded")
 
     # 2. Entity link indicators (from claim metadata or bank hash)
-    bank_hash = getattr(claim.claimant, "bank_account_hash", "") or ""
+    bank_hash = getattr(claim.claimant, "bank_account_hash", "") if claim.claimant else ""
+    bank_hash = bank_hash or ""
     if "ring" in bank_hash.lower() or "shared" in bank_hash.lower():
         fingerprint_parts.append("shared_bank_account_ring shared_bank_account_count:14")
     elif len(bank_hash) == 16:

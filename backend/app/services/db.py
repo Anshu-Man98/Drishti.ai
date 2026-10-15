@@ -106,11 +106,14 @@ class DatabaseService:
                 return Claim.model_validate_json(row[0])
         return None
 
-    def list_claims(self, limit: int = 50) -> List[ClaimSummary]:
+    def list_claims(self, limit: int = 50, offset: int = 0) -> List[ClaimSummary]:
         summaries: List[ClaimSummary] = []
         with sqlite3.connect(self.local_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT claim_id, data FROM claims ORDER BY created_at DESC LIMIT ?", (limit,))
+            cursor.execute(
+                "SELECT claim_id, data FROM claims ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset)
+            )
             rows = cursor.fetchall()
             for claim_id, data_str in rows:
                 c = json.loads(data_str)
@@ -126,15 +129,15 @@ class DatabaseService:
 
                 summaries.append(ClaimSummary(
                     claim_id=c["claim_id"],
-                    policy_id=c["policy_id"],
-                    insurer_id=c["insurer_id"],
-                    claimant_name=c["claimant"]["name"],
-                    hospital_name=c["provider"]["name"],
-                    city=c["provider"]["city"],
-                    total_claimed=c["total_claimed"],
-                    admission_ts=c["admission_ts"],
-                    discharge_ts=c["discharge_ts"],
-                    diagnosis_code=c["diagnosis_code"],
+                    policy_id=c.get("policy_id") or "POL-UNKNOWN",
+                    insurer_id=c.get("insurer_id") or "INS-UNKNOWN",
+                    claimant_name=c.get("claimant", {}).get("name") if c.get("claimant") else "Unknown",
+                    hospital_name=c.get("provider", {}).get("name") if c.get("provider") else "Unknown",
+                    city=c.get("provider", {}).get("city") if c.get("provider") else "Unknown",
+                    total_claimed=c.get("total_claimed") or 0.0,
+                    admission_ts=c.get("admission_ts") or datetime.utcnow(),
+                    discharge_ts=c.get("discharge_ts") or datetime.utcnow(),
+                    diagnosis_code=c.get("diagnosis_code") or "Z00.0",
                     doc_count=len(c.get("documents", [])),
                     created_at=c.get("created_at") or datetime.utcnow(),
                     verdict=verdict,

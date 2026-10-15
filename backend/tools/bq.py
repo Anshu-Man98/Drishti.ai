@@ -12,6 +12,7 @@ import pandas as pd
 
 from backend.app.schemas import Finding, Evidence, AgentName, Severity
 from backend.app.config import settings
+from backend.tools.geo import normalize_to_utc
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
@@ -178,13 +179,14 @@ class BigQueryWarehouse:
     def get_doctor_events(
         self,
         doctor_id: str,
-        target_ts: datetime,
+        target_ts: Any,
         window_hours: int = 24
     ) -> List[Dict[str, Any]]:
         """
         Retrieves other hospital/clinic billing events for the same doctor within +-window_hours
         from BigQuery claims warehouse.
         """
+        target_ts = normalize_to_utc(target_ts)
         events = []
         if _bq_available and self._client and not settings.LOCAL_FALLBACK:
             try:
@@ -214,7 +216,7 @@ class BigQueryWarehouse:
                     events.append({
                         "claim_id": row.claim_id,
                         "doctor_id": row.doctor_id,
-                        "ts": row.admission_ts,
+                        "ts": normalize_to_utc(row.admission_ts),
                         "hospital_name": row.hospital_name,
                         "city": row.city,
                         "lat": float(row.lat),
@@ -231,12 +233,12 @@ class BigQueryWarehouse:
             doc_claims = self._claims_df[self._claims_df["doctor_id"] == doctor_id]
             for _, r in doc_claims.iterrows():
                 try:
-                    c_ts = pd.to_datetime(r["admission_ts"])
-                    if abs((c_ts - target_ts).total_seconds()) <= window_hours * 3600:
+                    c_ts = normalize_to_utc(r["admission_ts"])
+                    if c_ts and target_ts and abs((c_ts - target_ts).total_seconds()) <= window_hours * 3600:
                         events.append({
                             "claim_id": str(r["claim_id"]),
                             "doctor_id": str(r["doctor_id"]),
-                            "ts": c_ts.to_pydatetime(),
+                            "ts": c_ts,
                             "hospital_name": str(r.get("hospital_name", "Network Hospital")),
                             "city": str(r.get("city", "City")),
                             "lat": float(r.get("lat", 0.0)),
@@ -248,7 +250,7 @@ class BigQueryWarehouse:
 
         # Demo ground truth injection for G5
         if doctor_id in ["DOC-9021", "DOC-G5"]:
-            mumbai_ts = datetime(2026, 7, 20, 15, 40)
+            mumbai_ts = normalize_to_utc(datetime(2026, 7, 20, 15, 40))
             events.append({
                 "claim_id": "CLM-WAREHOUSE-MUM-8821",
                 "doctor_id": doctor_id,
@@ -295,7 +297,7 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     """
     Extracts engineered numeric features from Claim for BigQuery ML fraud model.
     """
-    claim_amount = float(claim.total_claimed)
+    claim_amount = float(getattr(claim, "total_claimed", 0.0) or 0.0)
 
     # Diagnosis median cost
     diag_code = getattr(claim, "diagnosis_code", "") or "K35.8"
@@ -304,8 +306,8 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     amount_vs_median = round(claim_amount / median_cost, 3)
 
     # Length of stay
-    adm = getattr(claim, "admission_ts", None)
-    dis = getattr(claim, "discharge_ts", None)
+    adm = normalize_to_utc(getattr(claim, "admission_ts", None))
+    dis = normalize_to_utc(getattr(claim, "discharge_ts", None))
     if adm and dis:
         stay_days = max(1, (dis - adm).days)
     else:
@@ -313,8 +315,8 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
 
     # Prior claims in 90d
     claimant = getattr(claim, "claimant", None)
-    claimant_id = getattr(claimant, "claimant_id", "") if claimant else ""
-    claim_id = getattr(claim, "claim_id", "")
+    claimant_id = (getattr(claimant, "claimant_id", "") or "") if claimant else ""
+    claim_id = getattr(claim, "claim_id", "") or ""
     prior_claims = 0
     if claimant_id in ["CLMNT-9901", "CLMNT-G4"] or "G4" in claim_id:
         prior_claims = 3
@@ -328,19 +330,19 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     provider_claims_day = 2.4
 
     # Doctor distinct cities in 24h
-    doc_id = getattr(claim, "doctor_id", "")
+    doc_id = getattr(claim, "doctor_id", "") or ""
     doctor_cities_24h = 1
     if doc_id in ["DOC-9021", "DOC-G5"] or "G5" in claim_id:
         doctor_cities_24h = 2
 
     # Shared bank account count
-    bank_hash = getattr(claimant, "bank_account_hash", "") if claimant else ""
+    bank_hash = (getattr(claimant, "bank_account_hash", "") or "") if claimant else ""
     shared_bank_count = 1
     if "ring" in bank_hash or "shared" in bank_hash or "G4" in claim_id:
         shared_bank_count = 12
 
     # Days policy to claim
-    policy_id = getattr(claim, "policy_id", "")
+    policy_id = getattr(claim, "policy_id", "") or ""
     days_policy_to_claim = 180
     if "AROGYA-33219" in policy_id or "G3" in claim_id:
         days_policy_to_claim = 35

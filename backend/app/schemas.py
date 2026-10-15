@@ -86,18 +86,18 @@ class Document(BaseModel):
 
 class Claim(BaseModel):
     claim_id: str
-    policy_id: str
-    insurer_id: str
-    claimant: Claimant
-    provider: Provider
-    doctor_id: str
-    admission_ts: datetime
-    discharge_ts: datetime
-    diagnosis_code: str
+    policy_id: Optional[str] = None
+    insurer_id: Optional[str] = None
+    claimant: Optional[Claimant] = None
+    provider: Optional[Provider] = None
+    doctor_id: Optional[str] = None
+    admission_ts: Optional[datetime] = None
+    discharge_ts: Optional[datetime] = None
+    diagnosis_code: Optional[str] = None
     line_items: List[LineItem] = Field(default_factory=list)
-    subtotal: float
-    tax: float
-    total_claimed: float
+    subtotal: Optional[float] = None
+    tax: Optional[float] = None
+    total_claimed: Optional[float] = 0.0
     documents: List[Document] = Field(default_factory=list)
     extracted_entities: List[ExtractedEntity] = Field(default_factory=list)
     field_sources: Optional[dict[str, str]] = Field(default_factory=dict)
@@ -153,6 +153,8 @@ class Provenance(BaseModel):
     status: str  # "verified" | "tampered" | "unmarked" | "not_applicable"
     issued_doc_id: Optional[str] = None
     detail: Optional[str] = None
+    diff: Optional[Dict[str, Any]] = None
+    carrier: Optional[str] = None
 
 
 class Dossier(BaseModel):

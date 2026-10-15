@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.routers import claims, provenance
 from backend.app.config import settings
@@ -30,11 +30,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Secure API routers requiring authenticated user
+# API Router with /api prefix (matches Firebase Hosting rewrites to Cloud Run)
+api_router = APIRouter(prefix="/api")
+api_router.include_router(claims.router, dependencies=[Depends(get_current_user)])
+api_router.include_router(provenance.router, dependencies=[Depends(get_current_user)])
+
+# Mount both /api and root prefixed routers for seamless local dev & Cloud Run production
+app.include_router(api_router)
 app.include_router(claims.router, dependencies=[Depends(get_current_user)])
 app.include_router(provenance.router, dependencies=[Depends(get_current_user)])
 
 
+@api_router.get("/health")
 @app.get("/health")
 def health_check():
     return {

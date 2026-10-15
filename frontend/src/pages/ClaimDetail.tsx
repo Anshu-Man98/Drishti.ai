@@ -911,15 +911,19 @@ export const ClaimDetail: React.FC = () => {
                             <span className="text-[10px] uppercase text-emerald-400 block font-sans font-semibold">
                               Digitally Signed at Issuance
                             </span>
-                            <span className="text-emerald-400 text-sm font-bold">₹50,000.00</span>
+                            <span className="text-emerald-400 text-sm font-bold">
+                              {dossier.provenance.diff?.issued_display || '₹50,000.00'}
+                            </span>
                             <p className="text-[10px] text-slate-500 mt-0.5">Signed in Ed25519 payload</p>
                           </div>
                           <div className="p-2 rounded bg-slate-950 border border-rose-900/60">
                             <span className="text-[10px] uppercase text-rose-400 block font-sans font-semibold">
                               Altered Rendered Page
                             </span>
-                            <span className="text-rose-400 text-sm font-bold">₹500,000.00</span>
-                            <p className="text-[10px] text-rose-400/80 mt-0.5">Forged visible text (10× inflation)</p>
+                            <span className="text-rose-400 text-sm font-bold">
+                              {dossier.provenance.diff?.presented_display || 'Altered Value'}
+                            </span>
+                            <p className="text-[10px] text-rose-400/80 mt-0.5">Forged visible text (Post-issuance alteration)</p>
                           </div>
                         </div>
                       </div>

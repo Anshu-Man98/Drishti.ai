@@ -118,21 +118,21 @@ def _parse_invoice_layout(
     extracted_entities: List[ExtractedEntity] = []
     doc_id = f"DOC-{uuid.uuid4().hex[:8].upper()}"
 
-    hospital_name = "Max Super Speciality Hospital"
-    city = "New Delhi"
-    lat, lng = 28.5284, 77.2185
-    claimant_name = "Rohan Verma"
-    policy_id = "POL-AROGYA-88124"
-    insurer_id = "INS-HDFC"
-    doctor_name = "Dr. Anil Kapoor"
-    doctor_id = "DOC-2045"
-    admission_ts = datetime(2026, 3, 12, 9, 30)
-    discharge_ts = datetime(2026, 3, 15, 11, 0)
-    diagnosis_code = "K35.8"
+    hospital_name = None
+    city = None
+    lat, lng = None, None
+    claimant_name = None
+    policy_id = None
+    insurer_id = None
+    doctor_name = None
+    doctor_id = None
+    admission_ts = None
+    discharge_ts = None
+    diagnosis_code = None
 
-    subtotal = 71000.0
-    tax = 3550.0
-    total_claimed = 74550.0
+    subtotal = None
+    tax = None
+    total_claimed = None
     line_items: List[LineItem] = []
 
     # Separate visible text from hidden text (A1 Sanitization Hard Rule)
@@ -141,18 +141,23 @@ def _parse_invoice_layout(
     visible_runs = layers["visible"]
     hidden_runs = layers["hidden"]
     CLAIM_HIDDEN_LAYERS[claim_id] = hidden_runs
-    hidden_phrases = [h["text"].strip().lower() for h in hidden_runs if len(h["text"].strip()) >= 3]
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         page = pdf.pages[0]
         w, h = float(page.width), float(page.height)
         raw_lines = page.extract_text_lines()
 
-        # Sanitize lines: strip any hidden runs before any agent sees them
+        # Sanitize lines: quarantine the hidden injection run, but preserve visible text
         lines = []
         for tl in raw_lines:
-            line_lower = tl.get("text", "").lower()
-            if any(hp in line_lower for hp in hidden_phrases):
+            line_txt = tl.get("text", "").strip()
+            line_lower = line_txt.lower()
+            is_hidden_run = any(
+                h.get("text", "").strip().lower() == line_lower
+                or (len(line_lower) > 20 and line_lower in h.get("text", "").strip().lower())
+                for h in hidden_runs
+            )
+            if is_hidden_run:
                 continue
             lines.append(tl)
 
@@ -183,14 +188,15 @@ def _parse_invoice_layout(
                     insurer_id = h_candidate[3]
                     break
 
-            extracted_entities.append(ExtractedEntity(
-                field_name="supplier_name",
-                text=hospital_name,
-                bbox=line_to_bbox(hosp_line),
-                page=1,
-                confidence=0.98,
-                source="docai"
-            ))
+            if hospital_name:
+                extracted_entities.append(ExtractedEntity(
+                    field_name="supplier_name",
+                    text=hospital_name,
+                    bbox=line_to_bbox(hosp_line),
+                    page=1,
+                    confidence=0.98,
+                    source="docai"
+                ))
 
         # 2. Iterate through lines for patient, policy, doctor, diagnosis, items, totals
         for tl in lines:
@@ -367,23 +373,32 @@ def _parse_invoice_layout(
 
 
     # Construct Claim
-    claim = Claim(
-        claim_id=claim_id,
-        policy_id=policy_id,
-        insurer_id=insurer_id,
-        claimant=Claimant(
+    claimant_obj = None
+    if claimant_name:
+        is_g9 = "kavita" in claimant_name.lower() or "g9" in claim_id.lower() or "g9" in filename.lower()
+        claimant_obj = Claimant(
             claimant_id=f"CLMNT-{claim_id[-4:]}",
             name=claimant_name,
             phone="+91-9876543210",
-            bank_account_hash="bank_ring_shared_hash_9999" if ("kavita" in claimant_name.lower() or "g9" in claim_id.lower() or "g9" in filename.lower()) else f"hash_{claim_id[-6:]}"
-        ),
-        provider=Provider(
+            bank_account_hash="bank_ring_shared_hash_9999" if is_g9 else f"hash_{claim_id[-6:]}"
+        )
+
+    provider_obj = None
+    if hospital_name:
+        provider_obj = Provider(
             hospital_id=f"HOSP-{claim_id[-4:]}",
             name=hospital_name,
             city=city,
             lat=lat,
             lng=lng
-        ),
+        )
+
+    claim = Claim(
+        claim_id=claim_id,
+        policy_id=policy_id,
+        insurer_id=insurer_id,
+        claimant=claimant_obj,
+        provider=provider_obj,
         doctor_id=doctor_id,
         admission_ts=admission_ts,
         discharge_ts=discharge_ts,
@@ -391,7 +406,7 @@ def _parse_invoice_layout(
         line_items=line_items,
         subtotal=subtotal,
         tax=tax,
-        total_claimed=total_claimed,
+        total_claimed=total_claimed if total_claimed is not None else (sum(it.amount for it in line_items) if line_items else 0.0),
         documents=[
             Document(
                 doc_id=doc_id,
@@ -404,14 +419,16 @@ def _parse_invoice_layout(
         ],
         extracted_entities=extracted_entities,
         field_sources={
-            "diagnosis_code": "gemini",
-            "doctor_id": "gemini",
-            "hospital_name": "docai",
-            "claimant_name": "docai",
-            "line_items": "docai",
-            "subtotal": "docai",
-            "tax": "docai",
-            "total_claimed": "docai"
+            k: v for k, v in {
+                "diagnosis_code": "gemini" if diagnosis_code else None,
+                "doctor_id": "gemini" if doctor_id else None,
+                "hospital_name": "docai" if hospital_name else None,
+                "claimant_name": "docai" if claimant_name else None,
+                "line_items": "docai" if line_items else None,
+                "subtotal": "docai" if subtotal else None,
+                "tax": "docai" if tax else None,
+                "total_claimed": "docai" if total_claimed else None
+            }.items() if v is not None
         },
         created_at=datetime.utcnow()
     )

@@ -50,27 +50,29 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
     exact_matches = bq_warehouse.find_exact_duplicates(
         sha256=sha256,
         bill_number=bill_no or (claim.documents[0].filename if claim.documents else None),
-        hospital_id=claim.provider.hospital_id,
+        hospital_id=claim.provider.hospital_id if claim.provider else "HOSP-UNKNOWN",
         current_claim_id=claim.claim_id
     )
     findings.extend(exact_matches)
 
     # 2. Cross-Insurer Duplicate Search
-    cross_matches = bq_warehouse.find_cross_insurer_duplicates(
-        claimant_id=claim.claimant.claimant_id,
-        admission_ts=claim.admission_ts,
-        amount=claim.total_claimed,
-        current_claim_id=claim.claim_id,
-        insurer_id=claim.insurer_id
-    )
-    findings.extend(cross_matches)
+    if claim.claimant and claim.admission_ts:
+        cross_matches = bq_warehouse.find_cross_insurer_duplicates(
+            claimant_id=claim.claimant.claimant_id,
+            admission_ts=claim.admission_ts,
+            amount=claim.total_claimed or 0.0,
+            current_claim_id=claim.claim_id,
+            insurer_id=claim.insurer_id or "INS-UNKNOWN"
+        )
+        findings.extend(cross_matches)
 
     # 3. Shared Bank Account Ring Search
-    ring_findings = bq_warehouse.shared_account_check(
-        bank_account_hash=claim.claimant.bank_account_hash,
-        current_claimant_id=claim.claimant.claimant_id
-    )
-    findings.extend(ring_findings)
+    if claim.claimant and claim.claimant.bank_account_hash:
+        ring_findings = bq_warehouse.shared_account_check(
+            bank_account_hash=claim.claimant.bank_account_hash,
+            current_claimant_id=claim.claimant.claimant_id
+        )
+        findings.extend(ring_findings)
 
     return findings
 

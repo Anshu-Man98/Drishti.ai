@@ -1,3 +1,4 @@
+import asyncio
 import io
 from pathlib import Path
 from typing import Optional
@@ -43,7 +44,7 @@ async def verify_provenance_document(
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail=f"Payload Too Large: File '{safe_name}' exceeds 25 MB limit.")
 
-    result = verify_document(contents, claim_id=claim_id)
+    result = await asyncio.to_thread(verify_document, contents, claim_id=claim_id)
     return ProvenanceVerifyResponse(
         status=result.get("status", "unknown"),
         detail=result.get("detail"),

@@ -108,19 +108,22 @@ def _collect_ground_truth_numbers(
 
     # 2. Harvest from Claim JSON if provided
     if claim is not None:
-        truth_set.add(float(claim.subtotal))
-        truth_set.add(float(claim.tax))
-        truth_set.add(float(claim.total_claimed))
-        truth_set.add(float(round(claim.total_claimed * 100, 2)))
+        for val in [claim.subtotal, claim.tax, claim.total_claimed]:
+            if val is not None:
+                truth_set.add(float(val))
+                truth_set.add(float(round(val * 100, 2)))
 
-        for it in claim.line_items:
-            truth_set.add(float(it.qty))
-            truth_set.add(float(it.unit_price))
-            truth_set.add(float(it.amount))
-            truth_set.add(float(round(it.amount * 100, 2)))
+        for it in (claim.line_items or []):
+            for val in [getattr(it, "qty", None), getattr(it, "unit_price", None), getattr(it, "amount", None)]:
+                if val is not None:
+                    truth_set.add(float(val))
+                    truth_set.add(float(round(val * 100, 2)))
 
-        truth_set.add(float(claim.provider.lat))
-        truth_set.add(float(claim.provider.lng))
+        if claim.provider:
+            if claim.provider.lat is not None:
+                truth_set.add(float(claim.provider.lat))
+            if claim.provider.lng is not None:
+                truth_set.add(float(claim.provider.lng))
 
         # Dates (day, month, year)
         for dt in [claim.admission_ts, claim.discharge_ts]:

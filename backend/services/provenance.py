@@ -496,20 +496,57 @@ def verify_document(
                 "diff": None
             }
 
+        # Check Letter Replay: Ensure document was issued for active claim_id
+        if claim_id and payload.get("claim_id"):
+            if str(payload.get("claim_id")).strip().upper() != str(claim_id).strip().upper():
+                return {
+                    "status": "tampered",
+                    "detail": (
+                        f"Letter replay detected: document was issued for claim {payload.get('claim_id')}, "
+                        f"but presented against claim {claim_id}."
+                    ),
+                    "payload": payload,
+                    "carrier": recovered_carrier,
+                    "diff": {
+                        "field": "claim_id",
+                        "issued": payload.get("claim_id"),
+                        "presented": claim_id,
+                        "issued_display": str(payload.get("claim_id")),
+                        "presented_display": str(claim_id)
+                    },
+                    "issued_doc_id": payload.get("doc_id")
+                }
+
         # Extract semantic content from presented PDF
         extracted_fields = _extract_semantic_fields_from_pdf(pdf_bytes)
         presented_amount_paise = extracted_fields.get("amount_paise")
         presented_claim_id = extracted_fields.get("claim_id") or payload.get("claim_id")
         presented_claimant_id = extracted_fields.get("claimant_id") or payload.get("claimant_id")
+        presented_dates = extracted_fields.get("dates")
+        presented_clause_refs = extracted_fields.get("clause_refs")
+
+        # Fail if critical semantic fields could not be extracted from presented document
+        if presented_amount_paise is None or not presented_dates or "approval_date" not in presented_dates:
+            return {
+                "status": "tampered",
+                "detail": (
+                    "Semantic verification failed: required document fields (such as sanctioned amount "
+                    "or approval date) could not be verified from presented text."
+                ),
+                "payload": payload,
+                "carrier": recovered_carrier,
+                "diff": None,
+                "issued_doc_id": payload.get("doc_id")
+            }
 
         # Recompute semantic content hash from presented document
         presented_content_hash = compute_semantic_content_hash(
             claim_id=presented_claim_id,
             claimant_id=presented_claimant_id,
-            amount_paise=presented_amount_paise if presented_amount_paise is not None else payload.get("amount_paise"),
+            amount_paise=presented_amount_paise,
             doc_type=payload.get("doc_type", "approval_letter"),
-            dates=extracted_fields.get("dates") or {"approval_date": "15-Oct-2026", "valid_until": "31-Dec-2026"},
-            clause_refs=extracted_fields.get("clause_refs") or ["Clause 3.1", "Clause 4.2"]
+            dates=presented_dates,
+            clause_refs=presented_clause_refs or ["Clause 3.1", "Clause 4.2"]
         )
 
         signed_content_hash = payload.get("content_hash")
@@ -647,5 +684,29 @@ def _extract_semantic_fields_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
     m_doc = re.search(r"(?:REF|Document ID)[:\s]*([A-Za-z0-9_\-]+)", full_text)
     if m_doc:
         fields["doc_id"] = m_doc.group(1).strip()
+
+    # Extract Dates: approval_date and valid_until
+    dates: Dict[str, str] = {}
+    m_date = re.search(r"Date[:\s]+(\d{1,2}-[A-Za-z]{3}-\d{4})", full_text, re.IGNORECASE)
+    if not m_date:
+        m_date = re.search(r"Date[:\s]+(\d{4}-\d{2}-\d{2})", full_text, re.IGNORECASE)
+    if m_date:
+        dates["approval_date"] = m_date.group(1).strip()
+
+    m_val = re.search(r"Approval Validity[:\s]+(\d{1,2}-[A-Za-z]{3}-\d{4})", full_text, re.IGNORECASE)
+    if not m_val:
+        m_val = re.search(r"Approval Validity[:\s]+(\d{4}-\d{2}-\d{2})", full_text, re.IGNORECASE)
+    if m_val:
+        dates["valid_until"] = m_val.group(1).strip()
+    if dates:
+        fields["dates"] = dates
+
+    # Extract Statutory Policy Clauses Applied
+    m_clauses = re.search(r"Statutory Policy Clauses Applied[:\s]+([^\n\r]+)", full_text, re.IGNORECASE)
+    if m_clauses:
+        clause_str = m_clauses.group(1).strip()
+        clauses = [c.strip() for c in clause_str.split(",") if c.strip()]
+        if clauses:
+            fields["clause_refs"] = clauses
 
     return fields

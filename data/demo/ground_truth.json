@@ -1,0 +1,49 @@
+{
+  "G1": {
+    "file": "G1_clean_claim.pdf",
+    "expected_verdict": "approve",
+    "expected_risk_category": "low",
+    "primary_flag": null,
+    "total_claimed": 74550.0
+  },
+  "G2": {
+    "file": "G2_arithmetic_mismatch.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_category": "high",
+    "primary_flag": "arithmetic_mismatch",
+    "details": "Sum of items is \u20b990,500 (+\u20b94,525 tax = \u20b995,025), but printed total is \u20b91,12,500 (Mismatch of \u20b917,475)",
+    "total_claimed": 112500.0
+  },
+  "G3": {
+    "file": "G3_policy_cap_breach.pdf",
+    "expected_verdict": "review",
+    "expected_risk_category": "medium",
+    "primary_flag": "policy_cap_breach",
+    "details": "Room rent \u20b914,500/day breaches Arogya Sanjeevani Clause 3.1 room rent cap (\u20b95,000/day)",
+    "total_claimed": 132825.0
+  },
+  "G4": {
+    "file": "G4_cross_insurer_duplicate.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_category": "high",
+    "primary_flag": "cross_insurer_duplicate",
+    "details": "Identical bill BILL-HYD-2026-88219 was already submitted to Star Health on 12-May-2026",
+    "total_claimed": 80850.0
+  },
+  "G5": {
+    "file": "G5_impossible_travel.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_category": "critical",
+    "primary_flag": "impossible_travel",
+    "details": "Dr. Rajesh Mehta billed procedures in Delhi at 14:10 and Mumbai at 15:40 (1,150 km in 90 min; min realistic travel > 4.1h)",
+    "total_claimed": 149100.0
+  },
+  "G6": {
+    "file": "G6_forged_document.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_category": "critical",
+    "primary_flag": "forged_document",
+    "details": "Altered total row font (Courier-Bold 13pt), producer metadata 'Adobe Photoshop 24.1 / Canva', ModDate 30 days after CreateDate",
+    "total_claimed": 89500.0
+  }
+}

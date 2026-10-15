@@ -1,0 +1,130 @@
+{
+  "policies": {
+    "AROGYA_SANJEEVANI": {
+      "policy_name": "IRDAI Arogya Sanjeevani Standard Health Policy",
+      "uin": "IRDAI/HLT/STAND/2020/01",
+      "rules": [
+        {
+          "clause_id": "Clause 3.1",
+          "rule": "room_rent_cap_per_day",
+          "value": 5000.0,
+          "description": "Room, Boarding and Nursing Expenses: 2% of Sum Insured subject to maximum of ₹5,000/- per day."
+        },
+        {
+          "clause_id": "Clause 3.2",
+          "rule": "icu_rent_cap_per_day",
+          "value": 10000.0,
+          "description": "Intensive Care Unit (ICU) / ICCU expenses: 5% of Sum Insured subject to maximum of ₹10,000/- per day."
+        },
+        {
+          "clause_id": "Clause 3.3",
+          "rule": "pre_hospitalization_days",
+          "value": 30,
+          "description": "Pre-hospitalization medical expenses incurred for up to 30 days prior to admission."
+        },
+        {
+          "clause_id": "Clause 3.4",
+          "rule": "post_hospitalization_days",
+          "value": 60,
+          "description": "Post-hospitalization medical expenses incurred for up to 60 days following discharge."
+        },
+        {
+          "clause_id": "Clause 4.1",
+          "rule": "initial_waiting_period_days",
+          "value": 30,
+          "description": "Initial waiting period of 30 days from date of inception of policy (except accidental injuries)."
+        },
+        {
+          "clause_id": "Clause 4.2",
+          "rule": "specific_illness_waiting_period_months",
+          "value": 24,
+          "description": "24-month waiting period for specified ailments including Benign ENT disorders, Cholecystectomy, Calculus diseases."
+        },
+        {
+          "clause_id": "Clause 5.1",
+          "rule": "copay_percentage",
+          "value": 5.0,
+          "description": "Fixed 5% co-pay applicable to each and every admissible claim."
+        },
+        {
+          "clause_id": "Clause 6.1",
+          "rule": "cataract_sublimit_per_eye",
+          "value": 40000.0,
+          "description": "Cataract treatment capped at 25% of Sum Insured or ₹40,000 per eye, whichever is lower."
+        }
+      ]
+    },
+    "CARE_PLUS": {
+      "policy_name": "Care Plus Comprehensive Health Insurance Policy",
+      "uin": "IRDAI/HLT/CARE-PLUS-V2/2025",
+      "rules": [
+        {
+          "clause_id": "Clause 1.1",
+          "rule": "room_rent_cap_per_day",
+          "value": 7000.0,
+          "description": "Single Private AC Room up to ₹7,000/- per day; Normal Ward up to ₹4,000/- per day."
+        },
+        {
+          "clause_id": "Clause 1.2",
+          "rule": "icu_rent_cap_per_day",
+          "value": 15000.0,
+          "description": "ICU or Intensive Cardiac Care Unit (ICCU) charges covered up to ₹15,000/- per day."
+        },
+        {
+          "clause_id": "Clause 2.1",
+          "rule": "initial_waiting_period_days",
+          "value": 30,
+          "description": "30 days initial waiting period from inception for all illnesses except accidental trauma."
+        },
+        {
+          "clause_id": "Clause 2.2",
+          "rule": "specific_illness_waiting_period_months",
+          "value": 24,
+          "description": "24-month waiting period for Cholecystectomy, Hernia, and Calculus disorders."
+        },
+        {
+          "clause_id": "Clause 2.3",
+          "rule": "modern_treatment_sublimit",
+          "value": 150000.0,
+          "description": "Robotic surgeries and modern medical technologies capped at ₹1,50,000/- per policy year."
+        }
+      ]
+    },
+    "OPTIMA_SHIELD": {
+      "policy_name": "Optima Shield Standard Health Insurance Policy",
+      "uin": "IRDAI/HLT/OPTIMA-SHIELD-V1/2025",
+      "rules": [
+        {
+          "clause_id": "Clause 1.1",
+          "rule": "room_rent_cap_per_day",
+          "value": 4000.0,
+          "description": "For SI below ₹5,00,000: Room rent capped at 1% of SI (maximum ₹4,000/- per day). For SI ≥ ₹5,00,000: No room rent capping."
+        },
+        {
+          "clause_id": "Clause 1.2",
+          "rule": "icu_rent_cap_per_day",
+          "value": 10000.0,
+          "description": "ICU covered up to 2% of SI per day with absolute maximum ceiling of ₹10,000/- per day."
+        },
+        {
+          "clause_id": "Clause 2.1",
+          "rule": "initial_waiting_period_days",
+          "value": 30,
+          "description": "30-Day inception moratorium for any illness except acute trauma."
+        },
+        {
+          "clause_id": "Clause 2.2",
+          "rule": "specific_illness_waiting_period_months",
+          "value": 24,
+          "description": "24-month waiting period for Gallbladder stone surgery, Knee replacement, and spine surgeries."
+        },
+        {
+          "clause_id": "Clause 2.3",
+          "rule": "cataract_sublimit_per_eye",
+          "value": 35000.0,
+          "description": "Cataract surgical correction capped at ₹35,000/- per eye."
+        }
+      ]
+    }
+  }
+}

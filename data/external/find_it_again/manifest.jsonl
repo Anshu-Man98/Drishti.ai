@@ -1,0 +1,20 @@
+{"image_path": "data/external/find_it_again/samples/sample_001.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_002.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_003.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_004.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_005.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_006.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_007.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_008.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_009.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_010.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_011.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_012.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_013.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_014.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_015.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_016.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_017.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_018.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_019.png", "label": "authentic", "forgery_bbox": null, "mask_path": null, "source": "find_it_again"}
+{"image_path": "data/external/find_it_again/samples/sample_020.png", "label": "forged", "forgery_bbox": [0.15, 0.42, 0.85, 0.58], "mask_path": null, "source": "find_it_again"}

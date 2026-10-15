@@ -6,6 +6,9 @@
 *.key
 credentials.json
 service-account*.json
+finshield.db
+*.db
+data/uploads/
 
 # Operating System
 .DS_Store

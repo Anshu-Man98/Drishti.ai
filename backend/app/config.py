@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # API Keys & Credentials
     GOOGLE_API_KEY: Optional[str] = os.getenv("GOOGLE_API_KEY", os.getenv("GEMINI_API_KEY"))
     DOCUMENTAI_PROCESSOR_ID: Optional[str] = os.getenv("DOCUMENTAI_PROCESSOR_ID")
+    FINSHIELD_PROVENANCE_KEY: Optional[str] = os.getenv("FINSHIELD_PROVENANCE_KEY")
     
     # Feature Flags
     SYNTHID_ENABLED: bool = os.getenv("SYNTHID_ENABLED", "false").lower() == "true"

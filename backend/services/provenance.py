@@ -48,8 +48,8 @@ def get_signing_key() -> ed25519.Ed25519PrivateKey:
     Fails closed when LOCAL_FALLBACK=False if key cannot be obtained.
     Key material is NEVER logged and NEVER written to disk.
     """
-    # 1. Check for explicit environment variable
-    env_key = os.getenv("FINSHIELD_PROVENANCE_KEY")
+    # 1. Check for explicit environment variable or settings
+    env_key = getattr(settings, "FINSHIELD_PROVENANCE_KEY", None) or os.getenv("FINSHIELD_PROVENANCE_KEY")
     if env_key:
         raw_bytes = env_key.encode("utf-8") if len(env_key) == 32 else bytes.fromhex(env_key)
         return ed25519.Ed25519PrivateKey.from_private_bytes(raw_bytes[:32])

@@ -156,5 +156,42 @@ $$\text{final\_risk\_score} = \text{round}(0.6 \times \text{agent\_score} + 40 \
 
 ---
 
+## 💬 Feature 8 (F8): Adjuster Chat Copilot with the Case File
+
+FinShield enables insurance claims adjusters to interrogate the case file in real time through an interactive, strictly grounded AI copilot:
+
+```text
+Adjuster Inquiry ("Why was this flagged?")
+        │
+        ▼
+POST /claims/{id}/chat (Server-Sent Events)
+  ├── Strict Context Grounding (Claim JSON + Dossier + Findings + Policy Rules)
+  ├── Gemini Pro (`GEMINI_PRO_MODEL`) via Google GenAI SDK (Streamed)
+  ├── Automatic Fallback Grounding Engine (Offline / Test Mode)
+  └── Regex Citation Resolver ([F1] -> Finding ID -> Document Bounding Box)
+        │
+        ▼
+Interactive Slide-Out Chat Drawer (`frontend/src/components/ChatDrawer.tsx`)
+  ├── Real-time token streaming with typing animation
+  ├── Suggested Question Pills ("Why flagged?", "Strongest evidence?", "Policy clause?", "Next steps?")
+  └── Clickable [F#] Citations: Instantly pulses & highlights the citation on Document Viewer
+```
+
+### 1. Strict Case-File Grounding & Security Guardrails
+- **Grounding Scope:** Grounded exclusively on: Claim metadata, itemized billing lines, Dossier verdict/scores, all Findings, and cited policy clauses. No web browsing, no outside knowledge of real-world individuals or hospitals.
+- **System Prompt:**
+  > *"You are FinShield's audit assistant talking to an insurance adjuster. Answer only from the case file provided. Cite finding ids like [F1]. If asked something the case file can't answer, say what's missing and what the adjuster could check. Be brief and neutral. Never call the claimant a criminal — describe evidence and risk."*
+- **Off-Topic Refusal:** Off-topic trivia or non-case inquiries politely respond with a structured refusal explaining that the query is outside the case file boundaries.
+
+### 2. Streaming SSE & Persistence
+- **Streaming Endpoint (`POST /claims/{id}/chat`):** Emits token chunks via `text/event-stream`, concluding with a structured event containing `{done: true, answer, cited_finding_ids, cited_evidence}`.
+- **Persistence (`GET /claims/{id}/chat`):** Persists all adjuster dialogues in Cloud Firestore under `claims/{id}/chat_messages` (with local SQLite fallback).
+
+### 3. Clickable Document Citations
+- Citations such as `[F1]` or `[F-ARITH-TOTAL]` render as clickable badges in the chat interface.
+- Clicking any citation focuses and pulses the associated Document AI bounding box directly in the split document viewer.
+
+---
+
 ## 🚀 Getting Started
 Refer to [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the implementation roadmap and architecture details.

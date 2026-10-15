@@ -158,3 +158,21 @@ class ClaimSummary(BaseModel):
     created_at: datetime
     verdict: Optional[Verdict] = None
     risk_score: Optional[int] = None
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+    cited_finding_ids: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    cited_finding_ids: List[str] = Field(default_factory=list)
+    cited_evidence: List[Evidence] = Field(default_factory=list)
+

@@ -71,3 +71,77 @@ export async function fetchClaimEntities(claimId: string): Promise<{
   return resp.json();
 }
 
+export async function fetchChatHistory(claimId: string): Promise<import('../types').ChatMessage[]> {
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/chat`);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch chat history: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function streamClaimChat(
+  claimId: string,
+  message: string,
+  onChunk: (chunk: string) => void,
+  onComplete: (res: import('../types').ChatResponse) => void,
+  onError: (err: any) => void
+): Promise<void> {
+  try {
+    const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({ message }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Chat error: ${resp.statusText}`);
+    }
+
+    if (!resp.body) {
+      throw new Error('ReadableStream not supported on this browser.');
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data:')) {
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.chunk) {
+              onChunk(data.chunk);
+            }
+            if (data.done) {
+              onComplete({
+                answer: data.answer || '',
+                cited_finding_ids: data.cited_finding_ids || [],
+                cited_evidence: data.cited_evidence || [],
+              });
+            }
+          } catch (e) {
+            console.error('Error parsing SSE event:', e, jsonStr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    onError(err);
+  }
+}
+
+

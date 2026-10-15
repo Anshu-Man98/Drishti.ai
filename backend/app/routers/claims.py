@@ -2,12 +2,14 @@ import json
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.app.schemas import (
-    Claim, Document, DocType, Claimant, Provider, LineItem, Dossier, ClaimSummary, Verdict
+    Claim, Document, DocType, Claimant, Provider, LineItem, Dossier, ClaimSummary, Verdict,
+    ChatMessage, ChatRequest, ChatResponse, Evidence
 )
+from backend.agents.chat import stream_chat_response
 from backend.app.config import settings
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
@@ -314,3 +316,57 @@ def get_claim_entities(claim_id: str):
         "entities": [e.model_dump() for e in claim.extracted_entities],
         "field_sources": claim.field_sources or {}
     }
+
+
+@router.post("/{claim_id}/chat")
+async def chat_with_claim_dossier(
+    claim_id: str,
+    request: ChatRequest,
+    accept: Optional[str] = Header(None)
+):
+    """
+    Adjuster chat with the claim dossier via Server-Sent Events (SSE) or direct JSON.
+    Grounded strictly on: the Dossier, all Findings, extracted Claim JSON, and policy clauses.
+    """
+    claim = db_service.get_claim(claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+
+    # If client specifically requests application/json and not text/event-stream (e.g. testing)
+    if accept and "application/json" in accept and "text/event-stream" not in accept:
+        final_payload = None
+        async for event in stream_chat_response(claim_id, request.message):
+            if event.get("done"):
+                final_payload = event
+        if final_payload:
+            return ChatResponse(
+                answer=final_payload["answer"],
+                cited_finding_ids=final_payload["cited_finding_ids"],
+                cited_evidence=[Evidence(**ev) if isinstance(ev, dict) else ev for ev in final_payload["cited_evidence"]]
+            )
+
+    async def sse_generator():
+        async for event in stream_chat_response(claim_id, request.message):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        sse_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream"
+        }
+    )
+
+
+@router.get("/{claim_id}/chat", response_model=List[ChatMessage])
+def get_claim_chat_history(claim_id: str):
+    """
+    Retrieves saved adjuster chat messages for the claim.
+    """
+    claim = db_service.get_claim(claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+    return db_service.get_chat_history(claim_id)
+

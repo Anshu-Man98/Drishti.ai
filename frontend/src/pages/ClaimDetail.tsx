@@ -4,11 +4,12 @@ import {
   ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert,
   FileText, Building2, User, Calendar, RefreshCw,
   ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2,
-  Cpu, BarChart3
+  Cpu, BarChart3, MessageSquare
 } from 'lucide-react';
 import { Claim, Dossier } from '../types';
 import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities } from '../services/api';
 import { DocumentViewer } from '../components/DocumentViewer';
+import { ChatDrawer } from '../components/ChatDrawer';
 
 export const ClaimDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +20,7 @@ export const ClaimDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeFindingId, setActiveFindingId] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<'split' | 'doc' | 'audit'>('split');
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const loadClaimData = async () => {
     if (!id) return;
@@ -213,6 +215,15 @@ export const ClaimDetail: React.FC = () => {
               <span>Audit Focus</span>
             </button>
           </div>
+
+          <button
+            onClick={() => setIsChatOpen(true)}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 shadow-md"
+            title="Chat with Claim Dossier"
+          >
+            <MessageSquare className="w-4 h-4 text-blue-400" />
+            <span>Ask Copilot</span>
+          </button>
 
           <button
             onClick={handleRunAnalysis}
@@ -666,6 +677,34 @@ export const ClaimDetail: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Floating Copilot Pill */}
+      {!isChatOpen && (
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center space-x-2.5 px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-500/30 border border-blue-400/40 transition-all transform hover:scale-105"
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+          <span className="text-sm font-bold">Ask Dossier Copilot</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        </button>
+      )}
+
+      {/* Slide-out Chat Drawer */}
+      <ChatDrawer
+        claimId={claim.claim_id}
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        findings={dossier?.findings || []}
+        activeFindingId={activeFindingId}
+        onSelectFinding={(fId) => {
+          setActiveFindingId(fId);
+          // If in audit-only layout mode, automatically switch to split mode so document is visible
+          if (layoutMode === 'audit') {
+            setLayoutMode('split');
+          }
+        }}
+      />
     </div>
   );
 };

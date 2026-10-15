@@ -126,3 +126,18 @@ export interface Dossier {
   timeline?: TimelineEvent[];
   created_at: string;
 }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  cited_finding_ids?: string[];
+  cited_evidence?: Evidence[];
+  created_at?: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  cited_finding_ids: string[];
+  cited_evidence: Evidence[];
+}
+

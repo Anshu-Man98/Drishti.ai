@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from backend.app.config import settings
-from backend.app.schemas import Claim, Dossier, ClaimSummary
+from backend.app.schemas import Claim, Dossier, ClaimSummary, ChatMessage
 
 try:
     from google.cloud import firestore
@@ -44,6 +44,16 @@ class DatabaseService:
                 CREATE TABLE IF NOT EXISTS dossiers (
                     claim_id TEXT PRIMARY KEY,
                     data TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    claim_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    cited_finding_ids TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -152,6 +162,87 @@ class DatabaseService:
             if row:
                 return Dossier.model_validate_json(row[0])
         return None
+
+    def save_chat_message(
+        self,
+        claim_id: str,
+        role: str,
+        content: str,
+        cited_finding_ids: Optional[List[str]] = None
+    ) -> None:
+        """Saves an adjuster chat message in Firestore under the claim, with local SQLite fallback."""
+        now = datetime.utcnow().isoformat()
+        cited_ids = cited_finding_ids or []
+
+        # Local SQLite
+        with sqlite3.connect(self.local_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO chat_messages (claim_id, role, content, cited_finding_ids, created_at) VALUES (?, ?, ?, ?, ?)",
+                (claim_id, role, content, json.dumps(cited_ids), now)
+            )
+            conn.commit()
+
+        # Firestore under claims/{id}/chat_messages
+        if self._fs_client:
+            try:
+                self._fs_client.collection("claims").document(claim_id).collection("chat_messages").add({
+                    "role": role,
+                    "content": content,
+                    "cited_finding_ids": cited_ids,
+                    "created_at": now
+                })
+            except Exception as e:
+                print(f"[DB] Firestore chat message write failed: {e}")
+
+    def get_chat_history(self, claim_id: str) -> List[ChatMessage]:
+        """Retrieves chronological chat history for a claim."""
+        # Check Firestore first
+        if self._fs_client:
+            try:
+                docs = (
+                    self._fs_client.collection("claims")
+                    .document(claim_id)
+                    .collection("chat_messages")
+                    .order_by("created_at")
+                    .stream()
+                )
+                messages = []
+                for doc in docs:
+                    d = doc.to_dict()
+                    messages.append(ChatMessage(
+                        role=d.get("role", "assistant"),
+                        content=d.get("content", ""),
+                        cited_finding_ids=d.get("cited_finding_ids", []),
+                        created_at=datetime.fromisoformat(d.get("created_at", datetime.utcnow().isoformat()))
+                    ))
+                if messages:
+                    return messages
+            except Exception as e:
+                print(f"[DB] Firestore chat history query failed: {e}")
+
+        # Local SQLite fallback
+        messages = []
+        with sqlite3.connect(self.local_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT role, content, cited_finding_ids, created_at FROM chat_messages WHERE claim_id = ? ORDER BY id ASC",
+                (claim_id,)
+            )
+            rows = cursor.fetchall()
+            for role, content, cited_json, created_at_str in rows:
+                cited_ids = json.loads(cited_json) if cited_json else []
+                try:
+                    dt = datetime.fromisoformat(created_at_str)
+                except Exception:
+                    dt = datetime.utcnow()
+                messages.append(ChatMessage(
+                    role=role,
+                    content=content,
+                    cited_finding_ids=cited_ids,
+                    created_at=dt
+                ))
+        return messages
 
 
 db_service = DatabaseService()

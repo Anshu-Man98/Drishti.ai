@@ -308,6 +308,11 @@ async def stream_chat_response(
             from google import genai
             from google.genai import types
 
+            if settings.GOOGLE_API_KEY:
+                client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            else:
+                client = genai.Client(vertexai=True, project=settings.GCP_PROJECT, location=settings.GCP_REGION)
+
             safe_query = sanitize_chat_context(user_message)
             prompt = (
                 "You are FinShield's audit assistant talking to an insurance adjuster. "

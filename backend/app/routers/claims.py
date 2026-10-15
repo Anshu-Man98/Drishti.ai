@@ -149,31 +149,44 @@ def get_dossier(claim_id: str):
     return dossier
 
 
+from backend.agents.root import run_claims_fraud_pipeline
+
+# In-memory agent status tracker for live UI feedback
+_agent_statuses = {}
+
+
+@router.get("/{claim_id}/agent-status")
+def get_agent_status(claim_id: str):
+    return _agent_statuses.get(claim_id, {
+        "forensics": "idle",
+        "policy": "idle",
+        "crossref": "idle",
+        "synthesizer": "idle"
+    })
+
+
 @router.post("/{claim_id}/analyze", response_model=Dossier)
-def analyze_claim(claim_id: str):
+def analyze_claim(claim_id: str, force: bool = False):
     """
-    Runs the agent pipeline (stubbed in P0, full 4-agent ADK in F1).
+    Runs the four-agent fraud pipeline (Forensics, Policy, CrossRef, Synthesizer).
+    Writes Dossier to DB/Firestore.
     """
     claim = db_service.get_claim(claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
 
-    existing_dossier = db_service.get_dossier(claim_id)
-    if existing_dossier:
-        return existing_dossier
+    if not force:
+        existing_dossier = db_service.get_dossier(claim_id)
+        if existing_dossier and existing_dossier.findings:
+            return existing_dossier
 
-    # Foundation P0 placeholder dossier
-    dossier = Dossier(
-        claim_id=claim_id,
-        risk_score=15,
-        ml_score=0.12,
-        verdict=Verdict.APPROVE,
-        summary=f"P0 baseline analysis: Claim {claim_id} for ₹{claim.total_claimed:,.2f} at {claim.provider.name} registered. Ready for F1 multi-agent scrutiny.",
-        findings=[],
-        top_ml_features=[],
-        timeline=[],
-        created_at=datetime.utcnow()
-    )
+    def status_callback(agent_name: str, status: str):
+        if claim_id not in _agent_statuses:
+            _agent_statuses[claim_id] = {}
+        _agent_statuses[claim_id][agent_name] = status
+
+    # Execute 4-agent scrutiny
+    dossier = run_claims_fraud_pipeline(claim, status_callback=status_callback)
     db_service.save_dossier(dossier)
     return dossier
 

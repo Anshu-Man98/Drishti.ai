@@ -198,19 +198,57 @@ export const ClaimDetail: React.FC = () => {
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { name: 'Forensics', role: 'Tampering / ELA / Font' },
-                  { name: 'Policy & Math', role: 'Caps & Arithmetic' },
-                  { name: 'Cross-Ref', role: 'Duplicate Claims' },
-                  { name: 'Spacetime', role: 'Impossible Travel' },
-                ].map((agent, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white">{agent.name}</span>
-                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  { id: 'forensics', name: 'Forensics', role: 'Metadata / Font / ELA' },
+                  { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
+                  { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
+                  { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
+                ].map((agent) => {
+                  const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
+                  const count = agentFindings.length;
+                  const isDone = !!dossier;
+                  const isRunning = analyzing;
+
+                  return (
+                    <div
+                      key={agent.id}
+                      className={`p-3 rounded-xl border transition-all ${
+                        isRunning
+                          ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/20 animate-pulse'
+                          : isDone
+                          ? count > 0
+                            ? 'bg-slate-950 border-amber-500/30'
+                            : 'bg-slate-950 border-slate-800'
+                          : 'bg-slate-950/40 border-slate-900 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-white">{agent.name}</span>
+                        {isRunning ? (
+                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+                        ) : isDone ? (
+                          <span
+                            className={`w-2 h-2 rounded-full ${count > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                            title={count > 0 ? `${count} flags` : 'Clean'}
+                          ></span>
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-slate-600"></span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">{agent.role}</p>
+                      <div className="mt-2 text-[10px] font-mono">
+                        {isRunning ? (
+                          <span className="text-blue-400">running...</span>
+                        ) : isDone ? (
+                          <span className={count > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                            {count > 0 ? `${count} flag${count > 1 ? 's' : ''}` : 'no flags'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">pending</span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-500">{agent.role}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

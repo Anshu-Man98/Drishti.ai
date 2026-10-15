@@ -44,5 +44,42 @@ Built 100% on the Google Cloud & AI ecosystem:
 
 ---
 
+## 🤖 Feature 1 (F1): Four-Agent Core Pipeline
+
+The core fraud engine runs on the **Google Agent Development Kit (ADK)** using a hybrid deterministic-reasoning pattern:
+```text
+ADK Root: SequentialAgent
+  ├── ParallelAgent (Specialists)
+  │     ├── Forensics Agent      (PDF metadata, font consistency, EXIF/ELA, SynthID*, Gemini visual review)
+  │     ├── Arithmetic & Policy  (Deterministic math tools + policy rules engine citing clause IDs)
+  │     └── Cross-Reference      (BigQuery warehouse lookups: exact duplicate, cross-insurer, shared accounts)
+  └── Synthesizer Agent          (Gemini Pro grounded synthesis + deterministic score_findings)
+```
+
+### Deterministic Tools & Rules
+- **Forensics (`backend/tools/forensics_tools.py`):**
+  - Flags non-standard PDF producers (Photoshop, Canva, GIMP, online editors).
+  - Inspects `CreationDate` vs `ModDate` divergence.
+  - Extracts typography with `pdfplumber` to detect font family anomalies on totals/table rows and returns normalized bounding boxes.
+- **Arithmetic & Policy (`backend/tools/arithmetic.py`, `backend/tools/policy_tools.py`):**
+  - Reconciles quantity $\times$ unit price, subtotal sum, and tax/total with $\pm 1$ INR tolerance.
+  - Checks room rent and ICU charges against policy limits (e.g. IRDAI Arogya Sanjeevani Clause 3.1 room rent cap).
+- **Cross-Reference (`backend/tools/bq.py`):**
+  - Parameterized warehouse lookups matching exact bill numbers and cross-insurer submissions ($\pm 3$ days, $\pm 5\%$ amount).
+- **Deterministic Scoring (`backend/tools/scoring.py`):**
+  - Severity weights: `info`: 0, `low`: 5, `medium`: 15, `high`: 30, `critical`: 50 (capped at 100).
+  - Verdict thresholds: `approve` $< 30$, `review` $30–69$, `reject` $\ge 70$.
+
+### Golden Claims Acceptance Matrix
+| Claim | Type / Anomaly | Detected Checks | Risk Score | Verdict |
+|---|---|---|---|---|
+| **G1** | Clean Claim | All checks clean | 0 | **APPROVE** |
+| **G2** | Padded Bill / Math Mismatch | `SUBTOTAL_SUM_MISMATCH`, `TOTAL_PAYABLE_MISMATCH` | 60 | **REVIEW** |
+| **G3** | Policy Limit Breach | `POLICY_ROOM_RENT_CAP_EXCEEDED` (Clause 3.1) | 30 | **REVIEW** |
+| **G4** | Cross-Insurer Duplicate | `CROSS_INSURER_DUPLICATE_CLAIM`, `EXACT_DUPLICATE_BILL` | 100 | **REJECT** |
+| **G6** | Forged Bill | `SUSPICIOUS_PRODUCER_METADATA`, `FONT_INCONSISTENCY_TAMPERING`, `METADATA_DATE_DISCREPANCY` | 100 | **REJECT** |
+
+---
+
 ## 🚀 Getting Started
 Refer to [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the implementation roadmap and architecture details.

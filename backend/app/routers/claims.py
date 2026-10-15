@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.app.schemas import (
     Claim, Document, DocType, Claimant, Provider, LineItem, Dossier, ClaimSummary, Verdict,
-    ChatMessage, ChatRequest, ChatResponse, Evidence
+    ChatMessage, ChatRequest, ChatResponse, Evidence, IssueApprovalRequest, IssueApprovalResponse
 )
 from backend.agents.chat import stream_chat_response
 from backend.app.config import settings
@@ -369,4 +369,65 @@ def get_claim_chat_history(claim_id: str):
     if not claim:
         raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
     return db_service.get_chat_history(claim_id)
+
+
+@router.post("/{claim_id}/issue-approval", response_model=IssueApprovalResponse)
+async def issue_claim_approval(
+    claim_id: str,
+    request: IssueApprovalRequest
+):
+    """
+    Invisibly marks and cryptographically signs an outbound approval / sanction document
+    using dual-carrier redundancy (XMP Metadata + LSB Steganography) and Ed25519 digital signature.
+    """
+    if not settings.WATERMARK_ENABLED:
+        raise HTTPException(status_code=400, detail="Provenance marking is currently disabled (WATERMARK_ENABLED=False).")
+
+    claim = db_service.get_claim(claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+
+    from backend.services.provenance import sign_and_mark
+    doc_id = f"SANCTION-{uuid.uuid4().hex[:8].upper()}"
+    fields = {
+        "claim_id": claim.claim_id,
+        "claimant_id": claim.claimant.claimant_id if claim.claimant else "CLMNT-UNKNOWN",
+        "claimant_name": claim.claimant.name if claim.claimant else "Claimant",
+        "amount_paise": request.amount_paise,
+        "doc_type": "approval_letter",
+        "doc_id": doc_id,
+        "policy_id": claim.policy_id,
+        "insurer_id": claim.insurer_id,
+        "notes": request.notes or "Sanction order issued following audit review."
+    }
+
+    try:
+        pdf_bytes, payload = sign_and_mark(fields)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate signed document: {e}")
+
+    filename = f"approval_{doc_id}.pdf"
+    uri, sha256_hash = storage_service.upload_file(pdf_bytes, filename, claim_id)
+
+    # Register as an issued document under the claim
+    new_doc = Document(
+        doc_id=doc_id,
+        filename=filename,
+        gcs_uri=uri,
+        sha256=sha256_hash,
+        doc_type=DocType.APPROVAL_LETTER,
+        page_count=1
+    )
+    claim.documents.append(new_doc)
+    db_service.save_claim(claim)
+
+    download_url = f"/claims/{claim_id}/documents/{doc_id}"
+
+    return IssueApprovalResponse(
+        download_url=download_url,
+        doc_id=doc_id,
+        amount_paise=request.amount_paise,
+        payload=payload
+    )
+
 

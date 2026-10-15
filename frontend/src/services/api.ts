@@ -144,4 +144,45 @@ export async function streamClaimChat(
   }
 }
 
+export async function issueApprovalLetter(
+  claimId: string,
+  amountPaise: number,
+  notes?: string
+): Promise<import('../types').IssueApprovalResponse> {
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/issue-approval`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount_paise: amountPaise, notes }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Failed to issue approval letter: ${errText || resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function verifyDocument(
+  file: File,
+  claimId?: string
+): Promise<import('../types').ProvenanceVerifyResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (claimId) {
+    formData.append('claim_id', claimId);
+  }
+  const resp = await fetch(`${API_BASE_URL}/provenance/verify`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Failed to verify document provenance: ${errText || resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export function getProvenancePubkeyUrl(): string {
+  return `${API_BASE_URL}/provenance/pubkey`;
+}
+
 

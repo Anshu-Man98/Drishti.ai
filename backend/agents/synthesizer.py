@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName, Severity, RetrievedContext
+from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName, Severity, RetrievedContext, Provenance
 from backend.app.config import settings
 from backend.tools.registry import call_tool, get_all_computed_values, score_findings
 from backend.tools.grounding import assert_numbers_grounded, sanitize_text_grounding
@@ -23,7 +23,8 @@ def synthesize_dossier(
     ml_score: Optional[float] = None,
     top_ml_features: Optional[List[Any]] = None,
     timeline: Optional[List[TimelineEvent]] = None,
-    retrieved_context: Optional[List[RetrievedContext]] = None
+    retrieved_context: Optional[List[RetrievedContext]] = None,
+    provenance: Optional[Provenance] = None
 ) -> Dossier:
     """
     Synthesizes all specialist agent findings and BigQuery ML probability into a final Dossier.
@@ -99,6 +100,12 @@ def synthesize_dossier(
         else:
             summary += "Minor observations noted; overall claim within acceptable risk thresholds."
 
+        # Provenance Tampering or Stripping Alert (Feature A2)
+        if provenance and provenance.status == "tampered":
+            summary += f" CRITICAL PROVENANCE ALERT: {provenance.detail} "
+        elif provenance and provenance.status == "unmarked":
+            summary += f" PROVENANCE WARNING: {provenance.detail} "
+
         # RAG Pattern Corroboration (Feature A4)
         if retrieved_context:
             pat = next((rc for rc in retrieved_context if rc.source == "pattern"), None)
@@ -147,6 +154,7 @@ def synthesize_dossier(
         top_ml_features=top_ml_features,
         timeline=timeline,
         retrieved_context=retrieved_context,
+        provenance=provenance,
         created_at=datetime.utcnow()
     )
 

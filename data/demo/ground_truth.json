@@ -54,6 +54,14 @@
     "details": "Clean-looking bill with hidden prompt injection instructing AI reviewer to approve the claim",
     "total_claimed": 74550.0
   },
+  "G8": {
+    "file": "G8_altered_approval.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_category": "critical",
+    "primary_flag": "issued_doc_tampered",
+    "details": "Approval letter issued by FinShield for \u20b950,000, altered to \u20b95,00,000 on rendered page while watermark carries signed hash for \u20b950,000",
+    "total_claimed": 500000.0
+  },
   "G9": {
     "file": "G9_pattern_match.pdf",
     "expected_verdict": "review",

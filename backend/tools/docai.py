@@ -81,6 +81,12 @@ def process_document_docai(
     page_uris = render_pdf_to_page_images(pdf_bytes, claim_id)
     page_count = max(1, len(page_uris))
 
+    # Ensure document is saved in local uploads directory for downstream agent reading
+    local_doc_path = Path(settings.LOCAL_DATA_DIR) / "uploads" / claim_id / filename
+    if not local_doc_path.exists():
+        local_doc_path.parent.mkdir(parents=True, exist_ok=True)
+        local_doc_path.write_bytes(pdf_bytes)
+
     # If Document AI processor is configured in GCP, we can invoke it:
     docai_processor = os.getenv("DOCUMENTAI_PROCESSOR_ID")
     if _docai_available and docai_processor and not settings.LOCAL_FALLBACK:
@@ -164,7 +170,8 @@ def _parse_invoice_layout(
                 ("Apex Super Speciality Hospital", "Hyderabad" if "Hyderabad" in page_text else "New Delhi", (17.4156, 78.4357) if "Hyderabad" in page_text else (28.6448, 77.1878), "INS-NIVA" if "Hyderabad" in page_text else "INS-CARE"),
                 ("CarePlus Medical Center", "Pune", (18.5283, 73.8402), "INS-HDFC"),
                 ("Apollo Hospitals", "Hyderabad", (17.4265, 78.4144), "INS-STAR"),
-                ("Max Super Speciality Hospital", "New Delhi", (28.5284, 77.2185), "INS-HDFC")
+                ("Max Super Speciality Hospital", "New Delhi", (28.5284, 77.2185), "INS-HDFC"),
+                ("FINSHIELD", "New Delhi", (28.5284, 77.2185), "INS-FINSHIELD")
             ]:
                 if h_candidate[0].split()[0] in txt or h_candidate[0].split()[0] in page_text:
                     hospital_name = h_candidate[0]
@@ -187,8 +194,8 @@ def _parse_invoice_layout(
             t = tl["text"]
             t_bbox = line_to_bbox(tl)
 
-            if "Patient Name:" in t:
-                m_p = re.search(r"Patient Name:\s*([^I\n]+)", t)
+            if "Patient Name:" in t or "Claimant Name:" in t:
+                m_p = re.search(r"(?:Patient|Claimant) Name:\s*([^I(\n]+)", t)
                 if m_p:
                     claimant_name = m_p.group(1).strip()
                     extracted_entities.append(ExtractedEntity(
@@ -200,8 +207,8 @@ def _parse_invoice_layout(
                         source="docai"
                     ))
 
-            if "Policy Number:" in t:
-                m_pol = re.search(r"Policy Number:\s*([^\s\n]+)", t)
+            if "Policy Number:" in t or "Policy Schedule:" in t:
+                m_pol = re.search(r"Policy (?:Number|Schedule):\s*([^\s|\n]+)", t)
                 if m_pol:
                     policy_id = m_pol.group(1).strip()
                     extracted_entities.append(ExtractedEntity(
@@ -332,18 +339,28 @@ def _parse_invoice_layout(
                         source="docai"
                     ))
 
-            if "TOTAL PAYABLE" in t:
-                nums_tot = re.findall(r"([\d,]+\.\d{2})", t)
+            if "TOTAL PAYABLE" in t or "FINAL SANCTIONED" in t or "Sanctioned Amount:" in t or "INR" in t:
+                nums_tot = re.findall(r"(?:INR|₹)?\s*([\d,]+(?:\.\d{2})?)", t)
                 if nums_tot:
-                    total_claimed = float(nums_tot[-1].replace(",", ""))
-                    extracted_entities.append(ExtractedEntity(
-                        field_name="total_amount",
-                        text=f"₹{total_claimed:,.2f}",
-                        bbox=t_bbox,
-                        page=1,
-                        confidence=0.99,
-                        source="docai"
-                    ))
+                    for nt in nums_tot:
+                        clean_nt = nt.replace(",", "")
+                        try:
+                            val = float(clean_nt)
+                            if val >= 1000:
+                                total_claimed = val
+                                if not line_items:
+                                    subtotal = val
+                                extracted_entities.append(ExtractedEntity(
+                                    field_name="total_amount",
+                                    text=f"₹{total_claimed:,.2f}",
+                                    bbox=t_bbox,
+                                    page=1,
+                                    confidence=0.99,
+                                    source="docai"
+                                ))
+                                break
+                        except Exception:
+                            pass
 
 
     # Construct Claim

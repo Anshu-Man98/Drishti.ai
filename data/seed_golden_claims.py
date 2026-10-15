@@ -210,6 +210,31 @@ GOLDEN_CLAIMS = [
         ]
     },
     {
+        "key": "G8",
+        "file": "G8_altered_approval.pdf",
+        "policy_id": "POL-AROGYA-SANJEEVANI-001",
+        "insurer_id": "INS-FINSHIELD",
+        "claimant_id": "CLMNT-8819",
+        "claimant_name": "Deepak Mehta",
+        "claimant_phone": "+91-9876548819",
+        "bank_account_hash": "hash_deepak_mehta_8819",
+        "hospital_id": "HOSP-101",
+        "hospital_name": "Max Super Speciality Hospital",
+        "city": "New Delhi",
+        "lat": 28.5284,
+        "lng": 77.2185,
+        "doctor_id": "DOC-2045",
+        "admission_ts": "2026-03-12T09:30:00",
+        "discharge_ts": "2026-03-15T11:00:00",
+        "diagnosis_code": "K80.2",
+        "subtotal": 476190.48,
+        "tax": 23809.52,
+        "total_claimed": 500000.0,
+        "line_items": [
+            {"description": "Sanctioned In-Patient Hospitalization Treatment", "qty": 1, "unit_price": 500000.0, "amount": 500000.0}
+        ]
+    },
+    {
         "key": "G9",
         "file": "G9_pattern_match.pdf",
         "policy_id": "POL-AROGYA-99120",

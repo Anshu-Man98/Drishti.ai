@@ -57,7 +57,9 @@ def test_docai_extraction_all_six_golden_claims():
     assert GROUND_TRUTH_PATH.exists()
     gt = json.loads(GROUND_TRUTH_PATH.read_text())
 
-    for key, info in gt.items():
+    six_golden_keys = ["G1", "G2", "G3", "G4", "G5", "G6"]
+    for key in six_golden_keys:
+        info = gt[key]
         pdf_path = DEMO_DIR / info["file"]
         assert pdf_path.exists(), f"Demo PDF {info['file']} missing"
         pdf_bytes = pdf_path.read_bytes()

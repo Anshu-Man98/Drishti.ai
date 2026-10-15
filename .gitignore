@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 *.pem
+!infra/provenance_pubkey.pem
 *.key
 credentials.json
 service-account*.json

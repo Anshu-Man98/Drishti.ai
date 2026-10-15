@@ -162,3 +162,25 @@ export interface ChatResponse {
   cited_evidence: Evidence[];
 }
 
+export interface IssueApprovalResponse {
+  download_url: string;
+  doc_id: string;
+  amount_paise: number;
+  payload: Record<string, any>;
+}
+
+export interface ProvenanceVerifyResponse {
+  status: 'verified' | 'tampered' | 'unmarked' | 'not_applicable' | 'disabled' | string;
+  detail?: string | null;
+  payload?: Record<string, any> | null;
+  carrier?: string | null;
+  diff?: {
+    field: string;
+    issued: any;
+    presented: any;
+    issued_display?: string;
+    presented_display?: string;
+  } | null;
+  issued_doc_id?: string | null;
+}
+

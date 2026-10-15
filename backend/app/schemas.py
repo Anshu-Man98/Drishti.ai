@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +12,8 @@ class DocType(str, Enum):
     DISCHARGE_SUMMARY = "discharge_summary"
     LAB_REPORT = "lab_report"
     PHOTO = "photo"
+    APPROVAL_LETTER = "approval_letter"
+    SANCTION_ORDER = "sanction_order"
 
 
 class AgentName(str, Enum):
@@ -199,4 +201,25 @@ class ChatResponse(BaseModel):
     answer: str
     cited_finding_ids: List[str] = Field(default_factory=list)
     cited_evidence: List[Evidence] = Field(default_factory=list)
+
+
+class IssueApprovalRequest(BaseModel):
+    amount_paise: int
+    notes: Optional[str] = None
+
+
+class IssueApprovalResponse(BaseModel):
+    download_url: str
+    doc_id: str
+    amount_paise: int
+    payload: Dict[str, Any]
+
+
+class ProvenanceVerifyResponse(BaseModel):
+    status: str
+    detail: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    carrier: Optional[str] = None
+    diff: Optional[Dict[str, Any]] = None
+    issued_doc_id: Optional[str] = None
 

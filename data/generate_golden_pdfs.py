@@ -10,6 +10,7 @@ G6 - Forged bill (Total row edited with Courier-Bold font, PDF producer set to P
 """
 
 import os
+import io
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -608,6 +609,48 @@ def generate_all_golden():
         "primary_flag": "hidden_text_instruction",
         "details": "Clean-looking bill with hidden prompt injection instructing AI reviewer to approve the claim",
         "total_claimed": 74550.0
+    }
+
+    # G8: An approval letter the system issued, then altered (sanctioned amount ₹50,000
+    # changed to ₹5,00,000 on the rendered page, while the invisible mark still carries the signed hash for ₹50,000) (Feature A2).
+    from backend.services.provenance import sign_and_mark
+    g8_file = DEMO_DIR / "G8_altered_approval.pdf"
+    g8_fields = {
+        "claim_id": "CLM-SANCTION-G8",
+        "claimant_id": "CLMNT-8819",
+        "claimant_name": "Deepak Mehta",
+        "amount_paise": 5000000,  # Issued for ₹50,000
+        "doc_type": "approval_letter",
+        "doc_id": "SANCTION-G8-GENUINE",
+        "policy_id": "POL-AROGYA-SANJEEVANI-001",
+        "insurer_id": "INS-FINSHIELD",
+        "notes": "Pre-authorization approved for in-patient cholecystectomy under IRDAI limits."
+    }
+    genuine_pdf_bytes, _ = sign_and_mark(g8_fields)
+
+    # Tamper: Alter the rendered text from 50,000 to 500,000 while preserving the watermark
+    reader_g8 = pypdf.PdfReader(io.BytesIO(genuine_pdf_bytes))
+    p_g8 = reader_g8.pages[0]
+    raw_content = p_g8.get_contents().get_data()
+    altered_content = raw_content.replace(b"50,000.00", b"500,000.00").replace(b"5,000,000", b"50,000,000")
+    stream_g8 = pypdf.generic.DecodedStreamObject()
+    stream_g8.set_data(altered_content)
+    p_g8[pypdf.generic.NameObject("/Contents")] = stream_g8
+
+    writer_g8 = pypdf.PdfWriter()
+    writer_g8.add_page(p_g8)
+    writer_g8.add_metadata(reader_g8.metadata)
+
+    with open(g8_file, "wb") as f_g8:
+        writer_g8.write(f_g8)
+
+    ground_truth["G8"] = {
+        "file": "G8_altered_approval.pdf",
+        "expected_verdict": "reject",
+        "expected_risk_category": "critical",
+        "primary_flag": "issued_doc_tampered",
+        "details": "Approval letter issued by FinShield for ₹50,000, altered to ₹5,00,000 on rendered page while watermark carries signed hash for ₹50,000",
+        "total_claimed": 500000.0
     }
 
     # G9: A claim whose fraud signature closely matches a known past fraud pattern,

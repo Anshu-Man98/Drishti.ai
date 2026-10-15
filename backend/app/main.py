@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.routers import claims
+from backend.app.routers import claims, provenance
 from backend.app.config import settings
 
 app = FastAPI(
@@ -19,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(claims.router)
+app.include_router(provenance.router)
 
 
 @app.get("/health")

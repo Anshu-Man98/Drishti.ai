@@ -57,6 +57,18 @@ class DatabaseService:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS issuance_ledger (
+                    doc_id TEXT PRIMARY KEY,
+                    claim_id TEXT NOT NULL,
+                    doc_type TEXT NOT NULL,
+                    amount_paise INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    issued_at TIMESTAMP NOT NULL,
+                    metadata TEXT
+                )
+            """)
             conn.commit()
 
     def save_claim(self, claim: Claim) -> None:
@@ -243,6 +255,105 @@ class DatabaseService:
                     created_at=dt
                 ))
         return messages
+
+    def record_issuance(
+        self,
+        doc_id: str,
+        claim_id: str,
+        doc_type: str,
+        amount_paise: int,
+        content_hash: str,
+        signature: str,
+        issued_at: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Records an outbound issued document in the tamper-evident issuance ledger."""
+        issued_at_val = issued_at or datetime.utcnow()
+        meta_json = json.dumps(metadata or {})
+        with sqlite3.connect(self.local_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO issuance_ledger
+                (doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                doc_id, claim_id, doc_type, amount_paise, content_hash, signature,
+                issued_at_val.isoformat(), meta_json
+            ))
+            conn.commit()
+
+        if self._fs_client:
+            try:
+                self._fs_client.collection("issuance_ledger").document(doc_id).set({
+                    "doc_id": doc_id,
+                    "claim_id": claim_id,
+                    "doc_type": doc_type,
+                    "amount_paise": amount_paise,
+                    "content_hash": content_hash,
+                    "signature": signature,
+                    "issued_at": issued_at_val.isoformat(),
+                    "metadata": metadata or {}
+                })
+            except Exception as e:
+                print(f"[DB] Firestore issuance_ledger write failed: {e}")
+
+    def get_issuance(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves an issuance ledger record by document ID."""
+        if self._fs_client:
+            try:
+                doc = self._fs_client.collection("issuance_ledger").document(doc_id).get()
+                if doc.exists:
+                    return doc.to_dict()
+            except Exception:
+                pass
+
+        with sqlite3.connect(self.local_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE doc_id = ?",
+                (doc_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "doc_id": row[0],
+                    "claim_id": row[1],
+                    "doc_type": row[2],
+                    "amount_paise": row[3],
+                    "content_hash": row[4],
+                    "signature": row[5],
+                    "issued_at": row[6],
+                    "metadata": json.loads(row[7]) if row[7] else {}
+                }
+        return None
+
+    def get_issuance_for_claim(self, claim_id: str, doc_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Retrieves the latest issuance ledger record for a claim."""
+        with sqlite3.connect(self.local_db_path) as conn:
+            cursor = conn.cursor()
+            if doc_type:
+                cursor.execute(
+                    "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE claim_id = ? AND doc_type = ? ORDER BY issued_at DESC LIMIT 1",
+                    (claim_id, doc_type)
+                )
+            else:
+                cursor.execute(
+                    "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE claim_id = ? ORDER BY issued_at DESC LIMIT 1",
+                    (claim_id,)
+                )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "doc_id": row[0],
+                    "claim_id": row[1],
+                    "doc_type": row[2],
+                    "amount_paise": row[3],
+                    "content_hash": row[4],
+                    "signature": row[5],
+                    "issued_at": row[6],
+                    "metadata": json.loads(row[7]) if row[7] else {}
+                }
+        return None
 
 
 db_service = DatabaseService()

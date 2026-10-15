@@ -64,13 +64,18 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         total_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings)
         risk_score = min(100, max(0, total_score))
 
-    # Intent to deceive / prompt injection attack automatically triggers REJECT
+    # Intent to deceive: prompt injection attack or issued document tampering triggers REJECT
     has_critical_injection = any(
         f.agent == AgentName.INJECTION and f.severity == Severity.CRITICAL
         for f in findings
     )
+    has_critical_tampering = any(
+        (f.agent == AgentName.PROVENANCE and f.severity == Severity.CRITICAL) or
+        (f.check_id == "issued_doc_tampered")
+        for f in findings
+    )
 
-    if has_critical_injection:
+    if has_critical_injection or has_critical_tampering:
         risk_score = max(risk_score, 85)
         verdict = Verdict.REJECT
     elif risk_score < 30:

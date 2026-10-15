@@ -12,7 +12,7 @@ from google.adk.agents import SequentialAgent, ParallelAgent, LlmAgent
 from google.adk.sessions import InMemorySessionService
 from google.adk import Runner
 
-from backend.app.schemas import Claim, Dossier, Finding, RetrievedContext, AgentName, Severity, Evidence
+from backend.app.schemas import Claim, Dossier, Finding, RetrievedContext, AgentName, Severity, Evidence, Provenance, MlFeature
 from backend.app.config import settings
 from backend.agents.forensics import create_forensics_agent, analyze_document_forensics
 from backend.agents.policy import create_policy_agent, analyze_policy_and_arithmetic
@@ -37,6 +37,20 @@ def create_injection_agent() -> LlmAgent:
     )
 
 
+def create_provenance_agent() -> LlmAgent:
+    """ADK Agent for tamper-evident document provenance verification (Feature A2)."""
+    return LlmAgent(
+        name="provenance_agent",
+        model=settings.GEMINI_FLASH_MODEL,
+        system_instruction=(
+            "You are FinShield's Document Provenance Verifier. Inspect cryptographic Ed25519 digital signatures "
+            "and dual invisible watermark carriers (XMP metadata and LSB letterhead steganography). Report tamper "
+            "detection deterministically. Return JSON only."
+        ),
+        output_key="provenance_findings"
+    )
+
+
 def build_adk_pipeline() -> SequentialAgent:
     """
     Constructs the canonical ADK agent hierarchy.
@@ -46,10 +60,11 @@ def build_adk_pipeline() -> SequentialAgent:
     crossref = create_crossref_agent()
     spacetime = create_spacetime_agent()
     injection = create_injection_agent()
+    provenance = create_provenance_agent()
 
     specialists = ParallelAgent(
         name="specialist_investigators",
-        sub_agents=[forensics, policy, crossref, spacetime, injection]
+        sub_agents=[forensics, policy, crossref, spacetime, injection, provenance]
     )
 
     synthesizer = create_synthesizer_agent()
@@ -79,6 +94,128 @@ def run_claims_fraud_pipeline(
         all_findings.extend(injection_findings)
         if status_callback:
             status_callback("injection", "done")
+
+    # 1b. Tamper-Evident Document Provenance Verifier (Feature A2)
+    provenance_obj: Optional[Provenance] = None
+    if settings.WATERMARK_ENABLED:
+        if status_callback:
+            status_callback("provenance", "running")
+        from backend.services.provenance import verify_document
+        from backend.app.services.storage import storage_service
+
+        for doc in claim.documents:
+            try:
+                doc_bytes = storage_service.read_file(doc.gcs_uri)
+            except Exception:
+                continue
+
+            v_res = verify_document(doc_bytes, claim_id=claim.claim_id)
+            v_status = v_res.get("status")
+
+            if v_status == "tampered":
+                diff = v_res.get("diff")
+                from backend.tools.registry import CLAIM_COMPUTED_STORE
+                comp_store = CLAIM_COMPUTED_STORE.setdefault(claim.claim_id, {})
+                if diff:
+                    comp_store["issued_amount_paise"] = diff.get("issued")
+                    comp_store["presented_amount_paise"] = diff.get("presented")
+                    if isinstance(diff.get("issued"), (int, float)):
+                        comp_store["issued_amount"] = diff.get("issued") / 100.0
+                    if isinstance(diff.get("presented"), (int, float)):
+                        comp_store["presented_amount"] = diff.get("presented") / 100.0
+                diff_str = ""
+                if diff:
+                    diff_str = f" (Issued: {diff.get('issued_display') or diff.get('issued')} vs Presented: {diff.get('presented_display') or diff.get('presented')})"
+                issued_id = v_res.get("issued_doc_id") or doc.doc_id
+                carrier_name = (v_res.get("carrier") or "carrier").upper()
+                explanation = (
+                    f"Presented document {issued_id} was issued by FinShield with signed payload but altered on page{diff_str}. "
+                    f"Cryptographic integrity failed: verified via Ed25519 digital signature over canonical semantic hash ({carrier_name} carrier)."
+                )
+                all_findings.append(Finding(
+                    finding_id=f"F-PROVENANCE-{len(all_findings)+1}",
+                    agent=AgentName.PROVENANCE,
+                    check_id="issued_doc_tampered",
+                    severity=Severity.CRITICAL,
+                    title="Issued Document Altered: Cryptographic Provenance Tampering",
+                    explanation=explanation,
+                    evidence=[Evidence(
+                        doc_id=doc.doc_id,
+                        page=1,
+                        bbox=[0.1, 0.4, 0.9, 0.6],
+                        quote=f"Presented: {diff.get('presented_display') if diff else 'altered'} (Signed genuine: {diff.get('issued_display') if diff else 'original'})",
+                        layer="metadata"
+                    )],
+                    confidence=1.0,
+                    computed_chip=f"Tampered: {diff.get('issued_display', '')} → {diff.get('presented_display', '')}" if diff else "Tampered: Hash mismatch",
+                    computed_details={
+                        "status": "tampered",
+                        "carrier": v_res.get("carrier"),
+                        "diff": diff,
+                        "issued_doc_id": issued_id
+                    }
+                ))
+                provenance_obj = Provenance(
+                    status="tampered",
+                    issued_doc_id=issued_id,
+                    detail=explanation
+                )
+                break
+            elif v_status == "unmarked":
+                issued_id = v_res.get("issued_doc_id") or doc.doc_id
+                explanation = (
+                    f"Document {issued_id} claims to be a FinShield sanction order or system-issued document, "
+                    f"but carries no cryptographic provenance mark or watermark carrier. Likely third-party forgery or stripped watermark."
+                )
+                all_findings.append(Finding(
+                    finding_id=f"F-PROVENANCE-{len(all_findings)+1}",
+                    agent=AgentName.PROVENANCE,
+                    check_id="issued_doc_unmarked_expected",
+                    severity=Severity.HIGH,
+                    title="Mandatory Provenance Mark Missing (Stripped Watermark)",
+                    explanation=explanation,
+                    evidence=[Evidence(
+                        doc_id=doc.doc_id,
+                        page=1,
+                        bbox=[0.05, 0.05, 0.95, 0.2],
+                        quote="FinShield Sanction Order header without cryptographic watermark carrier",
+                        layer="metadata"
+                    )],
+                    confidence=1.0,
+                    computed_chip="Unmarked: Missing expected watermark",
+                    computed_details={
+                        "status": "unmarked",
+                        "issued_doc_id": issued_id
+                    }
+                ))
+                if not provenance_obj or provenance_obj.status == "not_applicable":
+                    provenance_obj = Provenance(
+                        status="unmarked",
+                        issued_doc_id=issued_id,
+                        detail=explanation
+                    )
+            elif v_status == "verified":
+                if not provenance_obj or provenance_obj.status in ("not_applicable", "unmarked"):
+                    provenance_obj = Provenance(
+                        status="verified",
+                        issued_doc_id=v_res.get("issued_doc_id"),
+                        detail=v_res.get("detail", "Cryptographically verified authentic outbound document.")
+                    )
+            elif v_status == "not_applicable":
+                if not provenance_obj:
+                    provenance_obj = Provenance(
+                        status="not_applicable",
+                        detail=v_res.get("detail", "Third-party document; no provenance mark expected.")
+                    )
+
+        if not provenance_obj:
+            provenance_obj = Provenance(
+                status="not_applicable",
+                detail="Third-party document; no provenance mark expected."
+            )
+
+        if status_callback:
+            status_callback("provenance", "done")
 
     # 2. Parallel Specialist Agents
     # Forensics Agent
@@ -118,7 +255,6 @@ def run_claims_fraud_pipeline(
         status_callback("ml", "running")
     from backend.tools.bq import extract_claim_features
     from backend.tools.registry import call_tool
-    from backend.app.schemas import MlFeature, AgentName, Severity
 
     claim_features = extract_claim_features(claim)
     ml_res = call_tool(
@@ -232,7 +368,8 @@ def run_claims_fraud_pipeline(
         ml_score=ml_prob,
         top_ml_features=top_ml_features,
         timeline=timeline,
-        retrieved_context=retrieved_contexts
+        retrieved_context=retrieved_contexts,
+        provenance=provenance_obj
     )
     if status_callback:
         status_callback("synthesizer", "done")

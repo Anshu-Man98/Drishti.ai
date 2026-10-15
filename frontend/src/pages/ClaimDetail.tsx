@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert,
   FileText, Building2, User, Calendar, RefreshCw,
-  ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2
+  ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2,
+  Cpu, BarChart3
 } from 'lucide-react';
 import { Claim, Dossier } from '../types';
 import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities } from '../services/api';
@@ -119,6 +120,45 @@ export const ClaimDetail: React.FC = () => {
     if (score < 70) return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
     return 'text-rose-400 border-rose-500/30 bg-rose-500/10';
   };
+
+  const FEATURE_LABELS: Record<string, string> = {
+    amount_vs_diagnosis_median_ratio: 'Claim vs Diagnosis Median Ratio',
+    doctor_distinct_cities_24h: 'Doctor 24h Distinct Cities',
+    room_rent_vs_cap_ratio: 'Room Rent vs Policy Cap Ratio',
+    line_item_math_mismatch_pct: 'Line Item Math Mismatch %',
+    historical_duplicate_count: 'Historical Duplicate Submissions',
+    claimant_prior_claims_90d: 'Claimant Prior Claims (90d)',
+    prior_claim_count_365d: 'Prior Claims (365d)',
+    length_of_stay: 'Length of Stay (Days)',
+    length_of_stay_days: 'Length of Stay (Days)',
+    claim_amount: 'Total Claim Amount',
+    total_claimed: 'Total Claim Amount',
+    provider_claims_per_day: 'Provider Daily Claim Velocity',
+    shared_bank_account_count: 'Shared Bank Account Count',
+    days_policy_start_to_claim: 'Days Policy Start to Claim',
+    line_item_count: 'Number of Line Items',
+  };
+
+  const agentScore = dossier
+    ? Math.min(
+        100,
+        dossier.findings
+          .filter((f) => f.agent.toLowerCase() !== 'ml')
+          .reduce((sum, f) => {
+            const w =
+              f.severity === 'critical'
+                ? 50
+                : f.severity === 'high'
+                ? 30
+                : f.severity === 'medium'
+                ? 15
+                : f.severity === 'low'
+                ? 5
+                : 0;
+            return sum + w;
+          }, 0)
+      )
+    : 0;
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -250,7 +290,7 @@ export const ClaimDetail: React.FC = () => {
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-800">
                 <div className="flex items-center space-x-4">
-                  <div className={`w-16 h-16 rounded-2xl border flex flex-col items-center justify-center ${dossier ? getRiskScoreColor(dossier.risk_score) : 'border-slate-800 bg-slate-950 text-slate-500'}`}>
+                  <div className={`w-16 h-16 rounded-2xl border flex flex-col items-center justify-center shrink-0 ${dossier ? getRiskScoreColor(dossier.risk_score) : 'border-slate-800 bg-slate-950 text-slate-500'}`}>
                     <span className="text-2xl font-black font-mono leading-none">
                       {dossier ? dossier.risk_score : '--'}
                     </span>
@@ -268,12 +308,34 @@ export const ClaimDetail: React.FC = () => {
                   </div>
                 </div>
 
-                {dossier?.ml_score !== null && dossier?.ml_score !== undefined && (
-                  <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right">
-                    <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold block">BigQuery ML Score</span>
-                    <span className="text-sm font-mono font-bold text-blue-400">
-                      {(dossier.ml_score * 100).toFixed(1)}% fraud probability
-                    </span>
+                {/* Side-by-side Agent Score and BigQuery ML Score */}
+                {dossier && (
+                  <div className="flex items-center gap-3">
+                    <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right">
+                      <div className="flex items-center justify-end space-x-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                        <Layers className="w-3 h-3 text-indigo-400" />
+                        <span>Agent Score</span>
+                      </div>
+                      <div className="mt-0.5 flex items-baseline justify-end space-x-1">
+                        <span className="text-sm font-mono font-bold text-white">{agentScore}</span>
+                        <span className="text-[10px] text-slate-500">/ 100</span>
+                      </div>
+                    </div>
+
+                    <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right">
+                      <div className="flex items-center justify-end space-x-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                        <Cpu className="w-3 h-3 text-blue-400" />
+                        <span>BigQuery ML</span>
+                      </div>
+                      <div className="mt-0.5 flex items-baseline justify-end space-x-1">
+                        <span className="text-sm font-mono font-bold text-blue-400">
+                          {dossier.ml_score !== null && dossier.ml_score !== undefined
+                            ? `${(dossier.ml_score * 100).toFixed(1)}%`
+                            : '--'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">prob</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -289,17 +351,23 @@ export const ClaimDetail: React.FC = () => {
                 </p>
               </div>
 
-              {/* 4 Agent Pipeline Status Cards */}
+              {/* 5 Component Pipeline Status Cards */}
               <div className="space-y-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>ADK Multi-Agent Specialized Inspection</span>
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                    <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>ADK Multi-Agent Specialized Inspection</span>
+                  </h3>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    Hybrid: 60% Multi-Agent + 40% BQML
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {[
-                    { id: 'forensics', name: 'Forensics', role: 'Metadata / Font / ELA' },
+                    { id: 'forensics', name: 'Forensics', role: 'Metadata & Font ELA' },
                     { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
                     { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
+                    { id: 'ml', name: 'BigQuery ML', role: 'Boosted Trees & Explain' },
                     { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
                   ].map((agent) => {
                     const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
@@ -339,7 +407,7 @@ export const ClaimDetail: React.FC = () => {
                             <span className="text-blue-400">running...</span>
                           ) : isDone ? (
                             <span className={count > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                              {count > 0 ? `${count} flag${count > 1 ? 's' : ''}` : 'no flags'}
+                              {count > 0 ? `${count} flag${count > 1 ? 's' : ''}` : agent.id === 'ml' && dossier.ml_score ? `${(dossier.ml_score * 100).toFixed(0)}% prob` : 'no flags'}
                             </span>
                           ) : (
                             <span className="text-slate-500">pending</span>
@@ -350,6 +418,67 @@ export const ClaimDetail: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              {/* BigQuery ML Feature Attributions (Horizontal Bar Chart) */}
+              {dossier?.top_ml_features && dossier.top_ml_features.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                      <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+                      <span>BigQuery ML Explainability (Top Attributions)</span>
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      ML.EXPLAIN_PREDICT
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    Feature attributions driving the gradient boosted tree model's fraud probability prediction:
+                  </p>
+
+                  <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    {dossier.top_ml_features.map((feat) => {
+                      const maxAttr = Math.max(
+                        ...dossier.top_ml_features!.map((f) => Math.abs(f.attribution)),
+                        0.05
+                      );
+                      const widthPct = Math.min(100, Math.max(8, Math.round((Math.abs(feat.attribution) / maxAttr) * 100)));
+                      const isRiskDriver = feat.attribution >= 0;
+                      const label = FEATURE_LABELS[feat.feature] || feat.feature.replace(/_/g, ' ');
+
+                      return (
+                        <div key={feat.feature} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-200 font-medium">{label}</span>
+                            <div className="flex items-center space-x-2 font-mono text-[11px]">
+                              <span className={isRiskDriver ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                                {isRiskDriver ? `+${feat.attribution.toFixed(4)}` : feat.attribution.toFixed(4)}
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded ${
+                                isRiskDriver ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'
+                              }`}>
+                                {isRiskDriver ? 'risk driver' : 'reassuring baseline'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden flex">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isRiskDriver
+                                  ? feat.attribution > 0.15
+                                    ? 'bg-rose-500'
+                                    : 'bg-amber-500'
+                                  : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Findings List with Interactive Bounding Box Linkage */}
               {dossier?.findings && dossier.findings.length > 0 && (

@@ -76,10 +76,52 @@ def run_claims_fraud_pipeline(
     if status_callback:
         status_callback("crossref", "done")
 
-    # 2. Synthesizer Agent
+    # 2. BigQuery ML Scoring Step
+    if status_callback:
+        status_callback("ml", "running")
+    from backend.tools.bq import extract_claim_features, ml_score
+    from backend.app.schemas import MlFeature, AgentName, Severity
+
+    claim_features = extract_claim_features(claim)
+    ml_prob, top_ml_features_dicts = ml_score(claim_features)
+
+    top_ml_features = [
+        MlFeature(feature=it["feature"], attribution=it["attribution"])
+        for it in top_ml_features_dicts
+    ]
+
+    # Add an agent="ml" Finding when probability > 0.6 (F3 Requirement 3)
+    if ml_prob > 0.6:
+        feat_summaries = []
+        for f in top_ml_features[:3]:
+            feat_summaries.append(f"{f.feature.replace('_', ' ')} (impact: {f.attribution:+.2f})")
+
+        all_findings.append(Finding(
+            finding_id="F-ML-PREDICT-ELEVATED",
+            agent=AgentName.ML,
+            check_id="BQML_HIGH_RISK_ANOMALY",
+            severity=Severity.HIGH if ml_prob < 0.85 else Severity.CRITICAL,
+            title=f"BigQuery ML predicts elevated fraud probability ({(ml_prob*100):.1f}%)",
+            explanation=(
+                f"Boosted tree classifier predicts elevated fraud probability of {(ml_prob*100):.1f}%. "
+                f"Primary anomaly drivers: {', '.join(feat_summaries)}."
+            ),
+            evidence=[],
+            confidence=round(ml_prob, 2)
+        ))
+
+    if status_callback:
+        status_callback("ml", "done")
+
+    # 3. Synthesizer Agent
     if status_callback:
         status_callback("synthesizer", "running")
-    dossier = synthesize_dossier(claim, all_findings)
+    dossier = synthesize_dossier(
+        claim=claim,
+        all_findings=all_findings,
+        ml_score=ml_prob,
+        top_ml_features=top_ml_features
+    )
     if status_callback:
         status_callback("synthesizer", "done")
 

@@ -14,8 +14,8 @@ Verdict:
   - reject: >= 70
 """
 
-from typing import List, Tuple
-from backend.app.schemas import Finding, Severity, Verdict
+from typing import List, Tuple, Optional
+from backend.app.schemas import Finding, Severity, Verdict, AgentName
 
 SEVERITY_WEIGHTS = {
     Severity.INFO: 0,
@@ -26,12 +26,26 @@ SEVERITY_WEIGHTS = {
 }
 
 
-def score_findings(findings: List[Finding]) -> Tuple[int, Verdict]:
+def score_findings(findings: List[Finding], ml_probability: Optional[float] = None) -> Tuple[int, Verdict]:
     """
-    Computes deterministic risk score (0-100) and verdict based on finding severities.
+    Computes deterministic risk score (0-100) and verdict based on finding severities and ML probability.
+    Hybrid formula:
+      final_risk_score = round(0.6 * agent_score + 40 * ml_probability)
     """
-    raw_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings)
-    risk_score = min(100, max(0, raw_score))
+    # Compute specialist agent score excluding ML finding to prevent double-counting
+    raw_agent_score = sum(
+        SEVERITY_WEIGHTS.get(f.severity, 0)
+        for f in findings
+        if f.agent != AgentName.ML
+    )
+    agent_score = min(100, max(0, raw_agent_score))
+
+    if ml_probability is not None:
+        risk_score = min(100, max(0, round(0.6 * agent_score + 40 * float(ml_probability))))
+    else:
+        # When ML probability is not passed directly, sum all findings
+        total_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings)
+        risk_score = min(100, max(0, total_score))
 
     if risk_score < 30:
         verdict = Verdict.APPROVE
@@ -41,3 +55,4 @@ def score_findings(findings: List[Finding]) -> Tuple[int, Verdict]:
         verdict = Verdict.REJECT
 
     return risk_score, verdict
+

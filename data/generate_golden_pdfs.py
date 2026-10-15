@@ -10,6 +10,7 @@ G6 - Forged bill (Total row edited with Courier-Bold font, PDF producer set to P
 """
 
 import os
+import sys
 import io
 import json
 from datetime import datetime, timedelta
@@ -22,6 +23,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
 import pypdf
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 DEMO_DIR = Path(__file__).resolve().parent / "demo"
 DEMO_DIR.mkdir(parents=True, exist_ok=True)
@@ -643,6 +648,7 @@ def generate_all_golden():
 
     with open(g8_file, "wb") as f_g8:
         writer_g8.write(f_g8)
+    print(f"📄 Created Golden PDF: {g8_file.name}")
 
     ground_truth["G8"] = {
         "file": "G8_altered_approval.pdf",

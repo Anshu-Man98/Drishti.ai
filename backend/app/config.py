@@ -1,6 +1,9 @@
 import os
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_DATA_DIR = str(Path(__file__).resolve().parent.parent.parent / "data")
 
 
 class Settings(BaseSettings):
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     # Feature Flags
     SYNTHID_ENABLED: bool = os.getenv("SYNTHID_ENABLED", "false").lower() == "true"
     LOCAL_FALLBACK: bool = os.getenv("LOCAL_FALLBACK", "true").lower() == "true"
-    LOCAL_DATA_DIR: str = os.getenv("LOCAL_DATA_DIR", "/Users/anshu/Documents/Drishti.ai/data")
+    LOCAL_DATA_DIR: str = os.getenv("LOCAL_DATA_DIR", _DEFAULT_DATA_DIR)
     INJECTION_CHECK_ENABLED: bool = os.getenv("INJECTION_CHECK_ENABLED", "true").lower() == "true"
     WATERMARK_ENABLED: bool = os.getenv("WATERMARK_ENABLED", "true").lower() == "true"
     RAG_PATTERNS_ENABLED: bool = os.getenv("RAG_PATTERNS_ENABLED", "true").lower() == "true"

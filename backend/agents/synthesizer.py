@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName, Severity
+from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName, Severity, RetrievedContext
 from backend.app.config import settings
 from backend.tools.registry import call_tool, get_all_computed_values, score_findings
 from backend.tools.grounding import assert_numbers_grounded, sanitize_text_grounding
@@ -22,7 +22,8 @@ def synthesize_dossier(
     all_findings: List[Finding],
     ml_score: Optional[float] = None,
     top_ml_features: Optional[List[Any]] = None,
-    timeline: Optional[List[TimelineEvent]] = None
+    timeline: Optional[List[TimelineEvent]] = None,
+    retrieved_context: Optional[List[RetrievedContext]] = None
 ) -> Dossier:
     """
     Synthesizes all specialist agent findings and BigQuery ML probability into a final Dossier.
@@ -98,6 +99,12 @@ def synthesize_dossier(
         else:
             summary += "Minor observations noted; overall claim within acceptable risk thresholds."
 
+        # RAG Pattern Corroboration (Feature A4)
+        if retrieved_context:
+            pat = next((rc for rc in retrieved_context if rc.source == "pattern"), None)
+            if pat:
+                summary += f" Corroborating context: consistent with known historical fraud pattern [{pat.ref_id}: {pat.title}]."
+
     # Enforce Numeric Grounding Guard on Summary and Finding Explanations
     computed_store = get_all_computed_values(claim.claim_id)
     sanitized_summary, ungrounded_summary = sanitize_text_grounding(summary, computed_store, claim)
@@ -139,6 +146,7 @@ def synthesize_dossier(
         findings=all_findings,
         top_ml_features=top_ml_features,
         timeline=timeline,
+        retrieved_context=retrieved_context,
         created_at=datetime.utcnow()
     )
 

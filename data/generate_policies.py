@@ -190,6 +190,86 @@ def generate_policies():
         sections=optima_sections
     )
 
+    # 3. Real IRDAI Arogya Sanjeevani Standard Health Policy
+    REAL_POLICIES_DIR = Path(__file__).resolve().parent / "policies" / "real"
+    REAL_POLICIES_DIR.mkdir(parents=True, exist_ok=True)
+
+    arogya_sections = [
+        {
+            "heading": "Section 3: Coverage & Eligible In-Patient Hospitalization Expenses",
+            "clauses": [
+                {
+                    "id": "Clause 3.1",
+                    "title": "Room, Boarding and Nursing Expenses",
+                    "text": "Room, Boarding and Nursing Expenses incurred during hospitalization: Up to 2% of Sum Insured subject to a maximum of ₹5,000/- per day. For normal or shared ward, up to ₹3,000/- per day. Any excess over the eligible room category shall result in proportional deduction across associated medical expenses."
+                },
+                {
+                    "id": "Clause 3.2",
+                    "title": "Intensive Care Unit (ICU) / ICCU Expenses",
+                    "text": "Intensive Care Unit (ICU) / Intensive Cardiac Care Unit (ICCU) expenses: Up to 5% of Sum Insured subject to a maximum of ₹10,000/- per day during stay in ICU."
+                },
+                {
+                    "id": "Clause 3.3",
+                    "title": "Pre-Hospitalization Medical Expenses",
+                    "text": "Medical expenses incurred for a period of 30 days prior to the date of hospitalization are covered, provided that such expenses are directly related to the condition for which hospitalization occurred."
+                },
+                {
+                    "id": "Clause 3.4",
+                    "title": "Post-Hospitalization Medical Expenses",
+                    "text": "Medical expenses incurred for a period of 60 days following discharge from hospital are covered, provided that such expenses are directly related to the condition for which hospitalization occurred."
+                }
+            ]
+        },
+        {
+            "heading": "Section 4: Waiting Periods & Specific Ailment Exclusions",
+            "clauses": [
+                {
+                    "id": "Clause 4.1",
+                    "title": "Initial Waiting Period (30 Days)",
+                    "text": "Expenses related to the treatment of any illness within 30 days from the first policy commencement date shall be excluded except claims arising from an accidental injury."
+                },
+                {
+                    "id": "Clause 4.2",
+                    "title": "Specific Illness Waiting Period (24 Months)",
+                    "text": "A waiting period of 24 months shall apply for treatments of Benign ENT disorders, Cholecystectomy, Calculus diseases of Gallbladder and Urogenital tract, Hernia, Hydrocele, Piles, Fistula, and Cataract."
+                }
+            ]
+        },
+        {
+            "heading": "Section 5: Co-Payment & Inadmissible Deductions",
+            "clauses": [
+                {
+                    "id": "Clause 5.1",
+                    "title": "Mandatory Co-Pay",
+                    "text": "A fixed co-pay of 5% is applicable on each and every admissible claim amount under this standard health insurance policy."
+                }
+            ]
+        },
+        {
+            "heading": "Section 6: Specific Treatment Sub-Limits",
+            "clauses": [
+                {
+                    "id": "Clause 6.1",
+                    "title": "Cataract Surgical Expense Sub-Limit",
+                    "text": "Cataract treatment is subject to a sub-limit of 25% of Sum Insured or ₹40,000/- per eye, whichever is lower, during one policy period."
+                },
+                {
+                    "id": "Clause 6.2",
+                    "title": "Modern Treatment Methods and Advanced Surgeries",
+                    "text": "Modern treatments such as uterine artery embolization, balloon sinuplasty, and robotic surgeries are covered up to 50% of Sum Insured subject to a maximum of ₹2,50,000/- per policy period."
+                }
+            ]
+        }
+    ]
+    create_policy_pdf(
+        filename=REAL_POLICIES_DIR / "arogya_sanjeevani_irdai.pdf",
+        title="Arogya Sanjeevani Policy (Standard Health Policy, IRDAI)",
+        insurer="IRDAI Standard Health Product / Universal Inter-Insurer Form",
+        policy_code="AROGYA-SANJEEVANI-STD",
+        sections=arogya_sections
+    )
+
 
 if __name__ == "__main__":
     generate_policies()
+

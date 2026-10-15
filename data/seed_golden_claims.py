@@ -208,6 +208,34 @@ GOLDEN_CLAIMS = [
             {"description": "Consultant Surgeon & Anesthetist Visit Fees", "qty": 3, "unit_price": 2000.0, "amount": 6000.0},
             {"description": "Post-Op Pharmacy & Antibiotic Consumables", "qty": 1, "unit_price": 8000.0, "amount": 8000.0}
         ]
+    },
+    {
+        "key": "G9",
+        "file": "G9_pattern_match.pdf",
+        "policy_id": "POL-AROGYA-99120",
+        "insurer_id": "INS-STAR",
+        "claimant_id": "CLMNT-5501",
+        "claimant_name": "Kavita Rao",
+        "claimant_phone": "+91-9849055012",
+        "bank_account_hash": "bank_ring_shared_hash_9999",
+        "hospital_id": "HOSP-110",
+        "hospital_name": "Apollo Hospitals",
+        "city": "Hyderabad",
+        "lat": 17.4265,
+        "lng": 78.4144,
+        "doctor_id": "DOC-2033",
+        "admission_ts": "2026-05-10T10:00:00",
+        "discharge_ts": "2026-05-13T14:00:00",
+        "diagnosis_code": "K80.2",
+        "subtotal": 71000.0,
+        "tax": 3550.0,
+        "total_claimed": 74550.0,
+        "line_items": [
+            {"description": "Semi-Private Room Rent (3 days)", "qty": 3, "unit_price": 4000.0, "amount": 12000.0},
+            {"description": "Laparoscopic Cholecystectomy Procedure", "qty": 1, "unit_price": 45000.0, "amount": 45000.0},
+            {"description": "Consultant Surgeon & Anesthetist Visit Fees", "qty": 3, "unit_price": 2000.0, "amount": 6000.0},
+            {"description": "Post-Op Pharmacy & Surgical Consumables", "qty": 1, "unit_price": 8000.0, "amount": 8000.0}
+        ]
     }
 ]
 

@@ -610,10 +610,50 @@ def generate_all_golden():
         "total_claimed": 74550.0
     }
 
+    # G9: A claim whose fraud signature closely matches a known past fraud pattern,
+    # with nothing arithmetically or forensically wrong on the document itself (Feature A4).
+    g9_file = DEMO_DIR / "G9_pattern_match.pdf"
+    g9_items = [
+        {"desc": "Semi-Private Room Rent (3 days)", "qty": 3, "rate": 4000.0, "amount": 12000.0},
+        {"desc": "Laparoscopic Cholecystectomy Procedure", "qty": 1, "rate": 45000.0, "amount": 45000.0},
+        {"desc": "Consultant Surgeon & Anesthetist Visit Fees", "qty": 3, "rate": 2000.0, "amount": 6000.0},
+        {"desc": "Post-Op Pharmacy & Surgical Consumables", "qty": 1, "rate": 8000.0, "amount": 8000.0}
+    ]
+    create_invoice_pdf(
+        filename=g9_file,
+        hospital_name="Apollo Hospitals",
+        hospital_city="Hyderabad",
+        hospital_address="Jubilee Hills, Film Nagar",
+        bill_no="BILL-HYD-2026-88019",
+        bill_date="13-May-2026",
+        patient_name="Kavita Rao",
+        patient_id="UHID-HYD-55012",
+        policy_no="POL-AROGYA-99120",
+        insurer_name="Star Health & Allied Insurance",
+        doctor_name="Dr. K. Srinivas",
+        doctor_id="DOC-2033",
+        admission_date="10-May-2026 10:00 AM",
+        discharge_date="13-May-2026 02:00 PM",
+        diagnosis="K80.2 - Calculus of Gallbladder (Cholecystectomy)",
+        items=g9_items,
+        printed_subtotal=71000.0,
+        printed_tax=3550.0,
+        printed_total=74550.0,
+        forged_total_row=False
+    )
+    ground_truth["G9"] = {
+        "file": "G9_pattern_match.pdf",
+        "expected_verdict": "review",
+        "expected_risk_category": "medium",
+        "primary_flag": "matches_known_pattern",
+        "details": "Document is 100% clean forensically and arithmetically, but matches known historical fraud pattern (Mule account ring / policy breach)",
+        "total_claimed": 74550.0
+    }
+
     with open(DEMO_DIR / "ground_truth.json", "w") as f:
         json.dump(ground_truth, f, indent=2)
 
-    print("✅ All 7 Golden Demo PDFs and ground_truth.json generated successfully!")
+    print("✅ All Golden Demo PDFs and ground_truth.json generated successfully!")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import {
   ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert,
   FileText, Building2, User, Calendar, RefreshCw,
   ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2,
-  Cpu, BarChart3, MessageSquare, Compass
+  Cpu, BarChart3, MessageSquare, Compass, BookOpen, Search, FileCheck
 } from 'lucide-react';
 import { Claim, Dossier } from '../types';
 import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities } from '../services/api';
@@ -393,7 +393,7 @@ export const ClaimDetail: React.FC = () => {
                     Hybrid: 60% Multi-Agent + 40% BQML
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
                   {[
                     { id: 'forensics', name: 'Forensics', role: 'Metadata & Font ELA' },
                     { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
@@ -401,6 +401,7 @@ export const ClaimDetail: React.FC = () => {
                     { id: 'spacetime', name: 'Spacetime', role: 'Transit Feasibility' },
                     { id: 'ml', name: 'BigQuery ML', role: 'Boosted Trees & Explain' },
                     { id: 'injection', name: 'Prompt Shield', role: 'Poisoned-Bill Defense' },
+                    { id: 'rag', name: 'Pattern RAG', role: 'Dual-Corpus Retrieval' },
                   ].map((agent) => {
                     const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
                     const count = agentFindings.length;
@@ -555,6 +556,18 @@ export const ClaimDetail: React.FC = () => {
                                     <span>Attack on the AI reviewer</span>
                                   </span>
                                 )}
+                                {f.agent === 'rag' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1">
+                                    <BookOpen className="w-3 h-3 text-amber-400" />
+                                    <span>Corroborating Pattern</span>
+                                  </span>
+                                )}
+                                {f.agent === 'policy' && f.evidence?.some((e) => e.layer === 'retrieved') && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center space-x-1">
+                                    <BookOpen className="w-3 h-3 text-sky-400" />
+                                    <span>Clause Grounded</span>
+                                  </span>
+                                )}
                                 <span
                                   className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border shrink-0 ${
                                     f.severity === 'critical'
@@ -625,6 +638,120 @@ export const ClaimDetail: React.FC = () => {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Evidence & Grounding (Two-Corpus RAG) Panel */}
+              {dossier && (
+                <div className="space-y-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <BookOpen className="w-4 h-4 text-sky-400" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                        Evidence & Grounding (Two-Corpus RAG)
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                      Policy Clauses & Historical Patterns
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Corpus 1: Policy Grounding */}
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
+                          <FileCheck className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Corpus 1: Policy Basis (IRDAI / Terms)</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          Clause Grounded
+                        </span>
+                      </div>
+
+                      {dossier.retrieved_context?.some((c) => c.source === 'policy') ? (
+                        <div className="space-y-2.5">
+                          {dossier.retrieved_context
+                            .filter((c) => c.source === 'policy')
+                            .map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold font-mono text-sky-300">
+                                    {item.ref_id}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-400">
+                                    {claim.policy_id.includes('IRDAI') || claim.policy_id.includes('AROGYA')
+                                      ? 'IRDAI Arogya Sanjeevani (Real)'
+                                      : 'Insurer Policy Schedule'}
+                                  </span>
+                                </div>
+                                <p className="text-xs font-medium text-slate-200">{item.title}</p>
+                                <blockquote className="text-[11px] text-slate-400 italic bg-slate-950/70 p-2 rounded border-l-2 border-sky-500">
+                                  "{item.snippet}"
+                                </blockquote>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className="py-6 text-center text-xs text-slate-500">
+                          No policy caps or statutory clause breaches identified.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Corpus 2: Historical Fraud Patterns */}
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
+                          <Search className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Corpus 2: Similar Past Patterns</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          Corroboration Only
+                        </span>
+                      </div>
+
+                      {dossier.retrieved_context?.some((c) => c.source === 'pattern') ? (
+                        <div className="space-y-2.5">
+                          {dossier.retrieved_context
+                            .filter((c) => c.source === 'pattern')
+                            .map((p, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold font-mono text-amber-300">
+                                    {p.ref_id}
+                                  </span>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                    {Math.round(p.score * 100)}% match
+                                  </span>
+                                </div>
+                                <p className="text-xs font-medium text-slate-200">{p.title}</p>
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                  {p.snippet}
+                                </p>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className="py-6 text-center text-xs text-slate-500">
+                          No matching historical fraud patterns found above similarity threshold (≥0.50).
+                        </div>
+                      )}
+
+                      <div className="p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[10px] text-amber-400/90 flex items-start space-x-2">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                        <span className="leading-relaxed">
+                          <strong className="font-semibold text-amber-300">Notice:</strong> Pattern cards are generated from synthetic data only. Retrieved patterns provide investigative corroboration and cannot by themselves reject a claim.
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

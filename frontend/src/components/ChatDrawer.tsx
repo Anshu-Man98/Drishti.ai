@@ -37,12 +37,28 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Map aliases like F1, F2 to actual finding_id
+  // Map aliases like F1, F2, Clause 3.1, PAT-XXX to actual finding_id
   const aliasMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     findings.forEach((f, idx) => {
       map[`F${idx + 1}`] = f.finding_id;
+      map[`f${idx + 1}`] = f.finding_id;
       map[f.finding_id] = f.finding_id;
+      if (f.check_id) {
+        map[f.check_id] = f.finding_id;
+      }
+      f.evidence?.forEach((ev) => {
+        if (ev.doc_id) {
+          map[ev.doc_id] = f.finding_id;
+          map[ev.doc_id.toLowerCase()] = f.finding_id;
+        }
+      });
+      if (f.agent === 'rag') {
+        map['rag'] = f.finding_id;
+      }
+      if (f.agent === 'policy') {
+        map['policy'] = f.finding_id;
+      }
     });
     return map;
   }, [findings]);
@@ -120,16 +136,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   };
 
   const renderContentWithCitations = (content: string) => {
-    // Regex matches [F1], [F2], or [F-ARITH-TOTAL], etc.
-    const parts = content.split(/(\[(?:F\d+|F-[A-Z0-9_\-]+)\])/g);
+    // Regex matches [F1], [F2], [F-ARITH-TOTAL], [Clause 3.1], [PAT-SHARED_BAN-06], etc.
+    const parts = content.split(/(\[(?:F\d+|F-[A-Z0-9_\-]+|Clause\s+\d+\.\d+|PAT-[A-Z0-9_\-]+)\])/gi);
 
     return (
       <span>
         {parts.map((part, i) => {
-          const match = part.match(/^\[(F\d+|F-[A-Z0-9_\-]+)\]$/);
+          const match = part.match(/^\[(F\d+|F-[A-Z0-9_\-]+|Clause\s+\d+\.\d+|PAT-[A-Z0-9_\-]+)\]$/i);
           if (match) {
             const rawTag = match[1];
-            const resolvedFindingId = aliasMap[rawTag] || rawTag;
+            const resolvedFindingId = aliasMap[rawTag] || aliasMap[rawTag.toLowerCase()] || rawTag;
             const isTargeted = resolvedFindingId === activeFindingId;
 
             return (
@@ -254,7 +270,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         title={ev.quote ? `Quote: ${ev.quote}` : undefined}
                       >
                         <Crosshair className="w-2.5 h-2.5 text-sky-400" />
-                        <span>Page {ev.page} {ev.bbox ? `[Citation Box]` : ''}</span>
+                        <span>
+                          {ev.layer === 'retrieved'
+                            ? `Retrieved: ${ev.doc_id}`
+                            : `Page ${ev.page} ${ev.bbox ? `[Citation Box]` : ''}`}
+                        </span>
                       </span>
                     ))}
                   </div>

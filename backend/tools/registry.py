@@ -279,13 +279,21 @@ def check_policy_caps(
                             f"(Total inadmissible room rent: ₹{to_rupees(total_excess_paise):,.2f}). "
                             f"Cited: {room_cap_rule['clause_id']} — {room_cap_rule['description']}"
                         ),
-                        evidence=[Evidence(
-                            doc_id=doc_id,
-                            page=item.get("page", 1),
-                            bbox=item.get("bbox"),
-                            quote=f"{item.get('description')}: billed ₹{unit_price}/day vs cap ₹{room_cap_limit}/day",
-                            layer="visible"
-                        )],
+                        evidence=[
+                            Evidence(
+                                doc_id=doc_id,
+                                page=item.get("page", 1),
+                                bbox=item.get("bbox"),
+                                quote=f"{item.get('description')}: billed ₹{unit_price}/day vs cap ₹{room_cap_limit}/day",
+                                layer="visible"
+                            ),
+                            Evidence(
+                                doc_id=room_cap_rule["clause_id"],
+                                page=room_cap_rule.get("page", 1),
+                                quote=room_cap_rule.get("text", room_cap_rule["description"]),
+                                layer="retrieved"
+                            )
+                        ],
                         confidence=1.0,
                         computed_chip=chip,
                         computed_details=computed

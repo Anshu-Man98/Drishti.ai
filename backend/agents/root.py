@@ -12,7 +12,7 @@ from google.adk.agents import SequentialAgent, ParallelAgent, LlmAgent
 from google.adk.sessions import InMemorySessionService
 from google.adk import Runner
 
-from backend.app.schemas import Claim, Dossier, Finding
+from backend.app.schemas import Claim, Dossier, Finding, RetrievedContext, AgentName, Severity, Evidence
 from backend.app.config import settings
 from backend.agents.forensics import create_forensics_agent, analyze_document_forensics
 from backend.agents.policy import create_policy_agent, analyze_policy_and_arithmetic
@@ -160,6 +160,69 @@ def run_claims_fraud_pipeline(
     if status_callback:
         status_callback("ml", "done")
 
+    # 2b. Pattern Retrieval & Policy Context Step (Feature A4: Two-Corpus RAG)
+    # Runs AFTER ParallelAgent and BEFORE Synthesizer
+    retrieved_contexts = []
+
+    # First, collect policy citations from findings into retrieved_context
+    for f in all_findings:
+        if f.agent == AgentName.POLICY:
+            for ev in f.evidence:
+                if ev.layer == "retrieved":
+                    retrieved_contexts.append(RetrievedContext(
+                        source="policy",
+                        ref_id=ev.doc_id,
+                        title=f.title,
+                        snippet=ev.quote or f.explanation,
+                        score=1.0
+                    ))
+
+    if settings.RAG_PATTERNS_ENABLED:
+        if status_callback:
+            status_callback("rag", "running")
+        from backend.tools.pattern_tools import build_claim_fingerprint, search_patterns
+        fingerprint = build_claim_fingerprint(claim, all_findings)
+        matched_patterns = search_patterns(fingerprint, k=3, min_score=0.5)
+
+        for p in matched_patterns:
+            retrieved_contexts.append(RetrievedContext(
+                source="pattern",
+                ref_id=p["pattern_id"],
+                title=p["title"],
+                snippet=f"{p['title']} — Signature: {p['signature']}",
+                score=p["score"]
+            ))
+
+        # Synthesizer may emit at most one Finding {agent: "rag", check_id: "matches_known_pattern"}
+        if matched_patterns:
+            best_pattern = matched_patterns[0]
+            all_findings.append(Finding(
+                finding_id=f"F-RAG-PATTERN-1",
+                agent=AgentName.RAG,
+                check_id="matches_known_pattern",
+                severity=Severity.LOW,  # Hard capped at low by guardrail
+                title=f"Corroborating Historical Fraud Pattern ({best_pattern['pattern_id']})",
+                explanation=(
+                    f"Claim matches historical fraud pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
+                    f"Observed signature: {best_pattern['signature']}. Corroborating context only, not primary proof."
+                ),
+                evidence=[Evidence(
+                    doc_id=best_pattern["pattern_id"],
+                    quote=best_pattern["narrative"],
+                    layer="retrieved"
+                )],
+                confidence=best_pattern["score"],
+                computed_chip=f"Pattern: {best_pattern['pattern_id']} ({int(best_pattern['score']*100)}% match)",
+                computed_details={
+                    "pattern_id": best_pattern["pattern_id"],
+                    "fraud_type": best_pattern["fraud_type"],
+                    "match_score": best_pattern["score"]
+                }
+            ))
+
+        if status_callback:
+            status_callback("rag", "done")
+
     # 3. Synthesizer Agent
     if status_callback:
         status_callback("synthesizer", "running")
@@ -168,7 +231,8 @@ def run_claims_fraud_pipeline(
         all_findings=all_findings,
         ml_score=ml_prob,
         top_ml_features=top_ml_features,
-        timeline=timeline
+        timeline=timeline,
+        retrieved_context=retrieved_contexts
     )
     if status_callback:
         status_callback("synthesizer", "done")

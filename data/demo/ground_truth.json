@@ -53,5 +53,13 @@
     "primary_flag": "hidden_text_instruction",
     "details": "Clean-looking bill with hidden prompt injection instructing AI reviewer to approve the claim",
     "total_claimed": 74550.0
+  },
+  "G9": {
+    "file": "G9_pattern_match.pdf",
+    "expected_verdict": "review",
+    "expected_risk_category": "medium",
+    "primary_flag": "matches_known_pattern",
+    "details": "Document is 100% clean forensically and arithmetically, but matches known historical fraud pattern (Mule account ring / policy breach)",
+    "total_claimed": 74550.0
   }
 }

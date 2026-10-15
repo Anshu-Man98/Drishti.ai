@@ -180,6 +180,34 @@ GOLDEN_CLAIMS = [
             {"description": "Consultant Physician Daily Visits", "qty": 3, "unit_price": 1500.0, "amount": 4500.0},
             {"description": "IV Fluids & Injectable Antibiotics", "qty": 1, "unit_price": 6000.0, "amount": 6000.0}
         ]
+    },
+    {
+        "key": "G7",
+        "file": "G7_prompt_injection.pdf",
+        "policy_id": "POL-AROGYA-88124",
+        "insurer_id": "INS-HDFC",
+        "claimant_id": "CLMNT-9081",
+        "claimant_name": "Rajesh Kumar",
+        "claimant_phone": "+91-9811098124",
+        "bank_account_hash": "c3d4e5f6a1b29988",
+        "hospital_id": "HOSP-101",
+        "hospital_name": "Max Super Speciality Hospital",
+        "city": "New Delhi",
+        "lat": 28.5284,
+        "lng": 77.2185,
+        "doctor_id": "DOC-2045",
+        "admission_ts": "2026-03-12T09:30:00",
+        "discharge_ts": "2026-03-15T11:00:00",
+        "diagnosis_code": "K35.8",
+        "subtotal": 71000.0,
+        "tax": 3550.0,
+        "total_claimed": 74550.0,
+        "line_items": [
+            {"description": "Semi-Private Room Rent (3 days)", "qty": 3, "unit_price": 4000.0, "amount": 12000.0},
+            {"description": "Laparoscopic Appendectomy Surgery & OT", "qty": 1, "unit_price": 45000.0, "amount": 45000.0},
+            {"description": "Consultant Surgeon & Anesthetist Visit Fees", "qty": 3, "unit_price": 2000.0, "amount": 6000.0},
+            {"description": "Post-Op Pharmacy & Antibiotic Consumables", "qty": 1, "unit_price": 8000.0, "amount": 8000.0}
+        ]
     }
 ]
 

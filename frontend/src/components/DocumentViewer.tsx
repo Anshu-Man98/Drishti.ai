@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight,
-  Eye, AlertTriangle, Layers, FileText, CheckCircle2
+  Eye, AlertTriangle, Layers, FileText, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import { Finding, ExtractedEntity, Severity } from '../types';
 import { getClaimPageImageUrl } from '../services/api';
@@ -36,6 +36,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllFields, setShowAllFields] = useState(false);
+  const [revealHiddenLayer, setRevealHiddenLayer] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -57,11 +58,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const totalPages = Math.max(1, pageCount);
 
+  const hasHiddenInjections = findings.some((f) =>
+    (f.evidence || []).some((ev) => ev.layer === 'hidden')
+  );
+
   // Collect boxes for current page
-  // 1. Finding evidence boxes
+  // 1. Finding evidence boxes (visible layer)
   const findingBoxes = findings.flatMap((f) => {
     return (f.evidence || [])
-      .filter((ev) => (ev.page || 1) === currentPage && ev.bbox && ev.bbox.length === 4)
+      .filter((ev) => (ev.page || 1) === currentPage && ev.bbox && ev.bbox.length === 4 && ev.layer !== 'hidden')
       .map((ev, evIdx) => ({
         id: `${f.finding_id}-${evIdx}`,
         findingId: f.finding_id,
@@ -74,6 +79,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         isActive: f.finding_id === activeFindingId
       }));
   });
+
+  // 1b. Planted hidden injection boxes (shown only when revealHiddenLayer is toggled)
+  const hiddenBoxes = revealHiddenLayer
+    ? findings.flatMap((f) => {
+        return (f.evidence || [])
+          .filter((ev) => (ev.page || 1) === currentPage && ev.bbox && ev.bbox.length === 4 && ev.layer === 'hidden')
+          .map((ev, evIdx) => ({
+            id: `hidden-${f.finding_id}-${evIdx}`,
+            findingId: f.finding_id,
+            isFinding: true,
+            bbox: ev.bbox as [number, number, number, number],
+            severity: f.severity,
+            title: `Quarantined Injection: ${f.title}`,
+            subtitle: ev.quote || f.explanation,
+            confidence: f.confidence,
+            isActive: f.finding_id === activeFindingId
+          }));
+      })
+    : [];
 
   // 2. Extracted entity boxes (if showAllFields is enabled)
   const entityBoxes = showAllFields
@@ -197,6 +221,27 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">
               {showAllFields ? entityBoxes.length + findingBoxes.length : findingBoxes.length}
             </span>
+          </button>
+
+          {/* Reveal Hidden Layer Toggle Button (Feature A1) */}
+          <button
+            onClick={() => setRevealHiddenLayer(!revealHiddenLayer)}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all ${
+              revealHiddenLayer
+                ? 'bg-fuchsia-600/25 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/20 ring-1 ring-fuchsia-500'
+                : hasHiddenInjections
+                ? 'bg-fuchsia-950/40 border-fuchsia-800/80 text-fuchsia-400 hover:bg-fuchsia-900/40 animate-pulse'
+                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Toggle revealing hidden text prompt injections buried in document layers"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400" />
+            <span>{revealHiddenLayer ? 'Hidden Layer Revealed' : 'Reveal Hidden Layer'}</span>
+            {hasHiddenInjections && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-fuchsia-500/30 text-fuchsia-200 font-mono font-bold">
+                ALERT
+              </span>
+            )}
           </button>
 
           {/* Zoom Buttons */}
@@ -332,6 +377,63 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                     }
                     onMouseLeave={() => setHovered(null)}
                   />
+                );
+              })}
+
+              {/* 3. Planted Hidden Injection Boxes (Magenta at Real Coordinates - Feature A1) */}
+              {hiddenBoxes.map((box) => {
+                const [x0, y0, x1, y1] = box.bbox;
+                const x = x0 * 1000;
+                const y = y0 * 1000;
+                const w = Math.max(90, (x1 - x0) * 1000);
+                const h = Math.max(22, (y1 - y0) * 1000);
+
+                return (
+                  <g key={box.id} className="pointer-events-auto">
+                    <rect
+                      x={x}
+                      y={y}
+                      width={w}
+                      height={h}
+                      fill="rgba(217, 70, 239, 0.32)"
+                      stroke="#d946ef"
+                      strokeWidth="3"
+                      strokeDasharray="6 3"
+                      className="drop-shadow-[0_0_12px_rgba(217,70,239,0.85)] animate-pulse cursor-pointer"
+                      onClick={() => {
+                        if (box.findingId && onSelectFinding) {
+                          onSelectFinding(box.findingId);
+                        }
+                      }}
+                      onMouseEnter={() =>
+                        setHovered({
+                          id: box.id,
+                          title: "🚨 Planted Prompt Injection (Quarantined)",
+                          subtitle: box.subtitle,
+                          severity: "critical",
+                          confidence: 1.0,
+                          source: "injection_detector",
+                          x: x0,
+                          y: y0
+                        })
+                      }
+                      onMouseLeave={() => setHovered(null)}
+                    />
+                    <foreignObject
+                      x={Math.max(10, Math.min(x, 600))}
+                      y={Math.max(10, y - 65)}
+                      width={420}
+                      height={65}
+                      className="overflow-visible pointer-events-none"
+                    >
+                      <div className="bg-fuchsia-950/95 text-fuchsia-100 border-2 border-fuchsia-400 p-2 rounded-lg text-[10px] font-mono leading-tight shadow-2xl backdrop-blur-md">
+                        <span className="text-[9px] font-bold uppercase text-fuchsia-300 block mb-0.5 tracking-wider">
+                          🚨 Planted Instruction Buried at Coordinates:
+                        </span>
+                        <p className="line-clamp-2 font-semibold text-white">"{box.subtitle}"</p>
+                      </div>
+                    </foreignObject>
+                  </g>
                 );
               })}
             </svg>

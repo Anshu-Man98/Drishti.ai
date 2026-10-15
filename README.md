@@ -304,6 +304,66 @@ Numeric Grounding Guard (`backend/tools/grounding.py`)
 
 ---
 
+## 🛡️ Feature A1: Poisoned-Bill Detector (Hidden Text & Prompt Injection Defense)
+
+FinShield defends insurance claims AI systems from adversarial prompt injection attacks concealed in claimant-submitted PDF documents:
+
+```text
+Claimant PDF (e.g. G7 Clean-looking bill with planted instructions)
+       │
+       ▼
+Deterministic Layer Separation (`backend/tools/injection_tools.py`)
+  ├── Walking PDF Content Stream (pypdf + pdfplumber)
+  │     ├── Render Mode 3 (`Tr 3`, invisible text)
+  │     ├── Fill colour delta <= 0.08 of background (white-on-white)
+  │     ├── Micro-fonts (< 1.5pt)
+  │     ├── Out-of-bounds CropBox & opaque whiteout occlusion
+  │     └── Unicode zero-width (\u200b, \u200c, \u200d, \ufeff) & bidi smuggling
+  │
+  ├── Visible OCR Ground Truth (`ocr_visible_text` via Document AI)
+  │
+  ├── Legitimate OCR Layer Filter (`diff_layers` with token Jaccard >= 0.75)
+  │     └── Scanned PDFs with invisible OCR layer are classified as benign `ocr_layer`
+  │
+  └── Strict Air-Gapped Sanitization (`extract_claim` in `backend/tools/docai.py`)
+        └── Malicious text is QUARANTINED into memory store; NEVER enters Claim or LLM prompts
+       │
+       ▼
+Sandboxed Model Classifier (`classify_hidden_text`)
+  ├── Input wrapped in untrusted container: `<untrusted_extracted_text>...</untrusted_extracted_text>`
+  ├── Deterministic Severity Mapping in Code:
+  │     ├── instruction_to_ai -> CRITICAL ("Hidden instruction aimed at an automated reviewer")
+  │     ├── keyword_stuffing  -> MEDIUM
+  │     ├── unknown           -> LOW
+  │     └── ocr_layer / benign_metadata -> NO FINDING
+  └── Direct Rejection Override: Risk Score >= 85, Verdict -> REJECT
+       │
+       ▼
+Interactive Frontend Defense UI (`DocumentViewer.tsx` & `ClaimDetail.tsx`)
+  ├── Toolbar Toggle: "Reveal hidden layer"
+  ├── Renders planted text at exact coordinates in high-contrast magenta (`#d946ef`) with dashed outline
+  ├── Finding Card Badge: "Attack on the AI reviewer"
+  └── Assurance Banner: "This text was quarantined and never reached the analysis agents."
+```
+
+### 1. Adversarial Injection Detection Techniques
+- **Render Mode 3 (`3 Tr`):** Detects invisible PDF operator text blocks emitted without stroke or fill.
+- **Color Similarity Delta ($\Delta \le 0.08$):** Calculates normalized RGB Euclidean distance between text fill and document background, flagging white-on-white concealment.
+- **Effective Font Size:** Detects text matrices rendering micro-fonts $< 1.5$pt.
+- **Occlusion & Boundaries:** Identifies text positioned outside the page CropBox or covered by opaque rectangles drawn later in the content stream.
+- **Zero-Width Character Smuggling:** Detects `\u200b`, `\u200c`, `\u200d`, and bidi control overrides (`\u202a`–`\u202e`) used to disguise directives.
+
+### 2. High-Precision OCR Layer Diffing & Benign Watermarking
+- **Scanned PDF Support:** Legitimate scanned documents with OCR text layers matching the visible page image ($\ge 0.75$ token similarity) are classified as benign `ocr_layer` and produce zero false positives.
+- **Provenance Allowlisting:** XMP metadata, PDF producer signatures, and FinShield provenance watermarks (Feature A2) are explicitly allowlisted as `benign_metadata`.
+
+### 3. Strict Air-Gapped Sanitization & Rejection Override
+- **Prompt Isolation:** `extract_claim` extracts visible text only. Hidden text runs are quarantined and never passed into `Claim` JSON or any LLM prompts, ensuring downstream agents cannot be tricked into auto-approval.
+- **Immediate Defeat of Malicious Intent:** Any deliberate injection directive (`instruction_to_ai`) generates a `critical` severity finding, setting `dossier.verdict = REJECT` and elevating risk score $\ge 85$.
+
+---
+
 ## 🚀 Getting Started
 Refer to [FinShield_Build_Plan.md](FinShield_Build_Plan.md) for the implementation roadmap and architecture details.
+
 

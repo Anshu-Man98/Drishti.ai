@@ -400,7 +400,7 @@ export const ClaimDetail: React.FC = () => {
                     { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
                     { id: 'spacetime', name: 'Spacetime', role: 'Transit Feasibility' },
                     { id: 'ml', name: 'BigQuery ML', role: 'Boosted Trees & Explain' },
-                    { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
+                    { id: 'injection', name: 'Prompt Shield', role: 'Poisoned-Bill Defense' },
                   ].map((agent) => {
                     const agentFindings = dossier?.findings?.filter((f) => f.agent.toLowerCase() === agent.id.toLowerCase()) || [];
                     const count = agentFindings.length;
@@ -548,19 +548,36 @@ export const ClaimDetail: React.FC = () => {
                           <div className="space-y-1.5 flex-1">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-bold text-white font-mono">{f.title}</span>
-                              <span
-                                className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border shrink-0 ${
-                                  f.severity === 'critical'
-                                    ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                                    : f.severity === 'high'
-                                    ? 'bg-orange-500/15 text-orange-400 border-orange-500/30'
-                                    : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                                }`}
-                              >
-                                {f.severity}
-                              </span>
+                              <div className="flex items-center space-x-1.5 shrink-0">
+                                {f.agent === 'injection' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 flex items-center space-x-1">
+                                    <ShieldAlert className="w-3 h-3 text-fuchsia-400" />
+                                    <span>Attack on the AI reviewer</span>
+                                  </span>
+                                )}
+                                <span
+                                  className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border shrink-0 ${
+                                    f.severity === 'critical'
+                                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                                      : f.severity === 'high'
+                                      ? 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+                                      : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                  }`}
+                                >
+                                  {f.severity}
+                                </span>
+                              </div>
                             </div>
                             <p className="text-xs text-slate-300 leading-relaxed">{f.explanation}</p>
+
+                            {f.agent === 'injection' && (
+                              <div className="p-2.5 rounded-lg bg-fuchsia-950/40 border border-fuchsia-800/50 text-[11px] text-fuchsia-200 flex items-center space-x-2">
+                                <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 shrink-0" />
+                                <span className="font-medium">
+                                  This text was quarantined and never reached the analysis agents.
+                                </span>
+                              </div>
+                            )}
 
                             {f.computed_chip && (
                               <div className="pt-1">

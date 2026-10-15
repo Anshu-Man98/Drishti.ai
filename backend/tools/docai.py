@@ -12,7 +12,7 @@ import re
 import uuid
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 import pypdfium2 as pdfium
 import pdfplumber
@@ -60,7 +60,7 @@ def render_pdf_to_page_images(pdf_bytes: bytes, claim_id: str) -> List[str]:
 
 
 def process_document_docai(
-    pdf_bytes: bytes,
+    pdf_bytes: Union[bytes, Path, str],
     filename: str = "claim.pdf",
     claim_id: Optional[str] = None
 ) -> Tuple[Claim, List[ExtractedEntity]]:
@@ -68,6 +68,12 @@ def process_document_docai(
     Processes document with Document AI Invoice Parser (or high-fidelity layout parser fallback).
     Maps entities to Claim fields and line items, preserving normalized bounding boxes.
     """
+    if isinstance(pdf_bytes, (str, Path)):
+        p = Path(pdf_bytes)
+        if filename == "claim.pdf":
+            filename = p.name
+        pdf_bytes = p.read_bytes()
+
     if not claim_id:
         claim_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
 
@@ -120,11 +126,30 @@ def _parse_invoice_layout(
     total_claimed = 74550.0
     line_items: List[LineItem] = []
 
+    # Separate visible text from hidden text (A1 Sanitization Hard Rule)
+    from backend.tools.injection_tools import extract_text_layers, CLAIM_HIDDEN_LAYERS
+    layers = extract_text_layers(pdf_bytes)
+    visible_runs = layers["visible"]
+    hidden_runs = layers["hidden"]
+    CLAIM_HIDDEN_LAYERS[claim_id] = hidden_runs
+    hidden_phrases = [h["text"].strip().lower() for h in hidden_runs if len(h["text"].strip()) >= 3]
+
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         page = pdf.pages[0]
         w, h = float(page.width), float(page.height)
-        lines = page.extract_text_lines()
-        page_text = page.extract_text() or ""
+        raw_lines = page.extract_text_lines()
+
+        # Sanitize lines: strip any hidden runs before any agent sees them
+        lines = []
+        for tl in raw_lines:
+            line_lower = tl.get("text", "").lower()
+            if any(hp in line_lower for hp in hidden_phrases):
+                continue
+            lines.append(tl)
+
+        page_text = " ".join(r["text"] for r in visible_runs)
+        if not page_text.strip():
+            page_text = "\n".join(tl["text"] for tl in lines)
 
         def line_to_bbox(tl) -> List[float]:
             return [round(tl["x0"] / w, 4), round(tl["top"] / h, 4), round(tl["x1"] / w, 4), round(tl["bottom"] / h, 4)]
@@ -419,3 +444,16 @@ def locate_field(
                 return Evidence(doc_id=doc_id, page=it.page, bbox=it.bbox, quote=it.description)
 
     return None
+
+
+def extract_claim(
+    pdf_bytes: Union[bytes, Path, str],
+    filename: str = "claim.pdf",
+    claim_id: Optional[str] = None
+) -> Tuple[Claim, List[ExtractedEntity]]:
+    """
+    Sanitized claim extractor (Feature A1): returns visible text ONLY.
+    Hidden text runs are quarantined and stripped before reaching any reasoning agent.
+    """
+    return process_document_docai(pdf_bytes, filename=filename, claim_id=claim_id)
+

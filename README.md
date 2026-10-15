@@ -77,6 +77,7 @@ ADK Root: SequentialAgent
 | **G2** | Padded Bill / Math Mismatch | `SUBTOTAL_SUM_MISMATCH`, `TOTAL_PAYABLE_MISMATCH` | 60 | **REVIEW** |
 | **G3** | Policy Limit Breach | `POLICY_ROOM_RENT_CAP_EXCEEDED` (Clause 3.1) | 30 | **REVIEW** |
 | **G4** | Cross-Insurer Duplicate | `CROSS_INSURER_DUPLICATE_CLAIM`, `EXACT_DUPLICATE_BILL` | 100 | **REJECT** |
+| **G5** | Spacetime Impossible Travel | `DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL` (1,150 km in 90 min) | 100 | **REJECT** |
 | **G6** | Forged Bill | `SUSPICIOUS_PRODUCER_METADATA`, `FONT_INCONSISTENCY_TAMPERING`, `METADATA_DATE_DISCREPANCY` | 100 | **REJECT** |
 
 ---
@@ -151,8 +152,71 @@ $$\text{final\_risk\_score} = \text{round}(0.6 \times \text{agent\_score} + 40 \
 
 ### 4. Interactive Frontend Visualization (`frontend/src/pages/ClaimDetail.tsx`)
 - **Side-by-Side Dual Score Breakdown:** Displays Agent Heuristic Score and BigQuery ML Fraud Probability side-by-side with the unified Hybrid Risk badge.
-- **5-Agent Pipeline Status Grid:** Real-time execution indicators for Forensics, Policy & Math, Cross-Ref, BigQuery ML, and Synthesizer.
+- **6-Agent Pipeline Status Grid:** Real-time execution indicators for Forensics, Policy & Math, Cross-Ref, Spacetime, BigQuery ML, and Synthesizer.
 - **Explainability Horizontal Bar Chart:** Interactive visual representation of top 5 feature attributions with color-coded risk drivers (red/amber) vs reassuring baseline factors (emerald/blue).
+
+---
+
+## 🗺️ Feature 4 (F4): Spacetime Impossibility Detection & GIS Trajectory Map
+
+FinShield detects physically impossible transit timelines between consecutive events for doctors or claimants across hospitals and cities:
+
+```text
+Claim Documents (Admission, Procedures, Discharge)
+                  │
+                  ▼
+build_timeline(claim)  ◄─── BigQuery Claims Warehouse (Doctor Events ±24h)
+                  │
+                  ▼
+SpacetimeAgent (Google ADK LlmAgent / Gemini Flash)
+  ├── Consecutive transit pairs grouped per actor
+  └── Deterministic Physics Engine (`backend/tools/geo.py`)
+        ├── haversine_km(lat1, lon1, lat2, lon2)
+        ├── min_travel_hours(km):
+        │     - Road (<= 300 km): km / 80 km/h
+        │     - Air  (> 300 km): 2.5h overhead + km / 700 km/h
+        └── is_feasible(event_a, event_b) -> {feasible, km, available_h, required_h}
+                  │
+                  ▼
+Critical Finding: "Dr. Rajesh Mehta billed procedures in Delhi at 14:10
+and Mumbai at 15:40 — 1,150 km in 90 min; minimum realistic travel ≈ 4.1 h."
+                  │
+                  ▼
+Spacetime GIS Map (`frontend/src/components/SpacetimeMap.tsx`)
+  ├── Numbered chronological pins along the route
+  ├── Green polylines for feasible legs
+  └── Pulsing Red Polyline + Alert Badge for Impossible Legs
+```
+
+### 1. Deterministic Geo & Travel Physics Engine (`backend/tools/geo.py`)
+- **Haversine Distance:** Great-circle trigonometry computing accurate distances between any two coordinates across India and globally.
+- **Realistic Transit Thresholds:**
+  - Short-haul / Road ($\le 300$ km): $t_{\min} = \frac{\text{km}}{80.0\text{ km/h}}$.
+  - Long-haul / Air ($> 300$ km): $t_{\min} = 2.5\text{h (airport security, check-in, boarding, taxiing)} + \frac{\text{km}}{700.0\text{ km/h flight speed}}$.
+- **Edge-Case Safety:**
+  - Same medical campus / city ($< 5$ km): Marked feasible (does not flag inter-department transit).
+  - Overnight time gaps: Evaluates elapsed hours accurately (e.g. 14h available vs 4.1h required $\implies$ feasible).
+  - Missing coordinates: Marked `skipped: True, feasible: True` to prevent false positive accusations.
+
+### 2. Spacetime ADK Agent (`backend/agents/spacetime.py`)
+- Assembles admission, attending doctor procedures, discharge, and BigQuery warehouse billing records within $\pm 24$ hours.
+- Gemini Flash extracts timestamps and places from unformatted documents, while the deterministic `is_feasible` tool rigorously judges physical transit feasibility.
+- Emits `DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL` (`Severity.CRITICAL`) with exact distance and time metrics.
+
+### 3. Interactive GIS Map Visualization (`frontend/src/components/SpacetimeMap.tsx`)
+- **Dual Engine GIS Projection:** Supports both Google Maps Platform (`@vis.gl/react-google-maps`) and native high-resolution SVG geographic projection of India.
+- **Visual Trajectory:** Numbered sequential pins in chronological order connected by directional transit polylines.
+- **Pulsing Impossible Leg Badge:** Impossible legs are highlighted with an animated, pulsing red polyline and an interactive callout banner (`"1,150 km in 90 min (Impossible)"`).
+- **Synchronized Vertical Timeline:** Interactive list of all hospitalization and billing events beside the map; clicking an event focuses the map view and links to the source document citation.
+
+### 4. BigQuery Pitch Query (`infra/impossible_travel_query.sql`)
+- Demonstrates enterprise-scale detection across the entire BigQuery claims warehouse:
+  ```sql
+  -- Self-join claims by doctor within 24 hours, computing ST_DISTANCE and required travel physics
+  ST_DISTANCE(ST_GEOGPOINT(c1.provider_lng, c1.provider_lat),
+              ST_GEOGPOINT(c2.provider_lng, c2.provider_lat)) / 1000.0 AS transit_km
+  WHERE available_hours < min_required_travel_hours
+  ```
 
 ---
 

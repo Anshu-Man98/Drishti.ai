@@ -4,12 +4,13 @@ import {
   ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert,
   FileText, Building2, User, Calendar, RefreshCw,
   ExternalLink, Layers, Crosshair, SplitSquareVertical, Maximize2,
-  Cpu, BarChart3, MessageSquare
+  Cpu, BarChart3, MessageSquare, Compass
 } from 'lucide-react';
 import { Claim, Dossier } from '../types';
 import { fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities } from '../services/api';
 import { DocumentViewer } from '../components/DocumentViewer';
 import { ChatDrawer } from '../components/ChatDrawer';
+import { SpacetimeMap } from '../components/SpacetimeMap';
 
 export const ClaimDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +20,7 @@ export const ClaimDetail: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFindingId, setActiveFindingId] = useState<string | null>(null);
-  const [layoutMode, setLayoutMode] = useState<'split' | 'doc' | 'audit'>('split');
+  const [layoutMode, setLayoutMode] = useState<'split' | 'doc' | 'audit' | 'spacetime'>('split');
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   const loadClaimData = async () => {
@@ -162,6 +163,10 @@ export const ClaimDetail: React.FC = () => {
       )
     : 0;
 
+  const hasSpacetimeAnomaly = dossier?.findings?.some(
+    (f) => f.agent === 'spacetime' || f.check_id?.includes('SPACETIME') || f.category === 'DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL'
+  );
+
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* Top Header / Breadcrumb & View Toggle Controls */}
@@ -213,6 +218,21 @@ export const ClaimDetail: React.FC = () => {
             >
               <Maximize2 className="w-3.5 h-3.5" />
               <span>Audit Focus</span>
+            </button>
+            <button
+              onClick={() => setLayoutMode('spacetime')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors font-medium relative ${
+                layoutMode === 'spacetime' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Spacetime Map</span>
+              {hasSpacetimeAnomaly && (
+                <span className="flex h-2 w-2 relative ml-0.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+              )}
             </button>
           </div>
 
@@ -373,11 +393,12 @@ export const ClaimDetail: React.FC = () => {
                     Hybrid: 60% Multi-Agent + 40% BQML
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
                     { id: 'forensics', name: 'Forensics', role: 'Metadata & Font ELA' },
                     { id: 'policy', name: 'Policy & Math', role: 'Caps & Arithmetic' },
                     { id: 'crossref', name: 'Cross-Ref', role: 'Warehouse Duplicates' },
+                    { id: 'spacetime', name: 'Spacetime', role: 'Transit Feasibility' },
                     { id: 'ml', name: 'BigQuery ML', role: 'Boosted Trees & Explain' },
                     { id: 'synthesizer', name: 'Synthesizer', role: 'Dossier Verdict' },
                   ].map((agent) => {
@@ -541,20 +562,35 @@ export const ClaimDetail: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-300 leading-relaxed">{f.explanation}</p>
 
-                            <div className="flex items-center justify-between pt-1 text-[11px]">
+                            <div className="flex items-center justify-between pt-1 text-[11px] gap-2 flex-wrap">
                               <span className="font-mono text-slate-500 text-[10px] uppercase">{f.check_id}</span>
-                              {hasEvidenceBbox && (
-                                <span
-                                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                                    isSelected
-                                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                                      : 'bg-slate-900 text-slate-400 border border-slate-800'
-                                  }`}
-                                >
-                                  <Crosshair className="w-3 h-3 text-sky-400" />
-                                  <span>{isSelected ? 'Focused on Doc' : 'Document Citation'}</span>
-                                </span>
-                              )}
+                              <div className="flex items-center space-x-2">
+                                {(f.agent === 'spacetime' || f.check_id?.includes('SPACETIME') || f.category?.includes('SPACETIME')) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setLayoutMode('spacetime');
+                                    }}
+                                    className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 transition-colors"
+                                  >
+                                    <Compass className="w-3 h-3 text-purple-400" />
+                                    <span>View on Map</span>
+                                  </button>
+                                )}
+                                {hasEvidenceBbox && (
+                                  <span
+                                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                                      isSelected
+                                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                                        : 'bg-slate-900 text-slate-400 border border-slate-800'
+                                    }`}
+                                  >
+                                    <Crosshair className="w-3 h-3 text-sky-400" />
+                                    <span>{isSelected ? 'Focused on Doc' : 'Document Citation'}</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -674,6 +710,17 @@ export const ClaimDetail: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Spacetime Geographic & Trajectory Analysis */}
+        {layoutMode === 'spacetime' && (
+          <div className="w-full">
+            <SpacetimeMap
+              timeline={dossier?.timeline || []}
+              claimId={claim.claim_id}
+              onOpenDocument={() => setLayoutMode('doc')}
+            />
           </div>
         )}
       </div>

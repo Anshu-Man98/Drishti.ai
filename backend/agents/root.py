@@ -16,6 +16,7 @@ from backend.app.schemas import Claim, Dossier, Finding
 from backend.agents.forensics import create_forensics_agent, analyze_document_forensics
 from backend.agents.policy import create_policy_agent, analyze_policy_and_arithmetic
 from backend.agents.crossref import create_crossref_agent, analyze_cross_references
+from backend.agents.spacetime import create_spacetime_agent, analyze_spacetime_feasibility
 from backend.agents.synthesizer import create_synthesizer_agent, synthesize_dossier
 
 
@@ -26,10 +27,11 @@ def build_adk_pipeline() -> SequentialAgent:
     forensics = create_forensics_agent()
     policy = create_policy_agent()
     crossref = create_crossref_agent()
+    spacetime = create_spacetime_agent()
 
     specialists = ParallelAgent(
         name="specialist_investigators",
-        sub_agents=[forensics, policy, crossref]
+        sub_agents=[forensics, policy, crossref, spacetime]
     )
 
     synthesizer = create_synthesizer_agent()
@@ -76,6 +78,14 @@ def run_claims_fraud_pipeline(
     if status_callback:
         status_callback("crossref", "done")
 
+    # Spacetime Feasibility Agent
+    if status_callback:
+        status_callback("spacetime", "running")
+    spacetime_findings, timeline = analyze_spacetime_feasibility(claim)
+    all_findings.extend(spacetime_findings)
+    if status_callback:
+        status_callback("spacetime", "done")
+
     # 2. BigQuery ML Scoring Step
     if status_callback:
         status_callback("ml", "running")
@@ -120,7 +130,8 @@ def run_claims_fraud_pipeline(
         claim=claim,
         all_findings=all_findings,
         ml_score=ml_prob,
-        top_ml_features=top_ml_features
+        top_ml_features=top_ml_features,
+        timeline=timeline
     )
     if status_callback:
         status_callback("synthesizer", "done")

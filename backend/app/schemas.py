@@ -129,6 +129,7 @@ class TimelineEvent(BaseModel):
     place: str
     doc_id: Optional[str] = None
     actor: str  # doctor or claimant
+    description: Optional[str] = None
 
 
 class Dossier(BaseModel):

@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Dossier, Finding, Verdict, Claim
+from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName
 from backend.app.config import settings
 from backend.tools.scoring import score_findings
 
@@ -20,7 +20,8 @@ def synthesize_dossier(
     claim: Claim,
     all_findings: List[Finding],
     ml_score: Optional[float] = None,
-    top_ml_features: Optional[List[Any]] = None
+    top_ml_features: Optional[List[Any]] = None,
+    timeline: Optional[List[TimelineEvent]] = None
 ) -> Dossier:
     """
     Synthesizes all specialist agent findings and BigQuery ML probability into a final Dossier.
@@ -71,6 +72,11 @@ def synthesize_dossier(
             
             summary += f"BigQuery ML predicts {ml_pct:.1f}% fraud probability, driven by: {'; '.join(top_exps)}. "
 
+        # Spacetime impossible travel check
+        geo_f = next((f for f in all_findings if f.agent == AgentName.SPACETIME), None)
+        if geo_f:
+            summary += f" CRITICAL GEOSPATIAL ALERT: {geo_f.explanation} "
+
         if verdict == Verdict.REJECT:
             summary += (
                 f"Severe integrity violations were detected ({len(critical_or_high)} critical/high flags). "
@@ -91,7 +97,7 @@ def synthesize_dossier(
         summary=summary,
         findings=all_findings,
         top_ml_features=top_ml_features,
-        timeline=None,
+        timeline=timeline,
         created_at=datetime.utcnow()
     )
 

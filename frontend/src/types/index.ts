@@ -99,6 +99,7 @@ export interface Finding {
   explanation: string;
   evidence: Evidence[];
   confidence: number;
+  category?: string;
 }
 
 export interface MlFeature {
@@ -113,6 +114,7 @@ export interface TimelineEvent {
   place: string;
   doc_id?: string;
   actor: string;
+  description?: string;
 }
 
 export interface Dossier {

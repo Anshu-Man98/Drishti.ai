@@ -1,8 +1,9 @@
 import json
 import uuid
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.app.schemas import (
@@ -13,6 +14,7 @@ from backend.agents.chat import stream_chat_response
 from backend.app.config import settings
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
+from backend.app.dependencies import require_adjuster_role
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -65,28 +67,45 @@ async def create_claim(
     documents: List[Document] = []
     extracted_entities = []
     docai_claim = None
+    MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+    ALLOWED_EXTS = {".pdf", ".png", ".jpg", ".jpeg"}
+
     for f in files:
         contents = await f.read()
-        uri, sha256_hash = storage_service.upload_file(contents, f.filename, claim_id)
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Payload Too Large: File '{f.filename}' exceeds 25 MB size limit."
+            )
+
+        safe_filename = Path(f.filename).name if f.filename else f"doc_{uuid.uuid4().hex[:8]}.pdf"
+        ext = Path(safe_filename).suffix.lower()
+        if ext not in ALLOWED_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type '{ext}' for file '{safe_filename}'. Allowed types: {', '.join(sorted(ALLOWED_EXTS))}"
+            )
+
+        uri, sha256_hash = storage_service.upload_file(contents, safe_filename, claim_id)
         doc_id = f"DOC-{uuid.uuid4().hex[:8].upper()}"
         
         # Determine doc_type heuristically if not specified
         doc_type = DocType.BILL
-        fname_lower = (f.filename or "").lower()
+        fname_lower = safe_filename.lower()
         if "prescription" in fname_lower:
             doc_type = DocType.PRESCRIPTION
         elif "discharge" in fname_lower:
             doc_type = DocType.DISCHARGE_SUMMARY
         elif "lab" in fname_lower:
             doc_type = DocType.LAB_REPORT
-        elif any(ext in fname_lower for ext in [".jpg", ".jpeg", ".png"]):
+        elif any(e in fname_lower for e in [".jpg", ".jpeg", ".png"]):
             doc_type = DocType.PHOTO
 
         # Extract entities and bounding boxes with Document AI / layout parser
         if fname_lower.endswith(".pdf"):
             try:
                 from backend.tools.docai import process_document_docai
-                docai_claim, docai_ents = process_document_docai(contents, f.filename, claim_id)
+                docai_claim, docai_ents = process_document_docai(contents, safe_filename, claim_id)
                 extracted_entities.extend(docai_ents)
                 if not parsed_line_items and docai_claim.line_items:
                     parsed_line_items = docai_claim.line_items
@@ -103,7 +122,7 @@ async def create_claim(
             gcs_uri=uri,
             doc_type=doc_type,
             sha256=sha256_hash,
-            filename=f.filename,
+            filename=safe_filename,
             page_count=docai_claim.documents[0].page_count if docai_claim and docai_claim.documents else 1
         ))
 
@@ -194,7 +213,35 @@ async def create_claim(
 def create_claim_direct(claim: Claim):
     """
     JSON creation endpoint for synthetic generators and seed scripts.
+    Guarded against arbitrary client-supplied file read URIs.
     """
+    for doc in (claim.documents or []):
+        if doc.gcs_uri:
+            if doc.gcs_uri.startswith("file://"):
+                path_str = doc.gcs_uri.replace("file://", "")
+                resolved = Path(path_str).resolve()
+                allowed_roots = [
+                    Path(settings.LOCAL_DATA_DIR).resolve(),
+                    (Path(settings.LOCAL_DATA_DIR) / "uploads").resolve(),
+                    (Path(settings.LOCAL_DATA_DIR) / "demo").resolve(),
+                ]
+                if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Security error: Invalid storage URI '{doc.gcs_uri}'. Arbitrary file read attempt rejected."
+                    )
+            elif doc.gcs_uri.startswith("gs://"):
+                if not doc.gcs_uri.startswith(f"gs://{settings.GCS_BUCKET_NAME}/uploads/"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Security error: Invalid GCS URI '{doc.gcs_uri}'. Must be under gs://{settings.GCS_BUCKET_NAME}/uploads/"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Security error: Unsupported URI scheme in '{doc.gcs_uri}'."
+                )
+
     if not claim.created_at:
         claim.created_at = datetime.utcnow()
     db_service.save_claim(claim)
@@ -374,11 +421,13 @@ def get_claim_chat_history(claim_id: str):
 @router.post("/{claim_id}/issue-approval", response_model=IssueApprovalResponse)
 async def issue_claim_approval(
     claim_id: str,
-    request: IssueApprovalRequest
+    request: IssueApprovalRequest,
+    current_user: Dict[str, Any] = Depends(require_adjuster_role)
 ):
     """
     Invisibly marks and cryptographically signs an outbound approval / sanction document
     using dual-carrier redundancy (XMP Metadata + LSB Steganography) and Ed25519 digital signature.
+    Restricted strictly to users with the 'adjuster' role.
     """
     if not settings.WATERMARK_ENABLED:
         raise HTTPException(status_code=400, detail="Provenance marking is currently disabled (WATERMARK_ENABLED=False).")
@@ -386,6 +435,14 @@ async def issue_claim_approval(
     claim = db_service.get_claim(claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+
+    # Bounded amount_paise check: cannot exceed total claimed amount
+    max_allowed_paise = int(round(claim.total_claimed * 100))
+    if request.amount_paise > max_allowed_paise:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sanction amount ({request.amount_paise} paise) cannot exceed total claimed amount ({max_allowed_paise} paise)."
+        )
 
     from backend.services.provenance import sign_and_mark
     doc_id = f"SANCTION-{uuid.uuid4().hex[:8].upper()}"

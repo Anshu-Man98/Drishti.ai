@@ -7,6 +7,7 @@ and dual-carrier redundancy (XMP Metadata + LSB Letterhead Steganography).
 Pure code verification — no LLM is involved in deciding genuine versus tampered.
 """
 
+import os
 import io
 import re
 import json
@@ -31,9 +32,9 @@ from backend.app.services.db import db_service
 
 PUBKEY_PATH = Path(__file__).resolve().parent.parent.parent / "infra" / "provenance_pubkey.pem"
 
-# Deterministic demo seed (32 bytes) used when GCP Secret Manager is not reachable.
-# NEVER logged or printed.
-_DEMO_SEED = b"finshield-demo-ed25519-seed-2026!"[:32]
+# Rotated 32-byte secret seed used for offline local testing only.
+# In production, keys must come from Secret Manager or FINSHIELD_PROVENANCE_KEY.
+_ROTATED_LOCAL_KEY = b"fs_prov_rot_seed_v2_2026_sec_32b"
 _LSB_HEADER = b"FS_LSB_V1\x00\x00\x00"
 
 
@@ -43,10 +44,17 @@ _LSB_HEADER = b"FS_LSB_V1\x00\x00\x00"
 
 def get_signing_key() -> ed25519.Ed25519PrivateKey:
     """
-    Loads Ed25519 private key from Secret Manager at cold start.
-    Falls back to deterministic demo seed in local/offline environments.
+    Loads Ed25519 private key from Secret Manager or FINSHIELD_PROVENANCE_KEY.
+    Fails closed when LOCAL_FALLBACK=False if key cannot be obtained.
     Key material is NEVER logged and NEVER written to disk.
     """
+    # 1. Check for explicit environment variable
+    env_key = os.getenv("FINSHIELD_PROVENANCE_KEY")
+    if env_key:
+        raw_bytes = env_key.encode("utf-8") if len(env_key) == 32 else bytes.fromhex(env_key)
+        return ed25519.Ed25519PrivateKey.from_private_bytes(raw_bytes[:32])
+
+    # 2. Production Secret Manager path
     if not settings.LOCAL_FALLBACK:
         try:
             from google.cloud import secretmanager
@@ -54,20 +62,24 @@ def get_signing_key() -> ed25519.Ed25519PrivateKey:
             name = f"projects/{settings.GCP_PROJECT}/secrets/finshield-provenance-signing-key/versions/latest"
             resp = client.access_secret_version(request={"name": name})
             return ed25519.Ed25519PrivateKey.from_private_bytes(resp.payload.data[:32])
-        except Exception:
-            pass
+        except Exception as e:
+            raise RuntimeError(
+                f"Production Security Violation: Failed to load finshield-provenance-signing-key from Secret Manager: {e}. "
+                "Failing closed to prevent forgery."
+            )
 
-    return ed25519.Ed25519PrivateKey.from_private_bytes(_DEMO_SEED)
+    # 3. Local fallback (development mode only)
+    return ed25519.Ed25519PrivateKey.from_private_bytes(_ROTATED_LOCAL_KEY)
 
 
 def get_verifying_key() -> ed25519.Ed25519PublicKey:
     """
-    Loads Ed25519 public key from committed repo PEM file for reproducible verification.
+    Loads Ed25519 public key. Uses the committed PEM file matching the rotated key,
+    or derives directly from the signing key.
     """
     if PUBKEY_PATH.exists():
         with open(PUBKEY_PATH, "rb") as f:
             return serialization.load_pem_public_key(f.read())
-    # Fallback to key derived from demo seed
     return get_signing_key().public_key()
 
 

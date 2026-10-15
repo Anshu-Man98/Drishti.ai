@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.routers import claims, provenance
 from backend.app.config import settings
+from backend.app.dependencies import get_current_user
 
 app = FastAPI(
     title="FinShield API (Drishti.ai)",
@@ -9,17 +11,28 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration
+# CORS configuration: explicit origins instead of wildcard with credentials
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+frontend_origin = os.getenv("FRONTEND_ORIGIN", os.getenv("FIREBASE_ORIGIN"))
+if frontend_origin and frontend_origin not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(frontend_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-app.include_router(claims.router)
-app.include_router(provenance.router)
+# Secure API routers requiring authenticated user
+app.include_router(claims.router, dependencies=[Depends(get_current_user)])
+app.include_router(provenance.router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/health")

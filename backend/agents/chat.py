@@ -28,6 +28,20 @@ OFF_TOPIC_KEYWORDS = [
 ]
 
 
+def sanitize_chat_context(text: Optional[str]) -> str:
+    """Escapes XML delimiters and control directives to prevent prompt injection breakouts."""
+    if not text:
+        return ""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("</untrusted_case_file_context>", "")
+        .replace("</untrusted_adjuster_query>", "")
+    )
+
+
 def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[str, Dict[str, Finding]]:
     """
     Constructs comprehensive grounding text from the Claim, Dossier, and Findings.
@@ -38,8 +52,8 @@ def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[s
     lines.append(f"Claim ID: {claim.claim_id}")
     lines.append(f"Policy ID: {claim.policy_id}")
     lines.append(f"Insurer: {claim.insurer_id}")
-    lines.append(f"Claimant: {claim.claimant.name} (ID: {claim.claimant.claimant_id}, Phone: {claim.claimant.phone})")
-    lines.append(f"Healthcare Provider: {claim.provider.name}, {claim.provider.city} (Hospital ID: {claim.provider.hospital_id})")
+    lines.append(f"Claimant: {sanitize_chat_context(claim.claimant.name)} (ID: {claim.claimant.claimant_id})")
+    lines.append(f"Healthcare Provider: {sanitize_chat_context(claim.provider.name)}, {claim.provider.city} (Hospital ID: {claim.provider.hospital_id})")
     lines.append(f"Attending Doctor ID: {claim.doctor_id}")
     lines.append(f"Hospitalization: {claim.admission_ts.strftime('%d-%b-%Y %H:%M')} to {claim.discharge_ts.strftime('%d-%b-%Y %H:%M')}")
     lines.append(f"Diagnosis Code: {claim.diagnosis_code}")
@@ -47,7 +61,7 @@ def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[s
 
     lines.append("\n--- Itemized Bill Breakdown ---")
     for it in claim.line_items:
-        lines.append(f"- {it.description}: {it.qty} unit(s) @ ₹{it.unit_price:,.2f} = ₹{it.amount:,.2f}")
+        lines.append(f"- {sanitize_chat_context(it.description)}: {it.qty} unit(s) @ ₹{it.unit_price:,.2f} = ₹{it.amount:,.2f}")
 
     finding_map: Dict[str, Finding] = {}
 
@@ -57,7 +71,7 @@ def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[s
         if dossier.ml_score is not None:
             lines.append(f"BigQuery ML Probability: {dossier.ml_score * 100:.1f}%")
         lines.append(f"Audit Verdict: {dossier.verdict.value.upper()}")
-        lines.append(f"Executive Summary: {dossier.summary}")
+        lines.append(f"Executive Summary: {sanitize_chat_context(dossier.summary)}")
 
         lines.append("\n--- Flagged Findings & Evidence ---")
         if not dossier.findings:
@@ -70,16 +84,17 @@ def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[s
 
                 ev_quotes = []
                 for ev in f.evidence:
-                    quote_str = f"Page {ev.page}: '{ev.quote}'" if ev.quote else f"Page {ev.page}"
+                    safe_quote = sanitize_chat_context(ev.quote)
+                    quote_str = f"Page {ev.page}: '{safe_quote}'" if safe_quote else f"Page {ev.page}"
                     if ev.bbox:
                         quote_str += f" [bbox: {ev.bbox}]"
                     ev_quotes.append(quote_str)
 
                 ev_text = " | ".join(ev_quotes) if ev_quotes else "No direct document quote"
                 lines.append(
-                    f"[{alias}] (ID: {f.finding_id}) [{f.severity.value.upper()}] {f.title}\n"
+                    f"[{alias}] (ID: {f.finding_id}) [{f.severity.value.upper()}] {sanitize_chat_context(f.title)}\n"
                     f"  Check: {f.check_id} | Agent: {f.agent.value} | Confidence: {f.confidence}\n"
-                    f"  Explanation: {f.explanation}\n"
+                    f"  Explanation: {sanitize_chat_context(f.explanation)}\n"
                     f"  Evidence: {ev_text}"
                 )
 
@@ -293,11 +308,19 @@ async def stream_chat_response(
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            safe_query = sanitize_chat_context(user_message)
             prompt = (
-                f"{context_text}\n\n"
-                f"Adjuster Question: {user_message}\n\n"
-                "Answer concisely, cite finding IDs like [F1] where applicable, and maintain an objective tone."
+                "You are FinShield's audit assistant talking to an insurance adjuster. "
+                "Answer only from the case file provided below. Cite finding IDs like [F1]. "
+                "If asked something the case file cannot answer, say what is missing. "
+                "Be brief, objective, and neutral. Never call the claimant a criminal.\n\n"
+                "<untrusted_case_file_context>\n"
+                f"{context_text}\n"
+                "</untrusted_case_file_context>\n\n"
+                "<untrusted_adjuster_query>\n"
+                f"{safe_query}\n"
+                "</untrusted_adjuster_query>\n\n"
+                "Respond based exclusively on the provided context."
             )
 
             # Stream via Gemini Pro
@@ -337,6 +360,16 @@ async def stream_chat_response(
             await asyncio.sleep(0.015)
     else:
         cited_ids, cited_evidence = extract_citations(full_answer, finding_map)
+
+    # 3b. Enforce Numeric Grounding Guard on chat output (Security Hardening)
+    try:
+        from backend.tools.grounding import sanitize_text_grounding
+        from backend.tools.registry import get_all_computed_values
+        computed_store = get_all_computed_values(claim.claim_id)
+        grounded_answer, _ = sanitize_text_grounding(full_answer, computed_store, claim)
+        full_answer = grounded_answer
+    except Exception as e:
+        print(f"[Adjuster Chat] Grounding guard warning: {e}")
 
     # 4. Save chat messages in database (Firestore / SQLite)
     db_service.save_chat_message(claim_id=claim_id, role="user", content=user_message)

@@ -81,11 +81,14 @@ def process_document_docai(
     page_uris = render_pdf_to_page_images(pdf_bytes, claim_id)
     page_count = max(1, len(page_uris))
 
-    # Ensure document is saved in local uploads directory for downstream agent reading
-    local_doc_path = Path(settings.LOCAL_DATA_DIR) / "uploads" / claim_id / filename
-    if not local_doc_path.exists():
-        local_doc_path.parent.mkdir(parents=True, exist_ok=True)
-        local_doc_path.write_bytes(pdf_bytes)
+    # Ensure document is saved in local uploads directory for downstream agent reading (safe basename)
+    safe_name = Path(filename).name
+    local_doc_path = (Path(settings.LOCAL_DATA_DIR) / "uploads" / claim_id / safe_name).resolve()
+    uploads_root = (Path(settings.LOCAL_DATA_DIR) / "uploads").resolve()
+    if not str(local_doc_path).startswith(str(uploads_root)):
+        raise PermissionError(f"Security error: Invalid path traversal attempt in filename: {filename}")
+    local_doc_path.parent.mkdir(parents=True, exist_ok=True)
+    local_doc_path.write_bytes(pdf_bytes)
 
     # If Document AI processor is configured in GCP, we can invoke it:
     docai_processor = os.getenv("DOCUMENTAI_PROCESSOR_ID")

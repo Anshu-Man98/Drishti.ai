@@ -2,8 +2,18 @@ import { Claim, ClaimSummary, Dossier } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+function getAuthHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
+  const token = localStorage.getItem('token') || 'adjuster-token';
+  return {
+    'Authorization': `Bearer ${token}`,
+    ...customHeaders,
+  };
+}
+
 export async function fetchClaims(): Promise<ClaimSummary[]> {
-  const resp = await fetch(`${API_BASE_URL}/claims`);
+  const resp = await fetch(`${API_BASE_URL}/claims`, {
+    headers: getAuthHeaders(),
+  });
   if (!resp.ok) {
     throw new Error(`Failed to fetch claims: ${resp.statusText}`);
   }
@@ -11,7 +21,9 @@ export async function fetchClaims(): Promise<ClaimSummary[]> {
 }
 
 export async function fetchClaim(claimId: string): Promise<Claim> {
-  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}`);
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}`, {
+    headers: getAuthHeaders(),
+  });
   if (!resp.ok) {
     throw new Error(`Failed to fetch claim ${claimId}: ${resp.statusText}`);
   }
@@ -19,7 +31,9 @@ export async function fetchClaim(claimId: string): Promise<Claim> {
 }
 
 export async function fetchDossier(claimId: string): Promise<Dossier | null> {
-  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/dossier`);
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/dossier`, {
+    headers: getAuthHeaders(),
+  });
   if (resp.status === 404) {
     return null;
   }
@@ -32,6 +46,7 @@ export async function fetchDossier(claimId: string): Promise<Dossier | null> {
 export async function analyzeClaim(claimId: string): Promise<Dossier> {
   const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/analyze`, {
     method: 'POST',
+    headers: getAuthHeaders(),
   });
   if (!resp.ok) {
     throw new Error(`Analysis failed: ${resp.statusText}`);
@@ -42,6 +57,7 @@ export async function analyzeClaim(claimId: string): Promise<Dossier> {
 export async function uploadClaim(formData: FormData): Promise<{ claim_id: string }> {
   const resp = await fetch(`${API_BASE_URL}/claims`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData,
   });
   if (!resp.ok) {
@@ -64,7 +80,9 @@ export async function fetchClaimEntities(claimId: string): Promise<{
   entities: import('../types').ExtractedEntity[];
   field_sources: Record<string, string>;
 }> {
-  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/entities`);
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/entities`, {
+    headers: getAuthHeaders(),
+  });
   if (!resp.ok) {
     throw new Error(`Failed to fetch entities: ${resp.statusText}`);
   }
@@ -72,7 +90,9 @@ export async function fetchClaimEntities(claimId: string): Promise<{
 }
 
 export async function fetchChatHistory(claimId: string): Promise<import('../types').ChatMessage[]> {
-  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/chat`);
+  const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/chat`, {
+    headers: getAuthHeaders(),
+  });
   if (!resp.ok) {
     throw new Error(`Failed to fetch chat history: ${resp.statusText}`);
   }
@@ -89,10 +109,10 @@ export async function streamClaimChat(
   try {
     const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/chat`, {
       method: 'POST',
-      headers: {
+      headers: getAuthHeaders({
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
-      },
+      }),
       body: JSON.stringify({ message }),
     });
 
@@ -113,7 +133,7 @@ export async function streamClaimChat(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+      const lines = buffer.split('\n\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
@@ -151,7 +171,7 @@ export async function issueApprovalLetter(
 ): Promise<import('../types').IssueApprovalResponse> {
   const resp = await fetch(`${API_BASE_URL}/claims/${claimId}/issue-approval`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ amount_paise: amountPaise, notes }),
   });
   if (!resp.ok) {
@@ -172,6 +192,7 @@ export async function verifyDocument(
   }
   const resp = await fetch(`${API_BASE_URL}/provenance/verify`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData,
   });
   if (!resp.ok) {
@@ -184,5 +205,3 @@ export async function verifyDocument(
 export function getProvenancePubkeyUrl(): string {
   return `${API_BASE_URL}/provenance/pubkey`;
 }
-
-

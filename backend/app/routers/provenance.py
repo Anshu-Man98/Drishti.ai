@@ -30,10 +30,18 @@ async def verify_provenance_document(
             issued_doc_id=None
         )
 
+    safe_name = Path(file.filename).name if file.filename else "doc.pdf"
+    if not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF documents are accepted for provenance verification.")
+
     try:
         contents = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {e}")
+
+    MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"Payload Too Large: File '{safe_name}' exceeds 25 MB limit.")
 
     result = verify_document(contents, claim_id=claim_id)
     return ProvenanceVerifyResponse(

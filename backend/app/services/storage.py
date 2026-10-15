@@ -52,18 +52,31 @@ class StorageService:
 
     def read_file(self, uri: str) -> bytes:
         if uri.startswith("file://"):
-            local_path = uri.replace("file://", "")
+            raw_path = uri.replace("file://", "")
+            local_path = Path(raw_path).resolve()
+            allowed_roots = [
+                self.local_dir.resolve(),
+                Path(settings.LOCAL_DATA_DIR).resolve()
+            ]
+            if not any(str(local_path).startswith(str(root)) for root in allowed_roots):
+                raise PermissionError(f"Security error: Access denied to path outside allowed storage roots: {local_path}")
+            if not local_path.exists():
+                raise FileNotFoundError(f"File not found: {local_path}")
             with open(local_path, "rb") as f:
                 return f.read()
-        elif uri.startswith("gs://") and self._client:
+        elif uri.startswith("gs://"):
             parts = uri.replace("gs://", "").split("/", 1)
             bucket_name = parts[0]
-            blob_name = parts[1]
-            bucket = self._client.bucket(bucket_name)
-            blob = bucket.blob(blob_name)
-            return blob.download_as_bytes()
+            blob_name = parts[1] if len(parts) > 1 else ""
+            if bucket_name != self.bucket_name or not blob_name.startswith("uploads/"):
+                raise PermissionError(f"Security error: Invalid GCS storage path or bucket: {uri}")
+            if self._client:
+                bucket = self._client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                return blob.download_as_bytes()
+            raise FileNotFoundError(f"GCS client unavailable for storage read: {uri}")
         else:
-            raise FileNotFoundError(f"Cannot read file from URI: {uri}")
+            raise FileNotFoundError(f"Unsupported URI scheme for storage read: {uri}")
 
 
 storage_service = StorageService()

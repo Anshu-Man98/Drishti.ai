@@ -383,7 +383,8 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
                 "one of: instruction_to_ai | keyword_stuffing | ocr_layer | benign_metadata | unknown. "
                 "Return JSON only: {classification, rationale, quoted_excerpt}."
             )
-            prompt = f"<untrusted_extracted_text>\n{joined_text}\n</untrusted_extracted_text>"
+            safe_joined_text = joined_text.replace("</untrusted_extracted_text>", "&lt;/untrusted_extracted_text&gt;")
+            prompt = f"<untrusted_extracted_text>\n{safe_joined_text}\n</untrusted_extracted_text>"
             response = client.models.generate_content(
                 model=settings.GEMINI_FLASH_MODEL,
                 contents=prompt,
@@ -459,16 +460,12 @@ def detect_hidden_text_injection(claim: Claim) -> List[Finding]:
     for doc in (claim.documents or []):
         pdf_bytes: Optional[bytes] = None
 
-        # Resolve document bytes from URI or local path
-        if doc.gcs_uri.startswith("file://"):
-            local_path = Path(doc.gcs_uri.replace("file://", ""))
-            if local_path.exists():
-                pdf_bytes = local_path.read_bytes()
-        elif Path(doc.gcs_uri).exists():
-            pdf_bytes = Path(doc.gcs_uri).read_bytes()
-        elif doc.gcs_uri.startswith("gs://"):
-            from backend.app.services.storage import storage_service
-            pdf_bytes = storage_service.download_bytes(doc.gcs_uri)
+        # Resolve document bytes safely via storage_service (enforces root boundaries)
+        from backend.app.services.storage import storage_service
+        try:
+            pdf_bytes = storage_service.read_file(doc.gcs_uri)
+        except Exception as e:
+            pdf_bytes = None
 
         if not pdf_bytes:
             # Check cached hidden layers if already processed during extraction

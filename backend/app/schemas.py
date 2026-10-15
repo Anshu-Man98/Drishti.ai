@@ -204,7 +204,7 @@ class ChatResponse(BaseModel):
 
 
 class IssueApprovalRequest(BaseModel):
-    amount_paise: int
+    amount_paise: int = Field(..., gt=0, description="Amount in paise to sanction (must be > 0)")
     notes: Optional[str] = None
 
 

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     SYNTHID_ENABLED: bool = os.getenv("SYNTHID_ENABLED", "false").lower() == "true"
     LOCAL_FALLBACK: bool = os.getenv("LOCAL_FALLBACK", "true").lower() == "true"
     LOCAL_DATA_DIR: str = os.getenv("LOCAL_DATA_DIR", "/Users/anshu/Documents/Drishti.ai/data")
+    INJECTION_CHECK_ENABLED: bool = os.getenv("INJECTION_CHECK_ENABLED", "true").lower() == "true"
+    WATERMARK_ENABLED: bool = os.getenv("WATERMARK_ENABLED", "true").lower() == "true"
+    RAG_PATTERNS_ENABLED: bool = os.getenv("RAG_PATTERNS_ENABLED", "true").lower() == "true"
     
     model_config = SettingsConfigDict(
         env_file=".env",

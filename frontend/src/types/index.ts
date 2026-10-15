@@ -1,5 +1,5 @@
 export type DocType = 'bill' | 'prescription' | 'discharge_summary' | 'lab_report' | 'photo';
-export type AgentName = 'forensics' | 'policy' | 'crossref' | 'spacetime' | 'ml';
+export type AgentName = 'forensics' | 'policy' | 'crossref' | 'spacetime' | 'ml' | 'injection' | 'provenance' | 'rag';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export type Verdict = 'approve' | 'review' | 'reject';
 
@@ -88,6 +88,7 @@ export interface Evidence {
   page: number;
   bbox?: [number, number, number, number] | null;
   quote?: string;
+  layer?: 'visible' | 'hidden' | 'metadata' | 'retrieved' | null;
 }
 
 export interface Finding {
@@ -100,6 +101,8 @@ export interface Finding {
   evidence: Evidence[];
   confidence: number;
   category?: string;
+  computed_chip?: string | null;
+  computed_details?: Record<string, any> | null;
 }
 
 export interface MlFeature {
@@ -117,6 +120,20 @@ export interface TimelineEvent {
   description?: string;
 }
 
+export interface RetrievedContext {
+  source: 'policy' | 'pattern';
+  ref_id: string;
+  title: string;
+  snippet: string;
+  score: number;
+}
+
+export interface Provenance {
+  status: 'verified' | 'tampered' | 'unmarked' | 'not_applicable';
+  issued_doc_id?: string | null;
+  detail?: string | null;
+}
+
 export interface Dossier {
   claim_id: string;
   risk_score: number;
@@ -126,6 +143,8 @@ export interface Dossier {
   findings: Finding[];
   top_ml_features?: MlFeature[];
   timeline?: TimelineEvent[];
+  retrieved_context?: RetrievedContext[] | null;
+  provenance?: Provenance | null;
   created_at: string;
 }
 

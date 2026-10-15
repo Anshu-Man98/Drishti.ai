@@ -89,11 +89,19 @@ def run_claims_fraud_pipeline(
     # 2. BigQuery ML Scoring Step
     if status_callback:
         status_callback("ml", "running")
-    from backend.tools.bq import extract_claim_features, ml_score
+    from backend.tools.bq import extract_claim_features
+    from backend.tools.registry import call_tool
     from backend.app.schemas import MlFeature, AgentName, Severity
 
     claim_features = extract_claim_features(claim)
-    ml_prob, top_ml_features_dicts = ml_score(claim_features)
+    ml_res = call_tool(
+        "ml_score",
+        {"claim_features": claim_features},
+        claim_id=claim.claim_id,
+        agent_name="ml"
+    )
+    ml_prob = ml_res["probability"]
+    top_ml_features_dicts = ml_res["top_features"]
 
     top_ml_features = [
         MlFeature(feature=it["feature"], attribution=it["attribution"])
@@ -117,7 +125,9 @@ def run_claims_fraud_pipeline(
                 f"Primary anomaly drivers: {', '.join(feat_summaries)}."
             ),
             evidence=[],
-            confidence=round(ml_prob, 2)
+            confidence=round(ml_prob, 2),
+            computed_chip=ml_res.get("chip", f"BQML: {ml_prob*100:.1f}%"),
+            computed_details=ml_res.get("computed")
         ))
 
     if status_callback:

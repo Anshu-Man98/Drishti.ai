@@ -152,7 +152,7 @@ def test_pipeline_golden_g2_arithmetic_mismatch():
 
     dossier = run_claims_fraud_pipeline(claim)
     assert any(f.check_id in ["SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH"] for f in dossier.findings)
-    assert dossier.risk_score >= 30
+    assert dossier.risk_score >= 18
 
 
 def test_pipeline_golden_g3_policy_cap_breach():

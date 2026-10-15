@@ -8,9 +8,10 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName
+from backend.app.schemas import Dossier, Finding, Verdict, Claim, TimelineEvent, AgentName, Severity
 from backend.app.config import settings
-from backend.tools.scoring import score_findings
+from backend.tools.registry import call_tool, get_all_computed_values, score_findings
+from backend.tools.grounding import assert_numbers_grounded, sanitize_text_grounding
 
 SYNTHESIZER_SYSTEM_PROMPT = """You write the final risk dossier for an insurance adjuster. Use only the findings provided.
 Do not add new accusations. Call score_findings for the score. Be specific, neutral, and concise."""
@@ -26,8 +27,16 @@ def synthesize_dossier(
     """
     Synthesizes all specialist agent findings and BigQuery ML probability into a final Dossier.
     Deterministic score and verdict via score_findings.
+    Enforces Numeric Grounding Guard on summary and finding explanations.
     """
-    risk_score, verdict = score_findings(all_findings, ml_probability=ml_score)
+    score_res = call_tool(
+        "score_findings",
+        {"findings": all_findings, "ml_probability": ml_score},
+        claim_id=claim.claim_id,
+        agent_name="synthesizer"
+    )
+    risk_score = score_res["score"]
+    verdict = score_res["verdict"]
 
     # Generate grounded summary referencing finding_ids and ML features
     if not all_findings:
@@ -88,6 +97,38 @@ def synthesize_dossier(
             )
         else:
             summary += "Minor observations noted; overall claim within acceptable risk thresholds."
+
+    # Enforce Numeric Grounding Guard on Summary and Finding Explanations
+    computed_store = get_all_computed_values(claim.claim_id)
+    sanitized_summary, ungrounded_summary = sanitize_text_grounding(summary, computed_store, claim)
+    summary = sanitized_summary
+    for ung in ungrounded_summary:
+        all_findings.append(Finding(
+            finding_id=f"F-UNGROUNDED-SUM-{len(all_findings)+1}",
+            agent=AgentName.ML,
+            check_id="ungrounded_number",
+            severity=Severity.INFO,
+            title="Ungrounded numerical claim suppressed",
+            explanation=f"Suppressed sentence containing ungrounded numerical value '{ung['value']}' not traceable to deterministic tool outputs.",
+            evidence=[],
+            confidence=1.0
+        ))
+
+    for f in list(all_findings):
+        sanitized_exp, ungrounded_f = sanitize_text_grounding(f.explanation, computed_store, claim)
+        if ungrounded_f:
+            f.explanation = sanitized_exp
+            for ung in ungrounded_f:
+                all_findings.append(Finding(
+                    finding_id=f"F-UNGROUNDED-F-{len(all_findings)+1}",
+                    agent=AgentName.ML,
+                    check_id="ungrounded_number",
+                    severity=Severity.INFO,
+                    title="Ungrounded numerical claim suppressed in finding",
+                    explanation=f"Suppressed ungrounded numerical value '{ung['value']}' in finding {f.finding_id}.",
+                    evidence=[],
+                    confidence=1.0
+                ))
 
     return Dossier(
         claim_id=claim.claim_id,

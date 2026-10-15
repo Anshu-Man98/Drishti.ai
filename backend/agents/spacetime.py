@@ -125,6 +125,8 @@ def analyze_spacetime_feasibility(claim: Claim) -> Tuple[List[Finding], List[Tim
     for ev in timeline:
         actor_events.setdefault(ev.actor, []).append(ev)
 
+    from backend.tools.registry import call_tool
+
     # Check consecutive events for each actor
     for actor, ev_list in actor_events.items():
         if len(ev_list) < 2:
@@ -134,7 +136,12 @@ def analyze_spacetime_feasibility(claim: Claim) -> Tuple[List[Finding], List[Tim
             ev1 = ev_list[i]
             ev2 = ev_list[i + 1]
 
-            feasibility = is_feasible(ev1, ev2)
+            feasibility = call_tool(
+                "is_feasible",
+                {"event_a": ev1, "event_b": ev2},
+                claim_id=claim.claim_id,
+                agent_name="spacetime"
+            )
 
             if not feasibility["feasible"] and not feasibility.get("skipped", False):
                 raw_km = feasibility["km"]
@@ -174,7 +181,9 @@ def analyze_spacetime_feasibility(claim: Claim) -> Tuple[List[Finding], List[Tim
                             quote=f"Billed at {ev2.place} ({ev2.ts.strftime('%d-%b %H:%M')})"
                         )
                     ],
-                    confidence=0.99
+                    confidence=0.99,
+                    computed_chip=feasibility.get("chip", f"{km:,.0f} km in {available_min} min"),
+                    computed_details=feasibility.get("computed")
                 )
                 findings.append(finding)
 

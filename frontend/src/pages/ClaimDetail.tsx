@@ -562,6 +562,18 @@ export const ClaimDetail: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-300 leading-relaxed">{f.explanation}</p>
 
+                            {f.computed_chip && (
+                              <div className="pt-1">
+                                <span
+                                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-slate-900 text-amber-300 border border-slate-700/80 shadow-inner"
+                                  title={`computed by ${f.check_id.toLowerCase().includes('math') ? 'validate_arithmetic' : f.check_id.toLowerCase().includes('policy') ? 'check_policy_caps' : 'deterministic tool'}`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                                  <span>{f.computed_chip}</span>
+                                </span>
+                              </div>
+                            )}
+
                             <div className="flex items-center justify-between pt-1 text-[11px] gap-2 flex-wrap">
                               <span className="font-mono text-slate-500 text-[10px] uppercase">{f.check_id}</span>
                               <div className="flex items-center space-x-2">
@@ -599,6 +611,15 @@ export const ClaimDetail: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Dossier Audit Guarantee Footer */}
+              <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[11px] text-slate-400">
+                <div className="flex items-center space-x-1.5 font-mono text-slate-300">
+                  <Cpu className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>All figures computed by deterministic tools. Gemini explains; it does not calculate.</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">Paise-Accurate Precision</span>
+              </div>
             </div>
 
             {/* Itemized Bill Table */}

@@ -20,6 +20,9 @@ class AgentName(str, Enum):
     CROSSREF = "crossref"
     SPACETIME = "spacetime"
     ML = "ml"
+    INJECTION = "injection"
+    PROVENANCE = "provenance"
+    RAG = "rag"
 
 
 class Severity(str, Enum):
@@ -104,6 +107,7 @@ class Evidence(BaseModel):
     page: int = 1
     bbox: Optional[List[float]] = None  # [x0, y0, x1, y1] normalized 0..1
     quote: Optional[str] = None
+    layer: Optional[str] = None  # "visible" | "hidden" | "metadata" | "retrieved" | None
 
 
 class Finding(BaseModel):
@@ -115,6 +119,9 @@ class Finding(BaseModel):
     explanation: str
     evidence: List[Evidence] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
+    category: Optional[str] = None
+    computed_chip: Optional[str] = None
+    computed_details: Optional[dict[str, Any]] = None
 
 
 class MlFeature(BaseModel):
@@ -132,6 +139,20 @@ class TimelineEvent(BaseModel):
     description: Optional[str] = None
 
 
+class RetrievedContext(BaseModel):
+    source: str  # "policy" | "pattern"
+    ref_id: str
+    title: str
+    snippet: str
+    score: float
+
+
+class Provenance(BaseModel):
+    status: str  # "verified" | "tampered" | "unmarked" | "not_applicable"
+    issued_doc_id: Optional[str] = None
+    detail: Optional[str] = None
+
+
 class Dossier(BaseModel):
     claim_id: str
     risk_score: int = Field(ge=0, le=100)
@@ -141,6 +162,8 @@ class Dossier(BaseModel):
     findings: List[Finding] = Field(default_factory=list)
     top_ml_features: Optional[List[MlFeature]] = None
     timeline: Optional[List[TimelineEvent]] = None
+    retrieved_context: Optional[List[RetrievedContext]] = None
+    provenance: Optional[Provenance] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

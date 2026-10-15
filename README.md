@@ -257,5 +257,53 @@ Interactive Slide-Out Chat Drawer (`frontend/src/components/ChatDrawer.tsx`)
 
 ---
 
+## 🔢 Feature A3: Deterministic Math Validator & Numeric Grounding Guard
+
+FinShield hardens the rule that **LLMs never do arithmetic or hallucinate figures** into a provable, mathematically verified system architecture:
+
+```text
+Specialist Agents / Pipeline
+         │
+         ▼
+Vertex AI Tool Registry (`backend/tools/registry.py`)
+  ├── Function-calling interface (Vertex AI declarations)
+  ├── 100% Deterministic integer paise calculations (1 INR = 100 paise)
+  ├── Structured Cloud Logging: {claim_id, agent, tool, args_hash, result_hash, latency_ms}
+  └── Emits computed dictionaries & visual audit chips
+         │
+         ▼
+Numeric Grounding Guard (`backend/tools/grounding.py`)
+  ├── Normalizes currency (₹, INR, Rs., lakhs, crores), percentages, distances, and durations
+  ├── Cross-checks every generated number in Dossier.summary & Finding explanations
+  └── If ungrounded: suppresses fabricated sentences and flags ungrounded_number (info)
+```
+
+> **Audit Guarantee:** *All figures computed by deterministic tools. Gemini explains; it does not calculate.*
+
+### 1. Central Tool Registry (`backend/tools/registry.py`)
+- Registered deterministic tools with explicit Vertex AI function-calling schemas:
+  - `validate_arithmetic(line_items, subtotal, tax, total)`
+  - `check_policy_caps(policy_id, claim)`
+  - `check_dates(admission_ts, discharge_ts, document_dates)`
+  - `haversine_km(a, b)` / `min_travel_hours(km)` / `is_feasible(event_a, event_b)`
+  - `score_findings(findings)`
+  - `ml_score(claim_features)`
+- **Integer Paise Arithmetic:** All currency is computed in integer paise internally (`tolerance_paise: 100`), preventing float rounding drift across thousands of itemized bill rows.
+- **Computed Sub-Objects:** Every tool emits a structured `computed` dictionary and a human-readable `computed_chip` (e.g. `₹90,500 + ₹4,525 ≠ ₹1,12,500 (Δ ₹17,475)`).
+- **Structured Audit Logging:** Every tool execution is recorded with SHA-256 argument/result hashes and execution latency for enterprise compliance.
+
+### 2. Numeric Grounding Guard (`backend/tools/grounding.py`)
+- Extracts and normalizes every number from LLM-generated summaries and explanations.
+- Verifies membership against the union of all `computed` values produced by the tool registry and verbatim values from the extracted Claim JSON.
+- Automatically whitelists non-factual identifiers (such as `[F3]`, `Clause 3.1`, year `2026`, and prose ordinals).
+- If an ungrounded figure is detected, it strips the sentence and creates an `agent: "ml", check_id: "ungrounded_number", severity: "info"` finding, ensuring no hallucinated numbers are ever presented to an adjuster.
+
+### 3. Frontend Audit Badges & Verifiable Chips
+- Each finding card displays a monospace `computed_chip` with a tooltip indicating the exact deterministic tool that calculated it.
+- Dossier view includes the cryptographic audit guarantee banner in its footer.
+
+---
+
 ## 🚀 Getting Started
-Refer to [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the implementation roadmap and architecture details.
+Refer to [FinShield_Build_Plan.md](FinShield_Build_Plan.md) for the implementation roadmap and architecture details.
+

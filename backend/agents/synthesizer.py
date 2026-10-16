@@ -69,15 +69,37 @@ def synthesize_dossier(
                 attr = feat_item.attribution if hasattr(feat_item, "attribution") else feat_item.get("attribution", 0.0)
                 if fname == "amount_vs_diagnosis_median_ratio":
                     ratio = getattr(claim, "total_claimed", 0) / 65000.0
-                    top_exps.append(f"claim amount is {ratio:.1f}× the median for this diagnosis")
+                    if attr > 0:
+                        top_exps.append(f"claim amount is {ratio:.1f}× median diagnosis benchmark")
+                    else:
+                        top_exps.append(f"claim amount aligned with diagnosis benchmark (impact: {attr:+.2f})")
                 elif fname == "room_rent_vs_cap_ratio":
-                    top_exps.append("room rent rate exceeds eligible policy ceiling")
+                    has_room_cap_breach = any(
+                        "room" in f.title.lower() or "room" in f.explanation.lower()
+                        for f in all_findings
+                        if f.agent == AgentName.POLICY
+                    )
+                    if attr > 0 and has_room_cap_breach:
+                        top_exps.append(f"room rent rate exceeds eligible policy ceiling (impact: {attr:+.2f})")
+                    elif attr > 0:
+                        top_exps.append(f"elevated room rent ratio (impact: {attr:+.2f})")
+                    else:
+                        top_exps.append(f"room rent rate is within eligible policy ceiling (reassuring factor: {attr:+.2f})")
                 elif fname == "doctor_distinct_cities_24h":
-                    top_exps.append("attending doctor has activity in multiple distinct cities within 24 hours")
+                    if attr > 0:
+                        top_exps.append("attending doctor has activity in multiple distinct cities within 24 hours")
+                    else:
+                        top_exps.append(f"doctor city presence normal (impact: {attr:+.2f})")
                 elif fname == "claimant_prior_claims_90d":
-                    top_exps.append("elevated claimant claim frequency over past 90 days")
+                    if attr > 0:
+                        top_exps.append("elevated claimant claim frequency over past 90 days")
+                    else:
+                        top_exps.append(f"claimant claim frequency normal (impact: {attr:+.2f})")
                 elif fname == "shared_bank_account_count":
-                    top_exps.append("settlement bank account is shared across multiple claimants")
+                    if attr > 0:
+                        top_exps.append("settlement bank account is shared across multiple claimants")
+                    else:
+                        top_exps.append(f"bank account unshared (impact: {attr:+.2f})")
                 else:
                     top_exps.append(f"{fname.replace('_', ' ')} (impact: {attr:+.2f})")
             
@@ -113,7 +135,16 @@ def synthesize_dossier(
                 summary += f" Corroborating context: consistent with known historical fraud pattern [{pat.ref_id}: {pat.title}]."
 
     # Enforce Numeric Grounding Guard on Summary and Finding Explanations
-    computed_store = get_all_computed_values(claim.claim_id)
+    computed_store = dict(get_all_computed_values(claim.claim_id))
+    if ml_score is not None:
+        computed_store["ml_probability"] = float(ml_score)
+        computed_store["ml_percentage"] = round(float(ml_score) * 100, 1)
+        computed_store["ml_percentage_int"] = round(float(ml_score) * 100)
+    if top_ml_features:
+        for idx, feat in enumerate(top_ml_features):
+            attr_val = feat.attribution if hasattr(feat, "attribution") else feat.get("attribution", 0.0)
+            computed_store[f"ml_attr_{idx}"] = float(attr_val)
+
     sanitized_summary, ungrounded_summary = sanitize_text_grounding(summary, computed_store, claim)
     summary = sanitized_summary
     for ung in ungrounded_summary:

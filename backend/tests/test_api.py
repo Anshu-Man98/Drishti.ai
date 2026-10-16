@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
-from backend.app.main import app
+from backend.app.main import app, lifespan, probe_cloud_dependencies
+from backend.app.config import settings
+from backend.app.dependencies import get_current_user
 
 client = TestClient(app)
 
@@ -9,10 +11,85 @@ def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
+    assert data["status"] in ("healthy", "degraded")
     assert "models" in data
     assert "pro" in data["models"]
     assert "flash" in data["models"]
+    assert "dependencies" in data
+
+
+def test_health_check_probes_and_security():
+    """Validates that /health exposes real dependencies without leaking secrets."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+
+    deps = data["dependencies"]
+    expected_deps = ["firestore", "gcs", "bigquery", "documentai", "gemini", "provenance_key"]
+    for dep in expected_deps:
+        assert dep in deps, f"Missing {dep} in health dependencies"
+        assert "status" in deps[dep]
+
+    # Verify no credentials, tokens, or private keys leaked in response text
+    raw_text = response.text
+    assert "AQ.Ab8RN6" not in raw_text
+    assert "finshield-provenance-signing-key" not in raw_text or "source" in raw_text
+
+
+@pytest.mark.anyio
+async def test_startup_fail_fast_when_cloud_required(monkeypatch):
+    """
+    Validates that if REQUIRE_CLOUD_ON_STARTUP=True and a required cloud
+    dependency fails, app lifespan raises RuntimeError citing docs/CLOUD_SETUP.md.
+    """
+    import backend.app.main as main_module
+    old_cached = main_module._CACHED_HEALTH
+    try:
+        monkeypatch.setattr(settings, "REQUIRE_CLOUD_ON_STARTUP", True)
+        
+        # Mock probe to simulate unreachable GCS / BigQuery
+        def mock_failing_probe():
+            return {
+                "firestore": {"ok": True, "status": "connected"},
+                "gcs": {"ok": False, "status": "unavailable", "detail": "Bucket unreachable"},
+                "bigquery": {"ok": False, "status": "unavailable", "detail": "Dataset unreachable"},
+                "documentai": {"ok": True, "status": "connected"},
+                "gemini": {"ok": True, "status": "connected"},
+                "provenance_key": {"ok": True, "status": "configured"}
+            }
+
+        monkeypatch.setattr("backend.app.main.probe_cloud_dependencies", mock_failing_probe)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            async with lifespan(app):
+                pass
+
+        err_text = str(exc_info.value)
+        assert "FinShield Cloud Startup Check FAILED" in err_text
+        assert "gcs" in err_text
+        assert "bigquery" in err_text
+        assert "docs/CLOUD_SETUP.md" in err_text
+    finally:
+        main_module._CACHED_HEALTH = old_cached
+
+
+def test_allow_dev_tokens_enforcement(monkeypatch):
+    """When ALLOW_DEV_TOKENS=False (production mode), dev tokens must be rejected with 401."""
+    app.dependency_overrides.clear()
+    monkeypatch.setattr(settings, "ALLOW_DEV_TOKENS", False)
+
+    try:
+        # Dev token should now fail with 401
+        res = client.get("/claims", headers={"Authorization": "Bearer adjuster-token"})
+        assert res.status_code == 401
+        assert "Invalid authentication token" in res.json().get("detail", "")
+    finally:
+        # Restore test auth override
+        app.dependency_overrides[get_current_user] = lambda: {
+            "uid": "test-adjuster-1",
+            "email": "adjuster@finshield.test",
+            "role": "adjuster"
+        }
 
 
 def test_claims_crud_flow():

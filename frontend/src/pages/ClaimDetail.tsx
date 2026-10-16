@@ -10,7 +10,8 @@ import {
 import { Claim, Dossier, ProvenanceVerifyResponse } from '../types';
 import {
   fetchClaim, fetchDossier, analyzeClaim, getDocumentUrl, fetchClaimEntities,
-  issueApprovalLetter, verifyDocument, getProvenancePubkeyUrl
+  issueApprovalLetter, verifyDocument, getProvenancePubkeyUrl,
+  downloadAuthenticatedFile, openAuthenticatedFile
 } from '../services/api';
 import { DocumentViewer } from '../components/DocumentViewer';
 import { ChatDrawer } from '../components/ChatDrawer';
@@ -99,13 +100,8 @@ export const ClaimDetail: React.FC = () => {
       const res = await issueApprovalLetter(id, amountPaise, sanctionNotes);
       setIssueSuccess(`Successfully issued Sanction Note ${res.doc_id}! Initiating download...`);
 
-      // Trigger automatic PDF download
-      const a = document.createElement('a');
-      a.href = res.download_url;
-      a.download = `Sanction_${res.doc_id}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // Trigger authenticated PDF download
+      await downloadAuthenticatedFile(res.download_url, `Sanction_${res.doc_id}.pdf`);
 
       // Refresh claim documents
       await loadClaimData();
@@ -376,15 +372,14 @@ export const ClaimDetail: React.FC = () => {
                           {doc.doc_type} • SHA: {doc.sha256.slice(0, 12)}...
                         </p>
                       </div>
-                      <a
-                        href={getDocumentUrl(claim.claim_id, doc.doc_id)}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => openAuthenticatedFile(getDocumentUrl(claim.claim_id, doc.doc_id))}
                         className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
                         title="Open Document Raw PDF"
                       >
                         <ExternalLink className="w-4 h-4" />
-                      </a>
+                      </button>
                     </div>
                   ))}
                 </div>

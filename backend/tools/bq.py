@@ -1,20 +1,21 @@
 """
-Cross-reference and claims warehouse lookup tools using BigQuery.
-Fallbacks to local claims database when running offline without live BigQuery credentials.
+Cross-reference and claims warehouse lookup tools using Google Cloud BigQuery and BigQuery ML.
+Cloud-only: Queries live BigQuery tables and BQML fraud models.
 Parameter-safe queries only.
 """
 
 import os
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-import pandas as pd
 
 from backend.app.schemas import Finding, Evidence, AgentName, Severity
 from backend.app.config import settings
+from backend.app.exceptions import CloudServiceError
 from backend.tools.geo import normalize_to_utc
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+logger = logging.getLogger("finshield.tools.bq")
 
 try:
     from google.cloud import bigquery
@@ -25,23 +26,89 @@ except Exception:
 
 
 class BigQueryWarehouse:
+    """
+    Cloud-native claims warehouse querying Google Cloud BigQuery.
+    Queries dataset {GCP_PROJECT}.{BIGQUERY_DATASET}.
+    There is no offline CSV/JSONL fallback.
+    """
     def __init__(self):
         self._client = None
-        if _bq_available and not settings.LOCAL_FALLBACK:
+        self._init_client()
+
+    def _init_client(self):
+        if _bq_available and settings.GCP_PROJECT:
             try:
                 self._client = _bq_client_class(project=settings.GCP_PROJECT)
-            except Exception:
+            except Exception as e:
                 self._client = None
+                if settings.REQUIRE_CLOUD_ON_STARTUP:
+                    raise CloudServiceError(
+                        service="bigquery",
+                        message=f"Failed to initialize BigQuery client for project '{settings.GCP_PROJECT}': {e}",
+                        retryable=True
+                    )
 
-        # Load local synthetic dataset for offline lookups
-        self._claims_df = None
-        claims_csv = DATA_DIR / "claims.csv"
-        if claims_csv.exists():
-            try:
-                self._claims_df = pd.read_csv(claims_csv)
-                self._claims_df["admission_ts"] = pd.to_datetime(self._claims_df["admission_ts"])
-            except Exception:
-                pass
+    @property
+    def client(self) -> Any:
+        if self._client is None:
+            self._init_client()
+        if self._client is None:
+            raise CloudServiceError(
+                service="bigquery",
+                message="Google Cloud BigQuery client is unavailable. Live BigQuery connection required.",
+                retryable=True
+            )
+        return self._client
+
+    def lookup_claimant_bank_hash(self, claimant_name: str) -> Optional[str]:
+        """Looks up registered bank account hash for a claimant from the claims warehouse."""
+        if not claimant_name:
+            return None
+        query = f"""
+        SELECT bank_account_hash
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE LOWER(claimant_name) = @cname
+          AND bank_account_hash IS NOT NULL
+        LIMIT 1
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("cname", "STRING", claimant_name.lower())]
+        )
+        try:
+            results = list(self.client.query(query, job_config=job_config).result())
+            if results and results[0].bank_account_hash:
+                return str(results[0].bank_account_hash)
+            return None
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to lookup claimant bank hash in BigQuery: {e}",
+                retryable=True
+            )
+
+    def get_shared_account_count(self, bank_account_hash: str) -> int:
+        """Returns the number of distinct claimants sharing this bank account hash."""
+        if not bank_account_hash:
+            return 1
+        query = f"""
+        SELECT COUNT(DISTINCT claimant_id) as cnt
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE bank_account_hash = @bhash
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("bhash", "STRING", bank_account_hash)]
+        )
+        try:
+            results = list(self.client.query(query, job_config=job_config).result())
+            if results and results[0].cnt:
+                return max(1, int(results[0].cnt))
+            return 1
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to query shared account count in BigQuery: {e}",
+                retryable=True
+            )
 
     def find_exact_duplicates(
         self,
@@ -51,35 +118,52 @@ class BigQueryWarehouse:
         current_claim_id: Optional[str] = None
     ) -> List[Finding]:
         """
-        Detects exact duplicate document or invoice submission.
+        Detects exact duplicate document or invoice submission via BigQuery warehouse.
         """
         findings: List[Finding] = []
+        if not bill_number:
+            return findings
 
-        # Check local synthetic dataset
-        if self._claims_df is not None:
-            # Check duplicate bills
-            dup_mask = (self._claims_df["fraud_type"] == "duplicate_bill")
-            if current_claim_id:
-                dup_mask = dup_mask & (self._claims_df["claim_id"] != current_claim_id)
+        where_conditions = ["bill_number IS NOT NULL AND bill_number != '' AND bill_number = @bill_number"]
+        if current_claim_id:
+            where_conditions.append("claim_id != @current_claim_id")
 
-            matches = self._claims_df[dup_mask]
-            # Also check if bill_number or sha256 matches
-            if bill_number and "BILL-HYD-2026-88219" in bill_number:
+        query = f"""
+        SELECT claim_id, hospital_name, total_claimed, bill_number
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE {" AND ".join(where_conditions)}
+        LIMIT 5
+        """
+        query_params = [
+            bigquery.ScalarQueryParameter("bill_number", "STRING", bill_number),
+        ]
+        if current_claim_id:
+            query_params.append(bigquery.ScalarQueryParameter("current_claim_id", "STRING", current_claim_id))
+
+        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+        try:
+            for row in self.client.query(query, job_config=job_config).result():
                 findings.append(Finding(
                     finding_id="F-XREF-EXACT-DUP",
                     agent=AgentName.CROSSREF,
                     check_id="EXACT_DUPLICATE_BILL",
                     severity=Severity.CRITICAL,
-                    title=f"Exact duplicate bill resubmitted: {bill_number}",
+                    title=f"Exact duplicate bill resubmitted: {bill_number or row.claim_id}",
                     explanation=(
-                        f"Bill number '{bill_number}' was previously settled under claim CLM-PRIOR-88219 "
-                        f"at {hospital_id or 'the same facility'}. Resubmission constitutes double-billing."
+                        f"Bill was previously settled under claim {row.claim_id} "
+                        f"at {row.hospital_name or hospital_id or 'the same facility'}. Resubmission constitutes double-billing."
                     ),
-                    evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Bill No: {bill_number}")],
+                    evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Bill No: {bill_number or row.claim_id}")],
                     confidence=1.0
                 ))
-
-        return findings
+                return findings
+            return findings
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to check exact duplicates in BigQuery: {e}",
+                retryable=True
+            )
 
     def find_cross_insurer_duplicates(
         self,
@@ -93,28 +177,33 @@ class BigQueryWarehouse:
         Detects cross-insurer duplicate claim: same claimant, admission +-3 days, amount +-5%.
         """
         findings: List[Finding] = []
+        where_conditions = [
+            "claimant_id = @claimant_id",
+            "admission_ts BETWEEN TIMESTAMP_SUB(TIMESTAMP(@adm_ts), INTERVAL 3 DAY) AND TIMESTAMP_ADD(TIMESTAMP(@adm_ts), INTERVAL 3 DAY)",
+            "total_claimed BETWEEN @low_amt AND @high_amt"
+        ]
+        if current_claim_id:
+            where_conditions.append("claim_id != @current_claim_id")
 
-        # Check in local dataset
-        if self._claims_df is not None:
-            low_date = admission_ts - timedelta(days=3)
-            high_date = admission_ts + timedelta(days=3)
-            low_amt = amount * 0.95
-            high_amt = amount * 1.05
+        query = f"""
+        SELECT claim_id, claimant_id, insurer_id, total_claimed, admission_ts
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE {" AND ".join(where_conditions)}
+        LIMIT 1
+        """
+        query_params = [
+            bigquery.ScalarQueryParameter("claimant_id", "STRING", claimant_id),
+            bigquery.ScalarQueryParameter("adm_ts", "TIMESTAMP", admission_ts.isoformat()),
+            bigquery.ScalarQueryParameter("low_amt", "FLOAT64", amount * 0.95),
+            bigquery.ScalarQueryParameter("high_amt", "FLOAT64", amount * 1.05),
+        ]
+        if current_claim_id:
+            query_params.append(bigquery.ScalarQueryParameter("current_claim_id", "STRING", current_claim_id))
 
-            matches = self._claims_df[
-                (self._claims_df["claimant_id"] == claimant_id) &
-                (self._claims_df["admission_ts"] >= low_date) &
-                (self._claims_df["admission_ts"] <= high_date) &
-                (self._claims_df["total_claimed"] >= low_amt) &
-                (self._claims_df["total_claimed"] <= high_amt)
-            ]
-            if current_claim_id:
-                matches = matches[matches["claim_id"] != current_claim_id]
-
-            # If golden claim G4 or cross insurer duplicate detected
-            if len(matches) > 0 or claimant_id == "CLMNT-9901":
-                prior_insurer = "Star Health & Allied Insurance" if insurer_id != "INS-STAR" else "HDFC ERGO"
-                prior_claim_id = matches.iloc[0]["claim_id"] if len(matches) > 0 else "CLM-STAR-77102"
+        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+        try:
+            for row in self.client.query(query, job_config=job_config).result():
+                prior_ins = row.insurer_id or "Another Insurer"
                 findings.append(Finding(
                     finding_id="F-XREF-CROSS-INSURER",
                     agent=AgentName.CROSSREF,
@@ -123,14 +212,20 @@ class BigQueryWarehouse:
                     title="Cross-insurer duplicate claim detected in claims warehouse",
                     explanation=(
                         f"Claimant {claimant_id} already filed an identical claim for ₹{amount:,.2f} "
-                        f"(admission around {admission_ts.strftime('%d-%b-%Y')}) with {prior_insurer} "
-                        f"(Prior Claim ID: {prior_claim_id}). Simultaneous multi-insurer claiming violates insurance contracts."
+                        f"(admission around {admission_ts.strftime('%d-%b-%Y')}) with {prior_ins} "
+                        f"(Prior Claim ID: {row.claim_id}). Simultaneous multi-insurer claiming violates insurance contracts."
                     ),
                     evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Claimant: {claimant_id}, Amount: ₹{amount}")],
                     confidence=0.98
                 ))
-
-        return findings
+                return findings
+            return findings
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to query cross-insurer duplicates in BigQuery: {e}",
+                retryable=True
+            )
 
     def shared_account_check(
         self,
@@ -141,24 +236,22 @@ class BigQueryWarehouse:
         Detects syndicate/fraud-ring activity where multiple unrelated claimants share a single bank account.
         """
         findings: List[Finding] = []
+        distinct_claimants = self.get_shared_account_count(bank_account_hash)
 
-        if self._claims_df is not None:
-            ring_matches = self._claims_df[self._claims_df["bank_account_hash"] == bank_account_hash]
-            distinct_claimants = ring_matches["claimant_id"].nunique()
-            if distinct_claimants > 3 or "shared_hash" in bank_account_hash:
-                findings.append(Finding(
-                    finding_id="F-XREF-SHARED-BANK",
-                    agent=AgentName.CROSSREF,
-                    check_id="SHARED_BANK_ACCOUNT_FRAUD_RING",
-                    severity=Severity.HIGH,
-                    title="Syndicate alert: Bank account shared across multiple claimants",
-                    explanation=(
-                        f"Bank account hash ({bank_account_hash[:10]}...) is registered across "
-                        f"{distinct_claimants} distinct claimants in the claims database, indicating organized fraud ring operations."
-                    ),
-                    evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Bank hash: {bank_account_hash}")],
-                    confidence=0.94
-                ))
+        if distinct_claimants > 3:
+            findings.append(Finding(
+                finding_id="F-XREF-SHARED-BANK",
+                agent=AgentName.CROSSREF,
+                check_id="SHARED_BANK_ACCOUNT_FRAUD_RING",
+                severity=Severity.HIGH,
+                title="Syndicate alert: Bank account shared across multiple claimants",
+                explanation=(
+                    f"Bank account hash ({bank_account_hash[:10]}...) is registered across "
+                    f"{distinct_claimants} distinct claimants in the claims database, indicating organized fraud ring operations."
+                ),
+                evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Bank hash: {bank_account_hash}")],
+                confidence=0.94
+            ))
 
         return findings
 
@@ -166,15 +259,60 @@ class BigQueryWarehouse:
         """
         Retrieves claim frequency for claimant in past N days.
         """
-        if self._claims_df is not None:
-            claimant_claims = self._claims_df[self._claims_df["claimant_id"] == claimant_id]
-            return {
-                "claimant_id": claimant_id,
-                "total_claims_365d": len(claimant_claims),
-                "total_amount_claimed": float(claimant_claims["total_claimed"].sum()) if len(claimant_claims) > 0 else 0.0,
-                "distinct_hospitals": int(claimant_claims["hospital_id"].nunique()) if len(claimant_claims) > 0 else 0
-            }
-        return {"claimant_id": claimant_id, "total_claims_365d": 1, "total_amount_claimed": 0.0, "distinct_hospitals": 1}
+        query = f"""
+        SELECT COUNT(*) as total_claims_365d,
+               COALESCE(SUM(total_claimed), 0.0) as total_amount,
+               COUNT(DISTINCT hospital_name) as distinct_hospitals
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE claimant_id = @cid
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("cid", "STRING", claimant_id)]
+        )
+        try:
+            for row in self.client.query(query, job_config=job_config).result():
+                return {
+                    "claimant_id": claimant_id,
+                    "total_claims_365d": int(row.total_claims_365d),
+                    "total_amount_claimed": float(row.total_amount),
+                    "distinct_hospitals": int(row.distinct_hospitals)
+                }
+            return {"claimant_id": claimant_id, "total_claims_365d": 0, "total_amount_claimed": 0.0, "distinct_hospitals": 0}
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to query claimant history from BigQuery: {e}",
+                retryable=True
+            )
+
+    def count_claimant_prior_claims_90d(self, claimant_id: str, as_of_ts: Optional[datetime] = None) -> int:
+        """Counts prior claims submitted by this claimant in the 90 days before admission."""
+        if not claimant_id:
+            return 0
+        ts = as_of_ts or datetime.utcnow()
+        low_ts = ts - timedelta(days=90)
+        query = f"""
+        SELECT COUNT(1) as cnt
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
+        WHERE claimant_id = @cid
+          AND admission_ts BETWEEN @low_ts AND @ts
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("cid", "STRING", claimant_id),
+                bigquery.ScalarQueryParameter("low_ts", "TIMESTAMP", low_ts),
+                bigquery.ScalarQueryParameter("ts", "TIMESTAMP", ts),
+            ]
+        )
+        try:
+            results = list(self.client.query(query, job_config=job_config).result())
+            return int(results[0].cnt) if results else 0
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to count prior claims from BigQuery: {e}",
+                retryable=True
+            )
 
     def get_doctor_events(
         self,
@@ -184,85 +322,52 @@ class BigQueryWarehouse:
     ) -> List[Dict[str, Any]]:
         """
         Retrieves other hospital/clinic billing events for the same doctor within +-window_hours
-        from BigQuery claims warehouse.
+        from BigQuery doctor_events table.
         """
         target_ts = normalize_to_utc(target_ts)
+        query = f"""
+        SELECT
+            event_id,
+            doctor_id,
+            ts,
+            hospital_name,
+            city,
+            lat,
+            lng,
+            claim_id
+        FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.doctor_events`
+        WHERE doctor_id = @doctor_id
+          AND TIMESTAMP_DIFF(TIMESTAMP(@target_ts), ts, HOUR) BETWEEN -@window_hours AND @window_hours
+        ORDER BY ts ASC
+        LIMIT 50
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("doctor_id", "STRING", doctor_id),
+                bigquery.ScalarQueryParameter("target_ts", "TIMESTAMP", target_ts.isoformat()),
+                bigquery.ScalarQueryParameter("window_hours", "INT64", window_hours),
+            ]
+        )
         events = []
-        if _bq_available and self._client and not settings.LOCAL_FALLBACK:
-            try:
-                query = f"""
-                SELECT
-                    claim_id,
-                    doctor_id,
-                    admission_ts,
-                    hospital_name,
-                    city,
-                    lat,
-                    lng,
-                    diagnosis_code
-                FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`
-                WHERE doctor_id = @doctor_id
-                  AND TIMESTAMP_DIFF(TIMESTAMP(@target_ts), admission_ts, HOUR) BETWEEN -@window_hours AND @window_hours
-                """
-                from google.cloud.bigquery import ScalarQueryParameter, QueryJobConfig
-                query_params = [
-                    ScalarQueryParameter("doctor_id", "STRING", doctor_id),
-                    ScalarQueryParameter("target_ts", "TIMESTAMP", target_ts.isoformat()),
-                    ScalarQueryParameter("window_hours", "INT64", window_hours),
-                ]
-                job_config = QueryJobConfig(query_parameters=query_params)
-                query_job = self._client.query(query, job_config=job_config)
-                for row in query_job.result():
-                    events.append({
-                        "claim_id": row.claim_id,
-                        "doctor_id": row.doctor_id,
-                        "ts": normalize_to_utc(row.admission_ts),
-                        "hospital_name": row.hospital_name,
-                        "city": row.city,
-                        "lat": float(row.lat),
-                        "lng": float(row.lng),
-                        "description": f"Billed Procedure: {row.diagnosis_code}"
-                    })
-                if events:
-                    return events
-            except Exception as e:
-                print(f"[BQ] Doctor events query notice: {e}")
-
-        # Local fallback using claims_df
-        if self._claims_df is not None:
-            doc_claims = self._claims_df[self._claims_df["doctor_id"] == doctor_id]
-            for _, r in doc_claims.iterrows():
-                try:
-                    c_ts = normalize_to_utc(r["admission_ts"])
-                    if c_ts and target_ts and abs((c_ts - target_ts).total_seconds()) <= window_hours * 3600:
-                        events.append({
-                            "claim_id": str(r["claim_id"]),
-                            "doctor_id": str(r["doctor_id"]),
-                            "ts": c_ts,
-                            "hospital_name": str(r.get("hospital_name", "Network Hospital")),
-                            "city": str(r.get("city", "City")),
-                            "lat": float(r.get("lat", 0.0)),
-                            "lng": float(r.get("lng", 0.0)),
-                            "description": f"Billed In-Patient Procedure: {r.get('diagnosis_code', 'ICD')}"
-                        })
-                except Exception:
-                    pass
-
-        # Demo ground truth injection for G5
-        if doctor_id in ["DOC-9021", "DOC-G5"]:
-            mumbai_ts = normalize_to_utc(datetime(2026, 7, 20, 15, 40))
-            events.append({
-                "claim_id": "CLM-WAREHOUSE-MUM-8821",
-                "doctor_id": doctor_id,
-                "ts": mumbai_ts,
-                "hospital_name": "Lifeline Super Speciality Hospital, Mumbai",
-                "city": "Mumbai",
-                "lat": 19.0596,
-                "lng": 72.8295,
-                "description": "Emergency Angioplasty / Cath Lab Intervention"
-            })
-
-        return events
+        try:
+            for row in self.client.query(query, job_config=job_config).result():
+                events.append({
+                    "claim_id": row.claim_id or row.event_id,
+                    "doctor_id": row.doctor_id,
+                    "ts": normalize_to_utc(row.ts),
+                    "hospital_name": row.hospital_name,
+                    "city": row.city,
+                    "lat": float(row.lat),
+                    "lng": float(row.lng),
+                    "description": f"External Billed Procedure: {row.hospital_name}"
+                })
+            return events
+        except Exception as e:
+            raise CloudServiceError(
+                service="bigquery",
+                message=f"Failed to query doctor events from BigQuery: {e}",
+                retryable=True
+            )
 
 
 bq_warehouse = BigQueryWarehouse()
@@ -316,36 +421,50 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     # Prior claims in 90d
     claimant = getattr(claim, "claimant", None)
     claimant_id = (getattr(claimant, "claimant_id", "") or "") if claimant else ""
-    claim_id = getattr(claim, "claim_id", "") or ""
     prior_claims = 0
-    if claimant_id in ["CLMNT-9901", "CLMNT-G4"] or "G4" in claim_id:
-        prior_claims = 3
-    elif claimant_id in ["CLMNT-G2"] or "G2" in claim_id:
-        prior_claims = 1
-    elif claimant_id and bq_warehouse._claims_df is not None:
-        history = bq_warehouse.claimant_history(claimant_id)
-        prior_claims = max(0, history.get("total_claims_365d", 1) - 1)
+    if claimant_id:
+        try:
+            prior_claims = bq_warehouse.count_claimant_prior_claims_90d(claimant_id, adm)
+        except Exception:
+            prior_claims = 0
 
     # Provider claims per day
     provider_claims_day = 2.4
 
     # Doctor distinct cities in 24h
     doc_id = getattr(claim, "doctor_id", "") or ""
+    admission_ts = getattr(claim, "admission_ts", None)
     doctor_cities_24h = 1
-    if doc_id in ["DOC-9021", "DOC-G5"] or "G5" in claim_id:
-        doctor_cities_24h = 2
+    if doc_id and admission_ts:
+        try:
+            events = bq_warehouse.get_doctor_events(doc_id, admission_ts, window_hours=24)
+            distinct_cities = set()
+            hospital_city = getattr(claim.provider, "city", None) if getattr(claim, "provider", None) else getattr(claim, "city", None)
+            if hospital_city:
+                distinct_cities.add(hospital_city)
+            for ev in events:
+                if ev.get("city"):
+                    distinct_cities.add(ev["city"])
+            doctor_cities_24h = max(1, len(distinct_cities))
+        except Exception:
+            doctor_cities_24h = 1
 
     # Shared bank account count
     bank_hash = (getattr(claimant, "bank_account_hash", "") or "") if claimant else ""
     shared_bank_count = 1
-    if "ring" in bank_hash or "shared" in bank_hash or "G4" in claim_id:
-        shared_bank_count = 12
+    if bank_hash:
+        try:
+            shared_bank_count = bq_warehouse.get_shared_account_count(bank_hash)
+        except Exception:
+            shared_bank_count = 1
 
     # Days policy to claim
-    policy_id = getattr(claim, "policy_id", "") or ""
-    days_policy_to_claim = 180
-    if "AROGYA-33219" in policy_id or "G3" in claim_id:
-        days_policy_to_claim = 35
+    admission_dt = normalize_to_utc(getattr(claim, "admission_ts", None))
+    policy_start = normalize_to_utc(getattr(claim, "policy_start_date", None))
+    if admission_dt and policy_start:
+        days_policy_to_claim = max(1, (admission_dt - policy_start).days)
+    else:
+        days_policy_to_claim = 180
 
     # Line item count
     line_items = getattr(claim, "line_items", []) or []
@@ -376,116 +495,67 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
 def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]]]:
     """
     Runs BigQuery ML ML.PREDICT + ML.EXPLAIN_PREDICT (top_k_features=5).
-    Falls back to local trained gradient boosted model if offline.
-    Returns (probability, top_k_features).
+    Cloud-only: Score comes strictly from BigQuery ML.
+    If BigQuery ML fails or is unreachable, raises CloudServiceError.
     """
-    # 1. Live BigQuery path
-    if _bq_available and bq_warehouse._client and not settings.LOCAL_FALLBACK:
-        try:
-            query = f"""
-            SELECT
-              prob.prob AS fraud_probability,
-              top_feature_attributions
-            FROM
-              ML.EXPLAIN_PREDICT(
-                MODEL `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.fraud_model`,
-                (SELECT @claim_amount AS claim_amount,
-                        @amount_vs_median AS amount_vs_diagnosis_median_ratio,
-                        @length_of_stay AS length_of_stay,
-                        @prior_claims AS claimant_prior_claims_90d,
-                        @provider_claims_day AS provider_claims_per_day,
-                        @doctor_cities_24h AS doctor_distinct_cities_24h,
-                        @shared_bank_count AS shared_bank_account_count,
-                        @days_policy_to_claim AS days_policy_start_to_claim,
-                        @line_item_count AS line_item_count,
-                        @room_rent_vs_cap AS room_rent_vs_cap_ratio),
-                STRUCT(5 AS top_k_features)
-              ),
-              UNNEST(predicted_is_fraud_probs) AS prob
-            WHERE prob.label = 1
-            """
-            from google.cloud.bigquery import ScalarQueryParameter, QueryJobConfig
-            query_params = [
-                ScalarQueryParameter("claim_amount", "FLOAT64", float(claim_features["claim_amount"])),
-                ScalarQueryParameter("amount_vs_median", "FLOAT64", float(claim_features["amount_vs_diagnosis_median_ratio"])),
-                ScalarQueryParameter("length_of_stay", "INT64", int(claim_features["length_of_stay"])),
-                ScalarQueryParameter("prior_claims", "INT64", int(claim_features["claimant_prior_claims_90d"])),
-                ScalarQueryParameter("provider_claims_day", "FLOAT64", float(claim_features["provider_claims_per_day"])),
-                ScalarQueryParameter("doctor_cities_24h", "INT64", int(claim_features["doctor_distinct_cities_24h"])),
-                ScalarQueryParameter("shared_bank_count", "INT64", int(claim_features["shared_bank_account_count"])),
-                ScalarQueryParameter("days_policy_to_claim", "INT64", int(claim_features["days_policy_start_to_claim"])),
-                ScalarQueryParameter("line_item_count", "INT64", int(claim_features["line_item_count"])),
-                ScalarQueryParameter("room_rent_vs_cap", "FLOAT64", float(claim_features["room_rent_vs_cap_ratio"]))
-            ]
-            job_config = QueryJobConfig(query_parameters=query_params)
-            query_job = bq_warehouse._client.query(query, job_config=job_config)
-            results = list(query_job.result())
-            if results:
-                row = results[0]
-                fraud_prob = float(row.fraud_probability)
-                top_features = []
-                for attr in row.top_feature_attributions[:5]:
-                    top_features.append({
-                        "feature": attr.feature,
-                        "attribution": round(float(attr.attribution_weight), 4)
-                    })
-                return round(fraud_prob, 4), top_features
-        except Exception as e:
-            print(f"[ml_score] BigQuery ML live call notice, falling back to local model: {e}")
-
-    # 2. Local fallback model
-    import joblib
-    model_path = DATA_DIR / "fraud_model.joblib"
-    if model_path.exists():
-        try:
-            art = joblib.load(model_path)
-            model = art["model"]
-            features_order = art["features"]
-
-            row_df = pd.DataFrame([claim_features])[features_order]
-            prob = float(model.predict_proba(row_df)[0][1])
-
-            # Calculate feature attributions based on deviations from baseline
-            importances_dict = dict(art.get("feature_importances", []))
-            top_features = []
-
-            for feat in features_order:
-                val = float(claim_features.get(feat, 0.0))
-                imp = importances_dict.get(feat, 0.1)
-
-                if feat == "amount_vs_diagnosis_median_ratio":
-                    attr = imp * (val - 1.0)
-                elif feat == "room_rent_vs_cap_ratio":
-                    attr = imp * (val - 1.0)
-                elif feat == "doctor_distinct_cities_24h":
-                    attr = imp * (val - 1.0) * 2.0
-                elif feat == "claimant_prior_claims_90d":
-                    attr = imp * val
-                elif feat == "shared_bank_account_count":
-                    attr = imp * (val - 1.0)
-                elif feat == "days_policy_start_to_claim":
-                    attr = imp * (1.0 if val < 45 else -0.5)
-                else:
-                    attr = imp * 0.2
-
-                top_features.append({
-                    "feature": feat,
-                    "attribution": round(float(attr), 4)
-                })
-
-            top_features.sort(key=lambda x: abs(x["attribution"]), reverse=True)
-            return round(prob, 4), top_features[:5]
-        except Exception as e:
-            print(f"[ml_score] Local model error: {e}")
-
-    # Default heuristic if model artifact is absent
-    amount_ratio = float(claim_features.get("amount_vs_diagnosis_median_ratio", 1.0))
-    prob = min(0.99, max(0.01, 0.15 + (amount_ratio - 1.0) * 0.4))
-    return round(prob, 4), [
-        {"feature": "amount_vs_diagnosis_median_ratio", "attribution": 0.33},
-        {"feature": "room_rent_vs_cap_ratio", "attribution": 0.21},
-        {"feature": "claim_amount", "attribution": 0.15},
-        {"feature": "doctor_distinct_cities_24h", "attribution": 0.10},
-        {"feature": "claimant_prior_claims_90d", "attribution": 0.08}
+    query = f"""
+    SELECT
+      predicted_is_fraud,
+      probability,
+      top_feature_attributions
+    FROM
+      ML.EXPLAIN_PREDICT(
+        MODEL `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.fraud_model`,
+        (SELECT @claim_amount AS claim_amount,
+                @amount_vs_median AS amount_vs_diagnosis_median_ratio,
+                @length_of_stay AS length_of_stay,
+                @prior_claims AS claimant_prior_claims_90d,
+                @provider_claims_day AS provider_claims_per_day,
+                @doctor_cities_24h AS doctor_distinct_cities_24h,
+                @shared_bank_count AS shared_bank_account_count,
+                @days_policy_to_claim AS days_policy_start_to_claim,
+                @line_item_count AS line_item_count,
+                @room_rent_vs_cap AS room_rent_vs_cap_ratio),
+        STRUCT(5 AS top_k_features)
+      )
+    """
+    query_params = [
+        bigquery.ScalarQueryParameter("claim_amount", "FLOAT64", float(claim_features["claim_amount"])),
+        bigquery.ScalarQueryParameter("amount_vs_median", "FLOAT64", float(claim_features["amount_vs_diagnosis_median_ratio"])),
+        bigquery.ScalarQueryParameter("length_of_stay", "INT64", int(claim_features["length_of_stay"])),
+        bigquery.ScalarQueryParameter("prior_claims", "INT64", int(claim_features["claimant_prior_claims_90d"])),
+        bigquery.ScalarQueryParameter("provider_claims_day", "FLOAT64", float(claim_features["provider_claims_per_day"])),
+        bigquery.ScalarQueryParameter("doctor_cities_24h", "INT64", int(claim_features["doctor_distinct_cities_24h"])),
+        bigquery.ScalarQueryParameter("shared_bank_count", "INT64", int(claim_features["shared_bank_account_count"])),
+        bigquery.ScalarQueryParameter("days_policy_to_claim", "INT64", int(claim_features["days_policy_start_to_claim"])),
+        bigquery.ScalarQueryParameter("line_item_count", "INT64", int(claim_features["line_item_count"])),
+        bigquery.ScalarQueryParameter("room_rent_vs_cap", "FLOAT64", float(claim_features["room_rent_vs_cap_ratio"]))
     ]
+    job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+    try:
+        query_job = bq_warehouse.client.query(query, job_config=job_config)
+        results = list(query_job.result())
+        if not results:
+            raise RuntimeError("BigQuery ML returned empty prediction results.")
+        row = results[0]
+        pred = getattr(row, "predicted_is_fraud", 0)
+        prob = float(getattr(row, "probability", 0.0))
+        # Compute fraud probability: if predicted label is 1, prob is fraud prob; if 0, 1.0 - prob
+        fraud_prob = prob if pred == 1 else (1.0 - prob)
 
+        top_features = []
+        raw_attrs = getattr(row, "top_feature_attributions", []) or []
+        for attr in raw_attrs[:5]:
+            feat = attr.get("feature") if isinstance(attr, dict) else getattr(attr, "feature", "")
+            weight = attr.get("attribution_weight", 0.0) if isinstance(attr, dict) else getattr(attr, "attribution", getattr(attr, "attribution_weight", 0.0))
+            top_features.append({
+                "feature": feat,
+                "attribution": round(float(weight), 4)
+            })
+        return round(fraud_prob, 4), top_features
+    except Exception as e:
+        raise CloudServiceError(
+            service="bigquery",
+            message=f"BigQuery ML ML.EXPLAIN_PREDICT execution failed: {e}",
+            retryable=True
+        )

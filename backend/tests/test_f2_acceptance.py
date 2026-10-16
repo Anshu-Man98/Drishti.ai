@@ -40,12 +40,10 @@ def test_page_image_rendering_150dpi(tmp_path):
     page_uris = render_pdf_to_page_images(g1_pdf, test_claim_id)
     assert len(page_uris) >= 1
     
-    # Verify the generated image file
-    from backend.app.config import settings
-    img_path = Path(settings.LOCAL_DATA_DIR) / "uploads" / test_claim_id / "pages" / "page_1.png"
-    assert img_path.exists(), f"Rendered image not found at {img_path}"
-    
-    with Image.open(img_path) as im:
+    # Verify the generated image file from storage
+    from backend.app.services.storage import storage_service
+    img_bytes = storage_service.read_file(page_uris[0])
+    with Image.open(io.BytesIO(img_bytes)) as im:
         assert im.format == "PNG"
         w, h = im.size
         # A4 at 150 dpi is ~1240 x 1754

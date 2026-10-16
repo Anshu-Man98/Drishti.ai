@@ -75,6 +75,43 @@ export function getClaimPageImageUrl(claimId: string, pageNum: number = 1): stri
   return `${API_BASE_URL}/claims/${claimId}/pages/${pageNum}`;
 }
 
+export async function fetchAuthenticatedBlob(urlOrPath: string): Promise<Blob> {
+  const fullUrl = urlOrPath.startsWith('http')
+    ? urlOrPath
+    : `${API_BASE_URL}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
+  const resp = await fetch(fullUrl, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`Failed to fetch file (${resp.status}): ${errText || resp.statusText}`);
+  }
+  return resp.blob();
+}
+
+export async function fetchClaimPageBlob(claimId: string, pageNum: number = 1): Promise<Blob> {
+  return fetchAuthenticatedBlob(`/claims/${claimId}/pages/${pageNum}`);
+}
+
+export async function downloadAuthenticatedFile(urlOrPath: string, filename: string): Promise<void> {
+  const blob = await fetchAuthenticatedBlob(urlOrPath);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
+export async function openAuthenticatedFile(urlOrPath: string): Promise<void> {
+  const blob = await fetchAuthenticatedBlob(urlOrPath);
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank');
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
 export async function fetchClaimEntities(claimId: string): Promise<{
   claim_id: string;
   entities: import('../types').ExtractedEntity[];
@@ -127,6 +164,8 @@ export async function streamClaimChat(
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let accumulatedChunks = '';
+    let completed = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -144,11 +183,13 @@ export async function streamClaimChat(
           try {
             const data = JSON.parse(jsonStr);
             if (data.chunk) {
+              accumulatedChunks += data.chunk;
               onChunk(data.chunk);
             }
             if (data.done) {
+              completed = true;
               onComplete({
-                answer: data.answer || '',
+                answer: data.answer || accumulatedChunks,
                 cited_finding_ids: data.cited_finding_ids || [],
                 cited_evidence: data.cited_evidence || [],
               });
@@ -158,6 +199,15 @@ export async function streamClaimChat(
           }
         }
       }
+    }
+
+    // Safety fallback: if stream finished without an explicit done event, finalize cleanly
+    if (!completed) {
+      onComplete({
+        answer: accumulatedChunks || (buffer.startsWith('data:') ? '' : buffer.trim()),
+        cited_finding_ids: [],
+        cited_evidence: [],
+      });
     }
   } catch (err) {
     onError(err);
@@ -204,4 +254,25 @@ export async function verifyDocument(
 
 export function getProvenancePubkeyUrl(): string {
   return `${API_BASE_URL}/provenance/pubkey`;
+}
+
+export interface HealthStatus {
+  status: string;
+  service: string;
+  environment: string;
+  cloud_mode: string;
+  all_healthy: boolean;
+  dependencies?: Record<string, { ok: boolean; status: string; detail?: string }>;
+  models?: {
+    pro: string;
+    flash: string;
+  };
+}
+
+export async function fetchHealthStatus(): Promise<HealthStatus> {
+  const resp = await fetch(`${API_BASE_URL}/health`);
+  if (!resp.ok && resp.status !== 503) {
+    throw new Error(`Health check failed: ${resp.status}`);
+  }
+  return resp.json();
 }

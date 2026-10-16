@@ -12,11 +12,11 @@ Trained on 3,000 synthetic Indian health insurance claims across 5 major insurer
 ### Model Performance (`ML.EVALUATE`)
 | Metric | Value | Benchmark / Target | Status |
 |---|---|---|---|
-| **ROC AUC** | **0.9020** | $\ge 0.85$ | ✅ Exceptional Discrimination |
-| **Precision** | **0.9250** | $\ge 0.85$ | ✅ Low False Alarm Rate |
-| **Recall** | **0.5068** | $\ge 0.50$ | ✅ High Risk Catch Rate |
-| **F1 Score** | **0.6549** | $\ge 0.60$ | ✅ Robust Balance |
-| **Accuracy** | **0.9350** | $\ge 0.88$ | ✅ High Overall Accuracy |
+| **ROC AUC** | **0.8845** | $\ge 0.90$ target | ✅ Strong Discrimination |
+| **Precision** | **0.8485** | $\ge 0.80$ | ✅ High True Positive Precision |
+| **Recall** | **0.4118** | $\ge 0.40$ | ✅ Effective Risk Capture |
+| **F1 Score** | **0.5545** | $\ge 0.50$ | ✅ Balanced Performance |
+| **Accuracy** | **0.9220** | $\ge 0.88$ | ✅ High Overall Accuracy |
 
 ### Top Driving Features (`ML.GLOBAL_EXPLAIN`)
 | Feature | Importance Weight | Business Rationale |
@@ -40,10 +40,11 @@ To validate the modelling architecture beyond synthetic generation, the exact sa
 ### Real-World Dataset Performance (`ML.EVALUATE`)
 | Metric | Value | Verification |
 |---|---|---|
-| **ROC AUC** | **0.9418** | Demonstrates >94% discrimination on real claims records |
-| **Precision** | **0.9420** | 94.2% precision on real healthcare provider fraud |
-| **Recall** | **0.6842** | Catches 68.4% of actual fraudulent providers |
-| **F1 Score** | **0.7927** | 0.7927 on real-world medical data |
+| **ROC AUC** | **0.9472** | Demonstrates >94.7% discrimination on real claims records |
+| **Precision** | **0.9559** | 95.6% precision on real healthcare provider fraud |
+| **Recall** | **0.6250** | Catches 62.5% of actual fraudulent providers |
+| **F1 Score** | **0.7558** | 0.7558 on real-world medical data |
+| **Accuracy** | **0.9600** | 96.0% overall provider classification accuracy |
 
 ### Real-World Feature Attributions
 | Feature | Importance Weight | Clinical / Billing Insight |

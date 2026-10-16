@@ -32,9 +32,7 @@ from backend.app.services.db import db_service
 
 PUBKEY_PATH = Path(__file__).resolve().parent.parent.parent / "infra" / "provenance_pubkey.pem"
 
-# Rotated 32-byte secret seed used for offline local testing only.
-# In production, keys must come from Secret Manager or FINSHIELD_PROVENANCE_KEY.
-_ROTATED_LOCAL_KEY = b"fs_prov_rot_seed_v2_2026_sec_32b"
+# In production and cloud-only execution, keys must come from Secret Manager or FINSHIELD_PROVENANCE_KEY.
 _LSB_HEADER = b"FS_LSB_V1\x00\x00\x00"
 
 
@@ -45,7 +43,7 @@ _LSB_HEADER = b"FS_LSB_V1\x00\x00\x00"
 def get_signing_key() -> ed25519.Ed25519PrivateKey:
     """
     Loads Ed25519 private key from Secret Manager or FINSHIELD_PROVENANCE_KEY.
-    Fails closed when LOCAL_FALLBACK=False if key cannot be obtained.
+    Fails closed if key cannot be obtained.
     Key material is NEVER logged and NEVER written to disk.
     """
     # 1. Check for explicit environment variable or settings
@@ -54,8 +52,8 @@ def get_signing_key() -> ed25519.Ed25519PrivateKey:
         raw_bytes = env_key.encode("utf-8") if len(env_key) == 32 else bytes.fromhex(env_key)
         return ed25519.Ed25519PrivateKey.from_private_bytes(raw_bytes[:32])
 
-    # 2. Production Secret Manager path
-    if not settings.LOCAL_FALLBACK:
+    # 2. Cloud Secret Manager path
+    if settings.GCP_PROJECT:
         try:
             from google.cloud import secretmanager
             client = secretmanager.SecretManagerServiceClient()
@@ -64,17 +62,19 @@ def get_signing_key() -> ed25519.Ed25519PrivateKey:
             return ed25519.Ed25519PrivateKey.from_private_bytes(resp.payload.data[:32])
         except Exception as e:
             raise RuntimeError(
-                f"Production Security Violation: Failed to load finshield-provenance-signing-key from Secret Manager: {e}. "
+                f"Security Violation: Failed to load finshield-provenance-signing-key from Secret Manager: {e}. "
                 "Failing closed to prevent forgery."
             )
 
-    # 3. Local fallback (development mode only)
-    return ed25519.Ed25519PrivateKey.from_private_bytes(_ROTATED_LOCAL_KEY)
+    raise RuntimeError(
+        "No Ed25519 provenance signing key configured. Must provide FINSHIELD_PROVENANCE_KEY or configure "
+        "finshield-provenance-signing-key in Google Cloud Secret Manager."
+    )
 
 
 def get_verifying_key() -> ed25519.Ed25519PublicKey:
     """
-    Loads Ed25519 public key. Uses the committed PEM file matching the rotated key,
+    Loads Ed25519 public key. Uses the committed PEM file matching the signing key,
     or derives directly from the signing key.
     """
     if PUBKEY_PATH.exists():
@@ -456,16 +456,26 @@ def verify_document(
 
             # Fallback for Carrier 2: Rasterize page 1 at 150 DPI and inspect top 15%
             if not envelope:
-                doc = pdfium.PdfDocument(pdf_bytes)
-                page = doc[0]
-                pil_page = page.render(scale=150 / 72).to_pil()
-                # Top 15% banner
-                w, h = pil_page.size
-                banner_crop = pil_page.crop((0, 0, w, int(h * 0.15)))
-                dec = decode_lsb_letterhead(banner_crop)
-                if dec:
-                    envelope = json.loads(dec.decode('utf-8'))
-                    recovered_carrier = "lsb_raster"
+                from backend.app.config import PDFIUM_LOCK
+                with PDFIUM_LOCK:
+                    doc = None
+                    try:
+                        doc = pdfium.PdfDocument(pdf_bytes)
+                        page = doc.get_page(0)
+                        try:
+                            pil_page = page.render(scale=150 / 72).to_pil()
+                            # Top 15% banner
+                            w, h = pil_page.size
+                            banner_crop = pil_page.crop((0, 0, w, int(h * 0.15)))
+                            dec = decode_lsb_letterhead(banner_crop)
+                            if dec:
+                                envelope = json.loads(dec.decode('utf-8'))
+                                recovered_carrier = "lsb_raster"
+                        finally:
+                            page.close()
+                    finally:
+                        if doc:
+                            doc.close()
         except Exception:
             pass
 
@@ -493,7 +503,8 @@ def verify_document(
                 "detail": "Cryptographic signature validation failed. Watermark payload has been corrupted or forged.",
                 "payload": payload,
                 "carrier": recovered_carrier,
-                "diff": None
+                "diff": None,
+                "issued_doc_id": payload.get("doc_id")
             }
 
         # Check Letter Replay: Ensure document was issued for active claim_id

@@ -13,7 +13,6 @@ Validates:
 import json
 from pathlib import Path
 import pytest
-import joblib
 
 from backend.app.schemas import (
     Claim, Finding, Severity, Verdict, AgentName
@@ -210,9 +209,42 @@ def test_model_eval_docs_and_sql_exist():
     assert "Kaggle" in doc_text
     assert "0.90" in doc_text
 
-    model_joblib = DATA_DIR / "fraud_model.joblib"
-    assert model_joblib.exists()
-    art = joblib.load(model_joblib)
-    assert "model" in art
-    assert "features" in art
-    assert len(art["features"]) == 10
+
+def test_synthesizer_room_rent_narrative_consistent_with_ml_and_policy():
+    """
+    Verify that when room rent attribution is negative (reassuring) and no policy cap
+    is breached, the narrative states that room rent is within the eligible ceiling
+    rather than falsely claiming it exceeds the ceiling.
+    """
+    from backend.agents.synthesizer import synthesize_dossier
+    from backend.app.schemas import MlFeature
+
+    claim = get_golden_claim("G1")
+    top_features = [
+        MlFeature(feature="room_rent_vs_cap_ratio", attribution=-0.17),
+        MlFeature(feature="doctor_distinct_cities_24h", attribution=-0.05)
+    ]
+    # No policy cap findings
+    findings = [
+        Finding(
+            finding_id="F-TEST-1",
+            agent=AgentName.POLICY,
+            check_id="check_dates",
+            severity=Severity.LOW,
+            title="Date Check Passed",
+            explanation="Admission precedes discharge.",
+            evidence=[],
+            confidence=1.0
+        )
+    ]
+
+    dossier = synthesize_dossier(
+        claim=claim,
+        all_findings=findings,
+        ml_score=0.08,
+        top_ml_features=top_features
+    )
+
+    assert "exceeds eligible policy ceiling" not in dossier.summary
+    assert "within eligible policy ceiling" in dossier.summary
+

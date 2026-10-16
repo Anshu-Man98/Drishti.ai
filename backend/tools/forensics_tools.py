@@ -280,14 +280,93 @@ def gemini_visual_review(
     """
     Gemini visual inspection review of page, constrained to flagged tool regions
     or obvious perceptual defects. Never invents pixel claims.
+    Clean claims skip the call entirely.
     """
     if not flagged_regions:
         return "Visual inspection confirms standard document formatting without observable composite artifacts."
 
-    summaries = []
-    for r in flagged_regions:
-        line = r.get("line_text", "Flagged Region")
-        bbox = r.get("bbox", [])
-        summaries.append(f"Visual review of region at {bbox} ('{line}'): Confirmed noticeable font family and weight disparity compared to surrounding tabular text.")
+    # Convert target page to image bytes if PDF
+    image_bytes = doc_bytes
+    mime_type = "application/pdf"
+    try:
+        if doc_bytes.startswith(b"%PDF"):
+            import pypdfium2 as pdfium
+            from backend.app.config import PDFIUM_LOCK
+            with PDFIUM_LOCK:
+                doc = None
+                try:
+                    doc = pdfium.PdfDocument(doc_bytes)
+                    target_page = max(0, flagged_regions[0].get("page", 1) - 1)
+                    if target_page < len(doc):
+                        page = None
+                        try:
+                            page = doc.get_page(target_page)
+                            pil_image = page.render(scale=150.0 / 72.0).to_pil()
+                            buf = io.BytesIO()
+                            pil_image.save(buf, format="PNG")
+                            image_bytes = buf.getvalue()
+                            mime_type = "image/png"
+                        finally:
+                            if page:
+                                page.close()
+                finally:
+                    if doc:
+                        doc.close()
+        elif doc_bytes.startswith(b"\x89PNG"):
+            mime_type = "image/png"
+        elif doc_bytes.startswith(b"\xff\xd8"):
+            mime_type = "image/jpeg"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"[gemini_visual_review] Image conversion notice: {e}")
 
-    return " ".join(summaries)
+    # Build targeted prompt
+    regions_desc = []
+    for r in flagged_regions:
+        regions_desc.append(
+            f"Page {r.get('page', 1)}, Bounding Box {r.get('bbox')}: text '{r.get('line_text', '')}' "
+            f"(flagged font: {r.get('fonts', [])}, document family: '{r.get('predominant_family', '')}')"
+        )
+    regions_prompt = "\n".join(regions_desc)
+
+    prompt = (
+        "You are an expert forensic document examiner for insurance claims. "
+        "Inspect the attached medical bill at the exact flagged bounding box regions "
+        "where automated typography analysis detected anomalous fonts or alteration:\n"
+        f"{regions_prompt}\n\n"
+        "State whether visual inspection confirms font mismatch, baseline shift, digital splicing, "
+        "or tampering in these specific regions. Provide a concise, factual summary. Do not speculate."
+    )
+
+    # Call Gemini Live API
+    try:
+        from google.genai import types
+        from backend.app.services.gemini_client import get_gemini_client, get_model_name
+
+        client = get_gemini_client()
+        model_name = get_model_name("flash")
+
+        contents = [
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            prompt
+        ]
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                temperature=0.0
+            )
+        )
+        if response.text and response.text.strip():
+            return response.text.strip()
+        raise ValueError("Gemini returned empty response for visual review.")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[gemini_visual_review] Live Gemini call error: {e}")
+        from backend.app.exceptions import CloudServiceError
+        raise CloudServiceError(
+            service="Gemini",
+            message=f"Gemini visual review failed: {e}",
+            retryable=True
+        ) from e
+

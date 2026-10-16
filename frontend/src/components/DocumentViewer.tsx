@@ -4,7 +4,7 @@ import {
   Eye, AlertTriangle, Layers, FileText, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import { Finding, ExtractedEntity, Severity } from '../types';
-import { getClaimPageImageUrl } from '../services/api';
+import { fetchClaimPageBlob } from '../services/api';
 
 interface DocumentViewerProps {
   claimId: string;
@@ -38,12 +38,50 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [showAllFields, setShowAllFields] = useState(false);
   const [revealHiddenLayer, setRevealHiddenLayer] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<HoveredInfo | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRectRef = useRef<SVGRectElement>(null);
+
+  // Authenticated document page image fetching with Blob Object URL management
+  useEffect(() => {
+    let isCancelled = false;
+    let createdUrl: string | null = null;
+
+    setImageLoaded(false);
+    setImageLoading(true);
+    setImageError(null);
+    setImageUrl(null);
+
+    const loadPage = async () => {
+      try {
+        const blob = await fetchClaimPageBlob(claimId, currentPage);
+        if (isCancelled) return;
+        const objectUrl = URL.createObjectURL(blob);
+        createdUrl = objectUrl;
+        setImageUrl(objectUrl);
+        setImageLoading(false);
+      } catch (err: any) {
+        if (isCancelled) return;
+        setImageError(err.message || 'Failed to load page image');
+        setImageLoading(false);
+        setImageLoaded(false);
+      }
+    };
+
+    loadPage();
+
+    return () => {
+      isCancelled = true;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [claimId, currentPage]);
 
   // Auto-scroll to active finding rectangle when selected
   useEffect(() => {
@@ -282,19 +320,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           style={{ width: `${zoom}%`, maxWidth: zoom <= 100 ? '100%' : 'none' }}
         >
           {/* Rendered 150 DPI Page Image */}
-          <img
-            src={getClaimPageImageUrl(claimId, currentPage)}
-            alt={`Claim Document Page ${currentPage}`}
-            className="w-full h-auto rounded block select-none bg-white"
-            onLoad={() => {
-              setImageLoaded(true);
-              setImageError(false);
-            }}
-            onError={() => {
-              setImageError(true);
-              setImageLoaded(false);
-            }}
-          />
+          {imageUrl && !imageError && (
+            <img
+              src={imageUrl}
+              alt={`Claim Document Page ${currentPage}`}
+              className={`w-full h-auto rounded block select-none bg-white transition-opacity duration-150 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => {
+                setImageLoaded(true);
+                setImageError(null);
+              }}
+              onError={() => {
+                setImageError('Failed to display page image.');
+                setImageLoaded(false);
+              }}
+            />
+          )}
 
           {/* SVG Bounding Boxes Overlay */}
           {imageLoaded && (
@@ -491,17 +531,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             </div>
           )}
 
-          {/* Loading or Error State */}
-          {!imageLoaded && !imageError && (
-            <div className="p-12 text-center text-slate-500 text-xs">
-              Rendering high-resolution document...
+          {/* Real loading state */}
+          {imageLoading && (
+            <div className="p-16 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-3">
+              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <p className="font-medium text-slate-300">Loading high-resolution document page {currentPage}...</p>
             </div>
           )}
 
-          {imageError && (
+          {/* Clear error state */}
+          {imageError && !imageLoading && (
             <div className="p-12 text-center space-y-2 text-slate-400 text-xs">
               <AlertTriangle className="w-6 h-6 text-amber-400 mx-auto" />
-              <p>Document preview unavailable or processing.</p>
+              <p className="font-semibold text-slate-200">Document preview unavailable</p>
+              <p className="text-rose-400 text-[11px] font-mono">{imageError}</p>
             </div>
           )}
         </div>

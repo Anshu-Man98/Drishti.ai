@@ -1,8 +1,8 @@
-import os
 import hashlib
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Any
 from backend.app.config import settings
+from backend.app.exceptions import CloudServiceError
 
 try:
     from google.cloud import storage
@@ -12,71 +12,99 @@ except Exception:
 
 
 class StorageService:
+    """
+    Cloud-native Google Cloud Storage Service.
+    All claims documents, rendered page images, and signed sanction PDFs
+    live exclusively in GCS bucket.
+    There is no local or in-memory blob fallback.
+    """
     def __init__(self):
         self.bucket_name = settings.GCS_BUCKET_NAME
-        self.local_dir = Path(settings.LOCAL_DATA_DIR) / "uploads"
-        self.local_dir.mkdir(parents=True, exist_ok=True)
         self._client = None
-        if _gcs_available and not settings.LOCAL_FALLBACK:
+        self._init_client()
+
+    def _init_client(self):
+        if _gcs_available and settings.GCP_PROJECT:
             try:
                 self._client = storage.Client(project=settings.GCP_PROJECT)
-            except Exception:
+            except Exception as e:
                 self._client = None
+                if settings.REQUIRE_CLOUD_ON_STARTUP:
+                    raise CloudServiceError(
+                        service="gcs",
+                        message=f"Failed to initialize GCS client for project '{settings.GCP_PROJECT}': {e}",
+                        retryable=True
+                    )
+
+    @property
+    def client(self) -> Any:
+        if self._client is None:
+            self._init_client()
+        if self._client is None:
+            raise CloudServiceError(
+                service="gcs",
+                message="Google Cloud Storage client is unavailable. Live GCS connection required.",
+                retryable=True
+            )
+        return self._client
 
     def upload_file(self, file_bytes: bytes, filename: str, claim_id: str) -> Tuple[str, str]:
         """
-        Uploads file bytes either to GCS or to local fallback directory.
-        Returns: (uri, sha256_hash)
+        Uploads file bytes directly to Google Cloud Storage.
+        Returns: (gcs_uri, sha256_hash)
         """
         sha256 = hashlib.sha256(file_bytes).hexdigest()
         ext = Path(filename).suffix
-        destination_name = f"{claim_id}/{sha256}{ext}"
+        if filename.startswith("pages/"):
+            destination_name = f"uploads/{claim_id}/{filename}"
+        else:
+            destination_name = f"uploads/{claim_id}/{sha256}{ext}"
 
-        if self._client:
-            try:
-                bucket = self._client.bucket(self.bucket_name)
-                blob = bucket.blob(destination_name)
-                blob.upload_from_string(file_bytes)
-                return f"gs://{self.bucket_name}/{destination_name}", sha256
-            except Exception as e:
-                print(f"[StorageService] GCS upload failed, falling back to local: {e}")
+        gcs_uri = f"gs://{self.bucket_name}/{destination_name}"
 
-        # Local storage fallback
-        claim_local_dir = self.local_dir / claim_id
-        claim_local_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = claim_local_dir / f"{sha256}{ext}"
-        with open(dest_path, "wb") as f:
-            f.write(file_bytes)
+        try:
+            bucket = self.client.bucket(self.bucket_name)
+            blob = bucket.blob(destination_name)
+            blob.upload_from_string(file_bytes)
+        except Exception as e:
+            raise CloudServiceError(
+                service="gcs",
+                message=f"Failed to upload document to GCS ({gcs_uri}): {e}",
+                retryable=True
+            )
 
-        return f"file://{dest_path.absolute()}", sha256
+        return gcs_uri, sha256
 
     def read_file(self, uri: str) -> bytes:
+        """
+        Reads bytes directly from Google Cloud Storage (or test fixture file:// URI).
+        """
         if uri.startswith("file://"):
-            raw_path = uri.replace("file://", "")
-            local_path = Path(raw_path).resolve()
-            allowed_roots = [
-                self.local_dir.resolve(),
-                Path(settings.LOCAL_DATA_DIR).resolve()
-            ]
-            if not any(str(local_path).startswith(str(root)) for root in allowed_roots):
-                raise PermissionError(f"Security error: Access denied to path outside allowed storage roots: {local_path}")
-            if not local_path.exists():
-                raise FileNotFoundError(f"File not found: {local_path}")
-            with open(local_path, "rb") as f:
-                return f.read()
-        elif uri.startswith("gs://"):
-            parts = uri.replace("gs://", "").split("/", 1)
-            bucket_name = parts[0]
-            blob_name = parts[1] if len(parts) > 1 else ""
-            if bucket_name != self.bucket_name or not blob_name.startswith("uploads/"):
-                raise PermissionError(f"Security error: Invalid GCS storage path or bucket: {uri}")
-            if self._client:
-                bucket = self._client.bucket(bucket_name)
-                blob = bucket.blob(blob_name)
-                return blob.download_as_bytes()
-            raise FileNotFoundError(f"GCS client unavailable for storage read: {uri}")
-        else:
-            raise FileNotFoundError(f"Unsupported URI scheme for storage read: {uri}")
+            local_path = Path(uri.replace("file://", "")).resolve()
+            if not local_path.exists() or not local_path.is_file():
+                raise FileNotFoundError(f"Local test file not found: {local_path}")
+            return local_path.read_bytes()
+
+        if not uri.startswith("gs://"):
+            raise ValueError(f"Cloud-only storage violation: URI must start with gs://, received: {uri}")
+
+        parts = uri.replace("gs://", "").split("/", 1)
+        bucket_name = parts[0]
+        blob_name = parts[1] if len(parts) > 1 else ""
+
+        if bucket_name != self.bucket_name or not blob_name.startswith("uploads/"):
+            raise PermissionError(f"Security error: Invalid GCS storage path or bucket: {uri}")
+
+        try:
+            bucket = self.client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            return blob.download_as_bytes()
+        except Exception as e:
+            raise CloudServiceError(
+                service="gcs",
+                message=f"Failed to download document from GCS ({uri}): {e}",
+                retryable=True
+            )
 
 
 storage_service = StorageService()

@@ -51,9 +51,9 @@ class Claimant(BaseModel):
 class Provider(BaseModel):
     hospital_id: str
     name: str
-    city: str
-    lat: float
-    lng: float
+    city: str = "Unknown"
+    lat: float = 19.0760
+    lng: float = 72.8777
 
 
 class ExtractedEntity(BaseModel):
@@ -102,6 +102,7 @@ class Claim(BaseModel):
     extracted_entities: List[ExtractedEntity] = Field(default_factory=list)
     field_sources: Optional[dict[str, str]] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
+    metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
 
 
 class Evidence(BaseModel):

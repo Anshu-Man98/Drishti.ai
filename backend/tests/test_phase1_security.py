@@ -9,7 +9,7 @@ Verifies:
 5. Path traversal in file uploads (e.g. ../../evil.pdf) is neutralized into safe basenames.
 6. A document signed with the old demo seed fails verification with rotated keys.
 7. Prompt injection in chat context is XML-escaped and protected by numeric grounding guards.
-8. Secret Manager fail-closed enforcement when LOCAL_FALLBACK=False.
+8. Secret Manager fail-closed enforcement when cloud keys cannot be loaded.
 """
 
 import io
@@ -191,9 +191,11 @@ def test_upload_path_traversal_neutralized():
     # Check filename in document model is strictly sanitized
     assert saved.documents[0].filename == "evil.pdf"
 
-    # Verify physical file landed safely inside uploads/<claim_id>/evil.pdf, not outside
-    target_file = Path(settings.LOCAL_DATA_DIR) / "uploads" / claim_id / "evil.pdf"
-    assert target_file.exists()
+    # Verify file landed safely inside storage under uploads/<claim_id>/, not path-traversed outside
+    from backend.app.services.storage import storage_service
+    assert saved.documents[0].gcs_uri.startswith(f"gs://{settings.GCS_BUCKET_NAME}/uploads/{claim_id}/")
+    doc_bytes = storage_service.read_file(saved.documents[0].gcs_uri)
+    assert doc_bytes == dummy_pdf
 
 
 def test_old_demo_seed_fails_verification():

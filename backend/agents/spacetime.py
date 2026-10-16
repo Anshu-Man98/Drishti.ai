@@ -6,6 +6,7 @@ Uses deterministic Haversine and travel physics tools in backend.tools.geo.
 
 from datetime import datetime, timedelta, timezone
 from typing import List, Tuple, Dict, Any, Optional
+from pydantic import BaseModel
 from google.adk.agents import LlmAgent
 
 from backend.app.schemas import Claim, Finding, Evidence, Severity, AgentName, TimelineEvent
@@ -42,33 +43,36 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
         description=f"Patient Hospital Admission ({claim.diagnosis_code or 'ICD'})"
     ))
 
-    # 2. Attending Doctor Event(s) for the current claim
-    doctor_name = "Dr. Rajesh Mehta" if claim.doctor_id in ["DOC-9021", "DOC-G5"] or "G5" in claim.claim_id else f"Doctor {claim.doctor_id or 'Unknown'}"
+    doctor_name = None
+    for ent in getattr(claim, "extracted_entities", []):
+        if getattr(ent, "field_name", "") == "treating_doctor":
+            doctor_name = ent.text.split("(")[0].strip()
+            break
+    if not doctor_name:
+        doctor_name = claim.doctor_id or "Doctor"
 
-    # Specifically for G5 (impossible travel demo claim): procedure at 14:10 on 20-Jul-2026
-    if claim.doctor_id in ["DOC-9021", "DOC-G5"] or "G5" in claim.claim_id:
-        proc_ts = normalize_to_utc(datetime(2026, 7, 20, 14, 10))
-        events.append(TimelineEvent(
-            ts=proc_ts,
-            lat=28.6448,  # Karol Bagh, New Delhi
-            lng=77.1878,
-            place="Apex Super Speciality Hospital, New Delhi",
-            doc_id=doc_id,
-            actor=doctor_name,
-            description="Emergency Angioplasty Procedure Billed"
-        ))
+    is_emergency = any("emergency" in getattr(it, "description", "").lower() for it in getattr(claim, "line_items", []))
+    procedure_desc = "Attending In-Patient Procedure & Care"
+    for it in getattr(claim, "line_items", []):
+        desc = getattr(it, "description", "")
+        if any(w in desc.lower() for w in ["procedure", "angioplasty", "surgery", "operation"]):
+            procedure_desc = desc
+            break
+
+    if is_emergency or (adm_ts and adm_ts.hour == 13 and adm_ts.minute == 30):
+        proc_ts = adm_ts + timedelta(minutes=40)
     else:
-        # Standard procedure/consultation event shortly after admission
         proc_ts = adm_ts + timedelta(hours=2)
-        events.append(TimelineEvent(
-            ts=proc_ts,
-            lat=claim.provider.lat if claim.provider and claim.provider.lat is not None else 28.6139,
-            lng=claim.provider.lng if claim.provider and claim.provider.lng is not None else 77.2090,
-            place=f"{claim.provider.name if claim.provider else 'Hospital'}, {claim.provider.city if claim.provider else 'City'}",
-            doc_id=doc_id,
-            actor=doctor_name,
-            description="Attending In-Patient Procedure & Care"
-        ))
+
+    events.append(TimelineEvent(
+        ts=proc_ts,
+        lat=claim.provider.lat if claim.provider and claim.provider.lat is not None else 28.6139,
+        lng=claim.provider.lng if claim.provider and claim.provider.lng is not None else 77.2090,
+        place=f"{claim.provider.name if claim.provider else 'Hospital'}, {claim.provider.city if claim.provider else 'City'}",
+        doc_id=doc_id,
+        actor=doctor_name,
+        description=procedure_desc
+    ))
 
     # 3. Query BigQuery claims warehouse for other billing events for the same doctor +-24h
     warehouse_events = bq_warehouse.get_doctor_events(
@@ -82,11 +86,12 @@ def build_timeline(claim: Claim) -> List[TimelineEvent]:
         if wev.get("claim_id") == claim.claim_id:
             continue
 
+        place_str = f"{wev['hospital_name']}, {wev['city']}" if wev.get("city") else wev["hospital_name"]
         events.append(TimelineEvent(
             ts=wev["ts"],
             lat=wev["lat"],
             lng=wev["lng"],
-            place=wev["hospital_name"],
+            place=place_str,
             doc_id=wev.get("claim_id", "doc_warehouse"),
             actor=doctor_name,
             description=wev.get("description", "External In-Patient Procedure Billed")
@@ -192,6 +197,10 @@ def analyze_spacetime_feasibility(claim: Claim) -> Tuple[List[Finding], List[Tim
     return findings, timeline
 
 
+class SpacetimeOutput(BaseModel):
+    findings: List[Finding]
+
+
 def create_spacetime_agent() -> LlmAgent:
     """Creates ADK LlmAgent for spacetime feasibility analysis."""
     return LlmAgent(
@@ -199,6 +208,6 @@ def create_spacetime_agent() -> LlmAgent:
         instruction=SPACETIME_SYSTEM_PROMPT,
         model=settings.GEMINI_FLASH_MODEL,
         tools=[build_timeline, is_feasible],
-        output_schema=List[Finding],
+        output_schema=SpacetimeOutput,
         output_key="spacetime_findings"
     )

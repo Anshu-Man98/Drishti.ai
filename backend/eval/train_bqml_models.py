@@ -2,12 +2,11 @@
 Trains and evaluates FinShield BigQuery ML models.
 1. Primary Claim Fraud Model (finshield.fraud_model) on synthetic Indian health insurance claims.
 2. Healthcare Provider Fraud Model (finshield.provider_fraud_model) on real Kaggle Medicare data.
-Saves model artifacts to data/fraud_model.joblib and generates docs/model_eval.md.
+Saves model evaluation metrics to data/fraud_model_metrics.json and generates docs/model_eval.md.
 """
 
 from pathlib import Path
 import json
-import joblib
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
@@ -77,15 +76,14 @@ def train_claim_fraud_model():
         key=lambda x: -x[1]
     )
 
-    # Save artifact
-    model_artifact = {
-        "model": model,
+    # Save evaluation metrics
+    metrics_artifact = {
         "features": CLAIM_FEATURES,
         "metrics": metrics,
         "feature_importances": importances
     }
-    joblib.dump(model_artifact, DATA_DIR / "fraud_model.joblib")
-    print(f"Saved primary claim fraud model: {metrics}")
+    (DATA_DIR / "fraud_model_metrics.json").write_text(json.dumps(metrics_artifact, indent=2))
+    print(f"Saved primary claim fraud model evaluation metrics: {metrics}")
     return metrics, importances
 
 

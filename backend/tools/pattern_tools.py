@@ -13,29 +13,122 @@ from typing import List, Dict, Any, Optional
 from backend.app.config import settings
 from backend.app.schemas import Claim, Finding, RetrievedContext
 
+from datetime import datetime
+
 PATTERNS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "patterns" / "fraud_patterns.json"
+
+_RUNTIME_LEARNED_PATTERNS: List[Dict[str, Any]] = []
+
+
+def register_learned_pattern(pattern: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Registers a new learned evasion tactic from F6 Dueling AI.
+    Saves to:
+      1. Runtime in-memory catalog cache (_RUNTIME_LEARNED_PATTERNS)
+      2. Cloud Firestore 'learned_patterns' collection (and local DB)
+      3. BigQuery table 'finshield.learned_patterns'
+    Makes it immediately retrievable by search_patterns.
+    """
+    pid = pattern.get("pattern_id") or f"PAT-LEARNED-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    tactic = pattern.get("tactic") or pattern.get("title") or "Unknown Evasion Tactic"
+    sig = pattern.get("signature") or json.dumps(pattern.get("feature_signatures") or {})
+
+    standardized_pattern = {
+        "pattern_id": pid,
+        "fraud_type": pattern.get("fraud_type") or "learned_evasion",
+        "title": pattern.get("title") or f"Learned Evasion: {tactic[:60]}",
+        "tactic": tactic,
+        "narrative": pattern.get("narrative") or f"Evasion tactic observed during adversarial duel: {tactic}",
+        "signature": sig,
+        "typical_severity": pattern.get("typical_severity") or "HIGH",
+        "feature_signatures": sig,
+        "evaded_at": pattern.get("evaded_at") or datetime.utcnow().isoformat()
+    }
+
+    # 1. In-memory runtime cache
+    _RUNTIME_LEARNED_PATTERNS.append(standardized_pattern)
+
+    # 2. Persist to Firestore and SQLite
+    try:
+        from backend.app.services.db import db_service
+        db_service.save_learned_pattern(standardized_pattern)
+    except Exception as e:
+        print(f"[PatternTools] Warning persisting learned pattern to DB: {e}")
+
+    # 3. Persist to BigQuery finshield.learned_patterns
+    if settings.GCP_PROJECT and settings.BIGQUERY_DATASET:
+        try:
+            from google.cloud import bigquery
+            bq_client = bigquery.Client(project=settings.GCP_PROJECT)
+            table_id = f"{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.learned_patterns"
+            rows_to_insert = [{
+                "pattern_id": pid,
+                "tactic": tactic,
+                "feature_signatures": str(sig),
+                "evaded_at": standardized_pattern["evaded_at"]
+            }]
+            errors = bq_client.insert_rows_json(table_id, rows_to_insert)
+            if errors:
+                print(f"[PatternTools] BigQuery insert error for learned pattern: {errors}")
+        except Exception as e:
+            # Non-blocking for offline/test environments
+            pass
+
+    return standardized_pattern
 
 
 def load_pattern_cards() -> List[Dict[str, Any]]:
-    """Loads the 48 distinctive fraud pattern cards."""
+    """Loads all fraud pattern cards (base catalog + learned patterns)."""
     return _load_pattern_catalog()
 
 
 def _load_pattern_catalog() -> List[Dict[str, Any]]:
-    """Loads the 48 distinctive fraud pattern cards."""
+    """Loads the base fraud pattern cards plus dynamically learned evasion patterns."""
+    cards: List[Dict[str, Any]] = []
     if PATTERNS_PATH.exists():
-        with open(PATTERNS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    # Fallback: compile on the fly if needed
+        try:
+            with open(PATTERNS_PATH, "r", encoding="utf-8") as f:
+                cards = json.load(f)
+        except Exception as e:
+            print(f"[PatternTools] Warning: could not load patterns: {e}")
+    else:
+        try:
+            from data.build_pattern_cards import build_pattern_cards
+            cards = build_pattern_cards()
+            with open(PATTERNS_PATH, "w", encoding="utf-8") as f:
+                json.dump(cards, f, indent=2)
+        except Exception as e:
+            print(f"[PatternTools] Warning: could not build patterns: {e}")
+
+    # Merge persisted learned patterns from Cloud Firestore / DB
     try:
-        from data.build_pattern_cards import build_pattern_cards
-        cards = build_pattern_cards()
-        with open(PATTERNS_PATH, "w", encoding="utf-8") as f:
-            json.dump(cards, f, indent=2)
-        return cards
-    except Exception as e:
-        print(f"[PatternTools] Warning: could not load patterns: {e}")
-        return []
+        from backend.app.services.db import db_service
+        persisted = db_service.get_learned_patterns()
+        for p in persisted:
+            if p.get("pattern_id"):
+                cards.append({
+                    "pattern_id": p.get("pattern_id"),
+                    "fraud_type": p.get("fraud_type") or "learned_evasion",
+                    "title": p.get("title") or p.get("tactic") or "Learned Evasion Pattern",
+                    "tactic": p.get("tactic") or p.get("title") or "",
+                    "narrative": p.get("narrative") or p.get("tactic") or "",
+                    "signature": p.get("signature") or str(p.get("feature_signatures") or ""),
+                    "typical_severity": p.get("typical_severity") or "HIGH",
+                })
+    except Exception:
+        pass
+
+    # Merge in-memory runtime learned patterns
+    for p in _RUNTIME_LEARNED_PATTERNS:
+        cards.append(p)
+
+    # Deduplicate by pattern_id (later entries override earlier)
+    seen = {}
+    for c in cards:
+        pid = c.get("pattern_id")
+        if pid:
+            seen[pid] = c
+    return list(seen.values())
 
 
 def build_claim_fingerprint(
@@ -110,10 +203,15 @@ def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
     if not q_tokens:
         return 0.0
 
+    # Direct pattern ID match shortcut
+    if card.get("pattern_id") and card.get("pattern_id").lower() in query.lower():
+        return 0.95
+
     # Build card target tokens
     target_str = (
         f"{card.get('fraud_type', '')} "
         f"{card.get('title', '')} "
+        f"{card.get('tactic', '')} "
         f"{card.get('signature', '')} "
         f"{card.get('narrative', '')}"
     ).lower()
@@ -159,10 +257,9 @@ def search_patterns(
     if not settings.RAG_PATTERNS_ENABLED:
         return []
 
-    # Optional: GCP Discovery Engine / Vertex AI Search integration if live
+    # Optional: GCP Discovery Engine / Vertex AI Search integration if configured
     doc_search_active = (
-        not settings.LOCAL_FALLBACK
-        and settings.GCP_PROJECT
+        settings.GCP_PROJECT
         and getattr(settings, "DATASTORE_PATTERNS", None)
     )
     if doc_search_active:

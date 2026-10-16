@@ -3049,3 +3049,4 @@
 {"event_id":"EVT-2997-1","doctor_id":"DOC-2003","ts":"2026-05-01T14:00:00","hospital_id":"HOSP-101","hospital_name":"Lifeline Hospital","city":"New Delhi","lat":28.6004,"lng":77.19239,"claim_id":"CLM-102997"}
 {"event_id":"EVT-2998-1","doctor_id":"DOC-2030","ts":"2026-05-21T10:00:00","hospital_id":"HOSP-110","hospital_name":"Metro Healthcare Institute","city":"Lucknow","lat":26.86505,"lng":80.95809,"claim_id":"CLM-102998"}
 {"event_id":"EVT-2999-1","doctor_id":"DOC-2066","ts":"2026-01-19T16:00:00","hospital_id":"HOSP-119","hospital_name":"CarePlus Super Speciality Hospital","city":"Ahmedabad","lat":23.0442,"lng":72.57604,"claim_id":"CLM-102999"}
+{"event_id":"EVT-MUM-8821","doctor_id":"DOC-9021","ts":"2026-07-20T15:40:00","hospital_id":"HOSP-102","hospital_name":"Lifeline Super Speciality Hospital","city":"Mumbai","lat":19.0596,"lng":72.8295,"claim_id":"CLM-WAREHOUSE-MUM-8821"}

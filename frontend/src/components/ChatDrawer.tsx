@@ -103,36 +103,46 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
     let accumulatedText = '';
 
-    await streamClaimChat(
-      claimId,
-      msg,
-      (chunk) => {
-        accumulatedText += chunk;
-        setStreamingAnswer(accumulatedText);
-      },
-      (completeRes) => {
-        const assistantMsg: ChatMessage = {
-          role: 'assistant',
-          content: completeRes.answer || accumulatedText,
-          cited_finding_ids: completeRes.cited_finding_ids,
-          cited_evidence: completeRes.cited_evidence,
-          created_at: new Date().toISOString()
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setStreamingAnswer(null);
-        setLoading(false);
+    try {
+      await streamClaimChat(
+        claimId,
+        msg,
+        (chunk) => {
+          accumulatedText += chunk;
+          setStreamingAnswer(accumulatedText);
+        },
+        (completeRes) => {
+          const finalAnswer = (completeRes.answer || accumulatedText).trim();
+          const assistantMsg: ChatMessage = {
+            role: 'assistant',
+            content: finalAnswer || 'No response details available from audit copilot for this inquiry.',
+            cited_finding_ids: completeRes.cited_finding_ids,
+            cited_evidence: completeRes.cited_evidence,
+            created_at: new Date().toISOString()
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+          setStreamingAnswer(null);
+          setLoading(false);
 
-        // Auto-focus on primary cited finding if available
-        if (completeRes.cited_finding_ids && completeRes.cited_finding_ids.length > 0) {
-          onSelectFinding(completeRes.cited_finding_ids[0]);
+          // Auto-focus on primary cited finding if available
+          if (completeRes.cited_finding_ids && completeRes.cited_finding_ids.length > 0) {
+            onSelectFinding(completeRes.cited_finding_ids[0]);
+          }
+        },
+        (err) => {
+          setError(err.message || 'Error communicating with assistant.');
+          setStreamingAnswer(null);
+          setLoading(false);
         }
-      },
-      (err) => {
-        setError(err.message || 'Error communicating with assistant.');
-        setStreamingAnswer(null);
-        setLoading(false);
-      }
-    );
+      );
+    } catch (err: any) {
+      setError(err.message || 'Error communicating with assistant.');
+      setStreamingAnswer(null);
+      setLoading(false);
+    } finally {
+      setLoading(false);
+      setStreamingAnswer(null);
+    }
   };
 
   const renderContentWithCitations = (content: string) => {

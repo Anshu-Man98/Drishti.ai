@@ -269,7 +269,8 @@ def seed_claims():
     print(f"🚀 Seeding Golden Claims into {API_BASE_URL}...")
     seeded_ids = {}
 
-    with httpx.Client(timeout=30.0) as client:
+    headers = {"Authorization": "Bearer adjuster-token"}
+    with httpx.Client(timeout=30.0, headers=headers) as client:
         # Check API health
         try:
             health = client.get(f"{API_BASE_URL}/health")

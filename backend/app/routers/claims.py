@@ -116,7 +116,10 @@ async def create_claim(
                             it.bbox = docai_claim.line_items[i].bbox
                             it.page = docai_claim.line_items[i].page
             except Exception as e:
-                print(f"[create_claim] DocAI extraction notice: {e}")
+                from backend.app.exceptions import CloudServiceError
+                if isinstance(e, CloudServiceError):
+                    raise
+                raise CloudServiceError(service="Document AI", message=f"Document AI extraction failed: {e}", retryable=True) from e
 
         documents.append(Document(
             doc_id=doc_id,
@@ -234,10 +237,10 @@ def create_claim_direct(claim: Claim):
             if doc.gcs_uri.startswith("file://"):
                 path_str = doc.gcs_uri.replace("file://", "")
                 resolved = Path(path_str).resolve()
+                repo_root = Path(__file__).resolve().parent.parent.parent.resolve()
                 allowed_roots = [
-                    Path(settings.LOCAL_DATA_DIR).resolve(),
-                    (Path(settings.LOCAL_DATA_DIR) / "uploads").resolve(),
-                    (Path(settings.LOCAL_DATA_DIR) / "demo").resolve(),
+                    (repo_root / "data").resolve(),
+                    (repo_root / "data" / "demo").resolve(),
                 ]
                 if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
                     raise HTTPException(
@@ -286,26 +289,18 @@ def get_dossier(claim_id: str):
     return dossier
 
 
-from backend.agents.root import run_claims_fraud_pipeline
-
-# In-memory agent status tracker for live UI feedback
-_agent_statuses = {}
+from backend.agents.root import run_adk_pipeline, run_claims_fraud_pipeline
 
 
 @router.get("/{claim_id}/agent-status")
 def get_agent_status(claim_id: str):
-    return _agent_statuses.get(claim_id, {
-        "forensics": "idle",
-        "policy": "idle",
-        "crossref": "idle",
-        "synthesizer": "idle"
-    })
+    return db_service.get_agent_statuses(claim_id)
 
 
 @router.post("/{claim_id}/analyze", response_model=Dossier)
 def analyze_claim(claim_id: str, force: bool = False):
     """
-    Runs the four-agent fraud pipeline (Forensics, Policy, CrossRef, Synthesizer).
+    Runs the multi-agent fraud pipeline via ADK Runner.
     Writes Dossier to DB/Firestore.
     """
     claim = db_service.get_claim(claim_id)
@@ -317,14 +312,7 @@ def analyze_claim(claim_id: str, force: bool = False):
         if existing_dossier and existing_dossier.findings:
             return existing_dossier
 
-    def status_callback(agent_name: str, status: str):
-        if claim_id not in _agent_statuses:
-            _agent_statuses[claim_id] = {}
-        _agent_statuses[claim_id][agent_name] = status
-
-    # Execute 4-agent scrutiny
-    dossier = run_claims_fraud_pipeline(claim, status_callback=status_callback)
-    db_service.save_dossier(dossier)
+    dossier = run_adk_pipeline(claim)
     return dossier
 
 
@@ -348,11 +336,13 @@ def get_claim_document(claim_id: str, doc_id: str):
 
 @router.get("/{claim_id}/pages/{page_num}")
 def get_claim_page_image(claim_id: str, page_num: int = 1):
-    from pathlib import Path
-    local_path = Path(settings.LOCAL_DATA_DIR) / "uploads" / claim_id / "pages" / f"page_{page_num}.png"
-    if local_path.exists():
-        with open(local_path, "rb") as f:
-            return Response(content=f.read(), media_type="image/png")
+    page_blob_name = f"uploads/{claim_id}/pages/page_{page_num}.png"
+    page_uri = f"gs://{settings.GCS_BUCKET_NAME}/{page_blob_name}"
+    try:
+        content = storage_service.read_file(page_uri)
+        return Response(content=content, media_type="image/png")
+    except Exception:
+        pass
 
     # Render on the fly from document if not already cached
     claim = db_service.get_claim(claim_id)
@@ -361,9 +351,8 @@ def get_claim_page_image(claim_id: str, page_num: int = 1):
             doc_bytes = storage_service.read_file(claim.documents[0].gcs_uri)
             from backend.tools.docai import render_pdf_to_page_images
             render_pdf_to_page_images(doc_bytes, claim_id)
-            if local_path.exists():
-                with open(local_path, "rb") as f:
-                    return Response(content=f.read(), media_type="image/png")
+            content = storage_service.read_file(page_uri)
+            return Response(content=content, media_type="image/png")
         except Exception as e:
             print(f"Error on-the-fly rendering page image: {e}")
 

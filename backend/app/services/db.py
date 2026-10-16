@@ -1,10 +1,9 @@
 import json
-import sqlite3
-from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from backend.app.config import settings
+from backend.app.exceptions import CloudServiceError
 from backend.app.schemas import Claim, Dossier, ClaimSummary, ChatMessage
 
 try:
@@ -15,120 +14,99 @@ except Exception:
 
 
 class DatabaseService:
+    """
+    Cloud-native Firestore Database Service.
+    All claims, dossiers, agent statuses, chat history, issuance records,
+    duel rounds, and learned patterns live exclusively in Google Cloud Firestore.
+    There is no local or in-memory fallback.
+    """
     def __init__(self):
         self._fs_client = None
-        self.local_db_path = Path(settings.LOCAL_DATA_DIR) / "finshield.db"
-        self.local_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_sqlite()
+        self._init_client()
 
-        if _firestore_available and not settings.LOCAL_FALLBACK:
+    def _init_client(self):
+        if _firestore_available and settings.GCP_PROJECT:
             try:
                 self._fs_client = firestore.Client(
                     project=settings.GCP_PROJECT,
                     database=settings.FIRESTORE_DATABASE
                 )
-            except Exception:
+            except Exception as e:
                 self._fs_client = None
+                if settings.REQUIRE_CLOUD_ON_STARTUP:
+                    raise CloudServiceError(
+                        service="firestore",
+                        message=f"Failed to initialize Firestore client for project '{settings.GCP_PROJECT}': {e}",
+                        retryable=True
+                    )
 
-    def _init_sqlite(self):
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS claims (
-                    claim_id TEXT PRIMARY KEY,
-                    data TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS dossiers (
-                    claim_id TEXT PRIMARY KEY,
-                    data TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    claim_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    cited_finding_ids TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS issuance_ledger (
-                    doc_id TEXT PRIMARY KEY,
-                    claim_id TEXT NOT NULL,
-                    doc_type TEXT NOT NULL,
-                    amount_paise INTEGER NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    signature TEXT NOT NULL,
-                    issued_at TIMESTAMP NOT NULL,
-                    metadata TEXT
-                )
-            """)
-            conn.commit()
+    @property
+    def client(self) -> Any:
+        if self._fs_client is None:
+            self._init_client()
+        if self._fs_client is None:
+            raise CloudServiceError(
+                service="firestore",
+                message="Cloud Firestore client is unavailable. Live Firestore connection required.",
+                retryable=True
+            )
+        return self._fs_client
 
     def save_claim(self, claim: Claim) -> None:
         claim_dict = json.loads(claim.model_dump_json())
-        # SQLite
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO claims (claim_id, data, created_at) VALUES (?, ?, ?)",
-                (claim.claim_id, json.dumps(claim_dict), datetime.utcnow().isoformat())
+        claim_dict["created_at"] = datetime.utcnow().isoformat()
+        try:
+            self.client.collection("claims").document(claim.claim_id).set(claim_dict)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to save claim '{claim.claim_id}' to Firestore: {e}",
+                retryable=True
             )
-            conn.commit()
-
-        # Firestore if available
-        if self._fs_client:
-            try:
-                self._fs_client.collection("claims").document(claim.claim_id).set(claim_dict)
-            except Exception as e:
-                print(f"[DB] Firestore write failed: {e}")
 
     def get_claim(self, claim_id: str) -> Optional[Claim]:
-        if self._fs_client:
-            try:
-                doc = self._fs_client.collection("claims").document(claim_id).get()
-                if doc.exists:
-                    return Claim.model_validate(doc.to_dict())
-            except Exception as e:
-                print(f"[DB] Firestore get failed: {e}")
-
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT data FROM claims WHERE claim_id = ?", (claim_id,))
-            row = cursor.fetchone()
-            if row:
-                return Claim.model_validate_json(row[0])
-        return None
+        try:
+            doc = self.client.collection("claims").document(claim_id).get()
+            if doc.exists:
+                return Claim.model_validate(doc.to_dict())
+            return None
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get claim '{claim_id}' from Firestore: {e}",
+                retryable=True
+            )
 
     def list_claims(self, limit: int = 50, offset: int = 0) -> List[ClaimSummary]:
-        summaries: List[ClaimSummary] = []
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT claim_id, data FROM claims ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset)
-            )
-            rows = cursor.fetchall()
-            for claim_id, data_str in rows:
-                c = json.loads(data_str)
-                # Check if dossier exists
-                cursor.execute("SELECT data FROM dossiers WHERE claim_id = ?", (claim_id,))
-                d_row = cursor.fetchone()
-                verdict = None
-                risk_score = None
-                if d_row:
-                    d_data = json.loads(d_row[0])
-                    verdict = d_data.get("verdict")
-                    risk_score = d_data.get("risk_score")
+        try:
+            docs = list(self.client.collection("claims").limit(limit).offset(offset).stream())
+            if not docs:
+                return []
 
+            dossier_refs = [self.client.collection("dossiers").document(d.to_dict().get("claim_id", d.id)) for d in docs]
+            dossiers_map: Dict[str, Dict[str, Any]] = {}
+            try:
+                for d_doc in self.client.get_all(dossier_refs):
+                    if d_doc.exists:
+                        dossiers_map[d_doc.id] = d_doc.to_dict()
+            except Exception:
+                for ref in dossier_refs:
+                    try:
+                        d_doc = ref.get()
+                        if d_doc.exists:
+                            dossiers_map[d_doc.id] = d_doc.to_dict()
+                    except Exception:
+                        pass
+
+            summaries: List[ClaimSummary] = []
+            for doc in docs:
+                c = doc.to_dict()
+                cid = c.get("claim_id", doc.id)
+                d_data = dossiers_map.get(cid)
+                verdict = d_data.get("verdict") if d_data else None
+                risk_score = d_data.get("risk_score") if d_data else None
                 summaries.append(ClaimSummary(
-                    claim_id=c["claim_id"],
+                    claim_id=cid,
                     policy_id=c.get("policy_id") or "POL-UNKNOWN",
                     insurer_id=c.get("insurer_id") or "INS-UNKNOWN",
                     claimant_name=c.get("claimant", {}).get("name") if c.get("claimant") else "Unknown",
@@ -143,40 +121,77 @@ class DatabaseService:
                     verdict=verdict,
                     risk_score=risk_score
                 ))
-        return summaries
+            return summaries
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to list claims from Firestore: {e}",
+                retryable=True
+            )
 
     def save_dossier(self, dossier: Dossier) -> None:
         dossier_dict = json.loads(dossier.model_dump_json())
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO dossiers (claim_id, data, created_at) VALUES (?, ?, ?)",
-                (dossier.claim_id, json.dumps(dossier_dict), datetime.utcnow().isoformat())
+        dossier_dict["created_at"] = datetime.utcnow().isoformat()
+        try:
+            self.client.collection("dossiers").document(dossier.claim_id).set(dossier_dict)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to save dossier '{dossier.claim_id}' to Firestore: {e}",
+                retryable=True
             )
-            conn.commit()
-
-        if self._fs_client:
-            try:
-                self._fs_client.collection("dossiers").document(dossier.claim_id).set(dossier_dict)
-            except Exception as e:
-                print(f"[DB] Firestore dossier write failed: {e}")
 
     def get_dossier(self, claim_id: str) -> Optional[Dossier]:
-        if self._fs_client:
-            try:
-                doc = self._fs_client.collection("dossiers").document(claim_id).get()
-                if doc.exists:
-                    return Dossier.model_validate(doc.to_dict())
-            except Exception as e:
-                print(f"[DB] Firestore dossier get failed: {e}")
+        try:
+            doc = self.client.collection("dossiers").document(claim_id).get()
+            if doc.exists:
+                return Dossier.model_validate(doc.to_dict())
+            return None
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get dossier '{claim_id}' from Firestore: {e}",
+                retryable=True
+            )
 
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT data FROM dossiers WHERE claim_id = ?", (claim_id,))
-            row = cursor.fetchone()
-            if row:
-                return Dossier.model_validate_json(row[0])
-        return None
+    def set_agent_status(self, claim_id: str, agent_name: str, status: str) -> None:
+        now = datetime.utcnow().isoformat()
+        try:
+            self.client.collection("claims").document(claim_id).collection("agent_status").document(agent_name).set({
+                "status": status,
+                "agent_name": agent_name,
+                "updated_at": now
+            })
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to update agent status for '{claim_id}/{agent_name}' in Firestore: {e}",
+                retryable=True
+            )
+
+    def get_agent_statuses(self, claim_id: str) -> Dict[str, str]:
+        statuses = {
+            "forensics": "idle",
+            "policy": "idle",
+            "crossref": "idle",
+            "spacetime": "idle",
+            "injection": "idle",
+            "provenance": "idle",
+            "synthesizer": "idle"
+        }
+        try:
+            docs = self.client.collection("claims").document(claim_id).collection("agent_status").stream()
+            for doc in docs:
+                d = doc.to_dict()
+                if "status" in d:
+                    statuses[doc.id] = d["status"]
+            return statuses
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get agent statuses for '{claim_id}' from Firestore: {e}",
+                retryable=True
+            )
 
     def save_chat_message(
         self,
@@ -185,79 +200,47 @@ class DatabaseService:
         content: str,
         cited_finding_ids: Optional[List[str]] = None
     ) -> None:
-        """Saves an adjuster chat message in Firestore under the claim, with local SQLite fallback."""
         now = datetime.utcnow().isoformat()
-        cited_ids = cited_finding_ids or []
-
-        # Local SQLite
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO chat_messages (claim_id, role, content, cited_finding_ids, created_at) VALUES (?, ?, ?, ?, ?)",
-                (claim_id, role, content, json.dumps(cited_ids), now)
+        msg_dict = {
+            "role": role,
+            "content": content,
+            "cited_finding_ids": cited_finding_ids or [],
+            "created_at": now
+        }
+        try:
+            self.client.collection("claims").document(claim_id).collection("chat_messages").add(msg_dict)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to save chat message for '{claim_id}' to Firestore: {e}",
+                retryable=True
             )
-            conn.commit()
-
-        # Firestore under claims/{id}/chat_messages
-        if self._fs_client:
-            try:
-                self._fs_client.collection("claims").document(claim_id).collection("chat_messages").add({
-                    "role": role,
-                    "content": content,
-                    "cited_finding_ids": cited_ids,
-                    "created_at": now
-                })
-            except Exception as e:
-                print(f"[DB] Firestore chat message write failed: {e}")
 
     def get_chat_history(self, claim_id: str) -> List[ChatMessage]:
-        """Retrieves chronological chat history for a claim."""
-        # Check Firestore first
-        if self._fs_client:
-            try:
-                docs = (
-                    self._fs_client.collection("claims")
-                    .document(claim_id)
-                    .collection("chat_messages")
-                    .order_by("created_at")
-                    .stream()
-                )
-                messages = []
-                for doc in docs:
-                    d = doc.to_dict()
-                    messages.append(ChatMessage(
-                        role=d.get("role", "assistant"),
-                        content=d.get("content", ""),
-                        cited_finding_ids=d.get("cited_finding_ids", []),
-                        created_at=datetime.fromisoformat(d.get("created_at", datetime.utcnow().isoformat()))
-                    ))
-                if messages:
-                    return messages
-            except Exception as e:
-                print(f"[DB] Firestore chat history query failed: {e}")
-
-        # Local SQLite fallback
-        messages = []
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT role, content, cited_finding_ids, created_at FROM chat_messages WHERE claim_id = ? ORDER BY id ASC",
-                (claim_id,)
+        try:
+            docs = (
+                self.client.collection("claims")
+                .document(claim_id)
+                .collection("chat_messages")
+                .order_by("created_at")
+                .stream()
             )
-            rows = cursor.fetchall()
-            for role, content, cited_json, created_at_str in rows:
-                cited_ids = json.loads(cited_json) if cited_json else []
-                try:
-                    dt = datetime.fromisoformat(created_at_str)
-                except Exception:
-                    dt = datetime.utcnow()
+            messages = []
+            for doc in docs:
+                d = doc.to_dict()
                 messages.append(ChatMessage(
-                    role=role,
-                    content=content,
-                    cited_finding_ids=cited_ids,
-                    created_at=dt
+                    role=d.get("role", "assistant"),
+                    content=d.get("content", ""),
+                    cited_finding_ids=d.get("cited_finding_ids", []),
+                    created_at=datetime.fromisoformat(d.get("created_at", datetime.utcnow().isoformat()))
                 ))
-        return messages
+            return messages
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get chat history for '{claim_id}' from Firestore: {e}",
+                retryable=True
+            )
 
     def record_issuance(
         self,
@@ -270,93 +253,100 @@ class DatabaseService:
         issued_at: Optional[datetime] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Records an outbound issued document in the tamper-evident issuance ledger."""
         issued_at_val = issued_at or datetime.utcnow()
-        meta_json = json.dumps(metadata or {})
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO issuance_ledger
-                (doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                doc_id, claim_id, doc_type, amount_paise, content_hash, signature,
-                issued_at_val.isoformat(), meta_json
-            ))
-            conn.commit()
-
-        if self._fs_client:
-            try:
-                self._fs_client.collection("issuance_ledger").document(doc_id).set({
-                    "doc_id": doc_id,
-                    "claim_id": claim_id,
-                    "doc_type": doc_type,
-                    "amount_paise": amount_paise,
-                    "content_hash": content_hash,
-                    "signature": signature,
-                    "issued_at": issued_at_val.isoformat(),
-                    "metadata": metadata or {}
-                })
-            except Exception as e:
-                print(f"[DB] Firestore issuance_ledger write failed: {e}")
+        record = {
+            "doc_id": doc_id,
+            "claim_id": claim_id,
+            "doc_type": doc_type,
+            "amount_paise": amount_paise,
+            "content_hash": content_hash,
+            "signature": signature,
+            "issued_at": issued_at_val.isoformat(),
+            "metadata": metadata or {}
+        }
+        try:
+            self.client.collection("issuance_ledger").document(doc_id).set(record)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to record issuance '{doc_id}' in Firestore: {e}",
+                retryable=True
+            )
 
     def get_issuance(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieves an issuance ledger record by document ID."""
-        if self._fs_client:
-            try:
-                doc = self._fs_client.collection("issuance_ledger").document(doc_id).get()
-                if doc.exists:
-                    return doc.to_dict()
-            except Exception:
-                pass
-
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE doc_id = ?",
-                (doc_id,)
+        try:
+            doc = self.client.collection("issuance_ledger").document(doc_id).get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get issuance record '{doc_id}' from Firestore: {e}",
+                retryable=True
             )
-            row = cursor.fetchone()
-            if row:
-                return {
-                    "doc_id": row[0],
-                    "claim_id": row[1],
-                    "doc_type": row[2],
-                    "amount_paise": row[3],
-                    "content_hash": row[4],
-                    "signature": row[5],
-                    "issued_at": row[6],
-                    "metadata": json.loads(row[7]) if row[7] else {}
-                }
-        return None
 
     def get_issuance_for_claim(self, claim_id: str, doc_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Retrieves the latest issuance ledger record for a claim."""
-        with sqlite3.connect(self.local_db_path) as conn:
-            cursor = conn.cursor()
+        try:
+            coll = self.client.collection("issuance_ledger")
+            query = coll.where(filter=firestore.FieldFilter("claim_id", "==", claim_id))
             if doc_type:
-                cursor.execute(
-                    "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE claim_id = ? AND doc_type = ? ORDER BY issued_at DESC LIMIT 1",
-                    (claim_id, doc_type)
-                )
-            else:
-                cursor.execute(
-                    "SELECT doc_id, claim_id, doc_type, amount_paise, content_hash, signature, issued_at, metadata FROM issuance_ledger WHERE claim_id = ? ORDER BY issued_at DESC LIMIT 1",
-                    (claim_id,)
-                )
-            row = cursor.fetchone()
-            if row:
-                return {
-                    "doc_id": row[0],
-                    "claim_id": row[1],
-                    "doc_type": row[2],
-                    "amount_paise": row[3],
-                    "content_hash": row[4],
-                    "signature": row[5],
-                    "issued_at": row[6],
-                    "metadata": json.loads(row[7]) if row[7] else {}
-                }
-        return None
+                query = query.where(filter=firestore.FieldFilter("doc_type", "==", doc_type))
+            docs = [doc.to_dict() for doc in query.stream()]
+            if not docs:
+                return None
+            docs.sort(key=lambda d: str(d.get("issued_at", "")), reverse=True)
+            return docs[0]
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to query issuance ledger for '{claim_id}' from Firestore: {e}",
+                retryable=True
+            )
+
+    def save_duel_round(self, duel_id: str, round_number: int, round_data: Dict[str, Any]) -> None:
+        try:
+            self.client.collection("duels").document(duel_id).collection("rounds").document(str(round_number)).set(round_data)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to save duel round '{duel_id}/{round_number}' to Firestore: {e}",
+                retryable=True
+            )
+
+    def get_duel_rounds(self, duel_id: str) -> List[Dict[str, Any]]:
+        try:
+            docs = self.client.collection("duels").document(duel_id).collection("rounds").order_by("round_number").stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get duel rounds for '{duel_id}' from Firestore: {e}",
+                retryable=True
+            )
+
+    def save_learned_pattern(self, pattern: Dict[str, Any]) -> None:
+        pid = pattern.get("pattern_id") or f"PAT-LEARNED-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        pattern["pattern_id"] = pid
+        try:
+            self.client.collection("learned_patterns").document(pid).set(pattern)
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to save learned pattern '{pid}' to Firestore: {e}",
+                retryable=True
+            )
+
+    def get_learned_patterns(self) -> List[Dict[str, Any]]:
+        try:
+            docs = self.client.collection("learned_patterns").stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            raise CloudServiceError(
+                service="firestore",
+                message=f"Failed to get learned patterns from Firestore: {e}",
+                retryable=True
+            )
 
 
 db_service = DatabaseService()

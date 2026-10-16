@@ -144,19 +144,19 @@ def validate_arithmetic(
             title="Subtotal does not match sum of itemized charges",
             explanation=(
                 f"The sum of all line items is ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "
-                f"₹{subtotal:,.2f} (Discrepancy: ₹{to_rupees(subtotal_diff_paise):,.2f})."
+                f"₹{sub_rupees:,.2f} (Discrepancy: ₹{to_rupees(subtotal_diff_paise):,.2f})."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,
                 page=page,
                 bbox=subtotal_bbox,
-                quote=f"Calculated sum: {calc_sub_rupees}, Printed subtotal: {subtotal}"
+                quote=f"Calculated sum: {calc_sub_rupees}, Printed subtotal: {sub_rupees}"
             )],
             confidence=1.0,
             computed_chip=chip,
             computed_details={
                 "line_item_sum": calc_sub_rupees,
-                "stated_subtotal": subtotal,
+                "stated_subtotal": sub_rupees,
                 "subtotal_diff": to_rupees(subtotal_diff_paise),
                 "tolerance_paise": tolerance_paise
             }
@@ -171,8 +171,8 @@ def validate_arithmetic(
             severity=Severity.CRITICAL,
             title="Total claimed does not match subtotal plus tax",
             explanation=(
-                f"The invoice claims total payable of ₹{total:,.2f}, but subtotal (₹{subtotal:,.2f}) + "
-                f"tax (₹{tax:,.2f}) equals ₹{to_rupees(expected_total_paise):,.2f} (Unjustified inflation: ₹{to_rupees(total_diff_paise):,.2f})."
+                f"The invoice claims total payable of ₹{tot_rupees:,.2f}, but subtotal (₹{sub_rupees:,.2f}) + "
+                f"tax (₹{tax_rupees:,.2f}) equals ₹{to_rupees(expected_total_paise):,.2f} (Unjustified inflation: ₹{to_rupees(total_diff_paise):,.2f})."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,

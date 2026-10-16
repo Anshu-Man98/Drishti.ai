@@ -1,9 +1,10 @@
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_DEFAULT_DATA_DIR = str(Path(__file__).resolve().parent.parent.parent / "data")
+PDFIUM_LOCK = threading.Lock()
 
 
 class Settings(BaseSettings):
@@ -11,25 +12,56 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
     # GCP Configuration
-    GCP_PROJECT: Optional[str] = os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT", "finshield-dev"))
+    GCP_PROJECT: Optional[str] = os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT"))
     GCP_REGION: str = os.getenv("GCP_REGION", "asia-south1")
-    GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "finshield-claims-docs")
+    GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "finshield-claims-docs-drishti-demo")
     FIRESTORE_DATABASE: str = os.getenv("FIRESTORE_DATABASE", "(default)")
     BIGQUERY_DATASET: str = os.getenv("BIGQUERY_DATASET", "finshield")
     
     # Model IDs from environment variables (NEVER hardcoded)
-    GEMINI_PRO_MODEL: str = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
-    GEMINI_FLASH_MODEL: str = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
+    GEMINI_PRO_MODEL: str = os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-flash")
+    GEMINI_FLASH_MODEL: str = os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
     
+    VERSION: str = "1.0.0"
+
     # API Keys & Credentials
     GOOGLE_API_KEY: Optional[str] = os.getenv("GOOGLE_API_KEY", os.getenv("GEMINI_API_KEY"))
     DOCUMENTAI_PROCESSOR_ID: Optional[str] = os.getenv("DOCUMENTAI_PROCESSOR_ID")
+    DOCUMENTAI_LOCATION: Optional[str] = os.getenv("DOCUMENTAI_LOCATION", "us")
     FINSHIELD_PROVENANCE_KEY: Optional[str] = os.getenv("FINSHIELD_PROVENANCE_KEY")
-    
+
+    @property
+    def docai_processor_name(self) -> Optional[str]:
+        if not self.DOCUMENTAI_PROCESSOR_ID:
+            return None
+        if self.DOCUMENTAI_PROCESSOR_ID.startswith("projects/"):
+            return self.DOCUMENTAI_PROCESSOR_ID
+        loc = self.docai_location
+        proj = self.GCP_PROJECT
+        if not proj:
+            return None
+        return f"projects/{proj}/locations/{loc}/processors/{self.DOCUMENTAI_PROCESSOR_ID}"
+
+    @property
+    def docai_location(self) -> str:
+        if self.DOCUMENTAI_PROCESSOR_ID and "locations/" in self.DOCUMENTAI_PROCESSOR_ID:
+            import re
+            m = re.search(r"locations/([^/]+)", self.DOCUMENTAI_PROCESSOR_ID)
+            if m:
+                return m.group(1)
+        return self.DOCUMENTAI_LOCATION or "us"
+
+    @property
+    def docai_endpoint(self) -> str:
+        loc = self.docai_location
+        return f"{loc}-documentai.googleapis.com"
+
+    # Cloud Startup & Security Enforcement
+    REQUIRE_CLOUD_ON_STARTUP: bool = os.getenv("REQUIRE_CLOUD_ON_STARTUP", "true").lower() == "true"
+    ALLOW_DEV_TOKENS: bool = os.getenv("ALLOW_DEV_TOKENS", "true" if os.getenv("ENVIRONMENT", "development") != "production" else "false").lower() == "true"
+
     # Feature Flags
     SYNTHID_ENABLED: bool = os.getenv("SYNTHID_ENABLED", "false").lower() == "true"
-    LOCAL_FALLBACK: bool = os.getenv("LOCAL_FALLBACK", "true").lower() == "true"
-    LOCAL_DATA_DIR: str = os.getenv("LOCAL_DATA_DIR", _DEFAULT_DATA_DIR)
     INJECTION_CHECK_ENABLED: bool = os.getenv("INJECTION_CHECK_ENABLED", "true").lower() == "true"
     WATERMARK_ENABLED: bool = os.getenv("WATERMARK_ENABLED", "true").lower() == "true"
     RAG_PATTERNS_ENABLED: bool = os.getenv("RAG_PATTERNS_ENABLED", "true").lower() == "true"

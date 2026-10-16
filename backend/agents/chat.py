@@ -2,17 +2,21 @@
 Adjuster Chat Copilot Agent for FinShield.
 Enables insurance adjusters to query the claim dossier via conversational AI.
 Grounded strictly on: the Dossier, all Findings, extracted Claim JSON, and policy clauses.
-Uses Gemini Pro via google-genai SDK, with deterministic fallback for offline testing.
+Uses Gemini Pro via google-genai SDK. Fails explicitly if cloud Gemini is unreachable.
 """
 
 import re
 import json
+import logging
 import asyncio
+from datetime import datetime
 from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 
 from backend.app.config import settings
 from backend.app.schemas import Claim, Dossier, Finding, Evidence, Severity, AgentName
 from backend.app.services.db import db_service
+
+logger = logging.getLogger(__name__)
 
 CHAT_SYSTEM_PROMPT = (
     "You are FinShield's audit assistant talking to an insurance adjuster. "
@@ -54,10 +58,14 @@ def build_case_file_context(claim: Claim, dossier: Optional[Dossier]) -> Tuple[s
     lines.append(f"Insurer: {claim.insurer_id}")
     lines.append(f"Claimant: {sanitize_chat_context(claim.claimant.name)} (ID: {claim.claimant.claimant_id})")
     lines.append(f"Healthcare Provider: {sanitize_chat_context(claim.provider.name)}, {claim.provider.city} (Hospital ID: {claim.provider.hospital_id})")
-    lines.append(f"Attending Doctor ID: {claim.doctor_id}")
-    lines.append(f"Hospitalization: {claim.admission_ts.strftime('%d-%b-%Y %H:%M')} to {claim.discharge_ts.strftime('%d-%b-%Y %H:%M')}")
-    lines.append(f"Diagnosis Code: {claim.diagnosis_code}")
-    lines.append(f"Total Claimed: ₹{claim.total_claimed:,.2f} (Subtotal: ₹{claim.subtotal:,.2f}, Tax: ₹{claim.tax:,.2f})")
+    adm_str = claim.admission_ts.strftime('%d-%b-%Y %H:%M') if isinstance(claim.admission_ts, datetime) else str(claim.admission_ts or 'Unknown')
+    dis_str = claim.discharge_ts.strftime('%d-%b-%Y %H:%M') if isinstance(claim.discharge_ts, datetime) else str(claim.discharge_ts or 'Unknown')
+    lines.append(f"Hospitalization: {adm_str} to {dis_str}")
+    lines.append(f"Diagnosis Code: {claim.diagnosis_code or 'Unknown'}")
+    sub_val = claim.subtotal if claim.subtotal is not None else (claim.total_claimed or 0.0)
+    tax_val = claim.tax if claim.tax is not None else 0.0
+    tot_val = claim.total_claimed if claim.total_claimed is not None else 0.0
+    lines.append(f"Total Claimed: ₹{tot_val:,.2f} (Subtotal: ₹{sub_val:,.2f}, Tax: ₹{tax_val:,.2f})")
 
     lines.append("\n--- Itemized Bill Breakdown ---")
     for it in claim.line_items:
@@ -132,143 +140,6 @@ def extract_citations(text: str, finding_map: Dict[str, Finding]) -> Tuple[List[
     return cited_ids, cited_evidence
 
 
-def generate_deterministic_answer(
-    claim: Claim,
-    dossier: Optional[Dossier],
-    finding_map: Dict[str, Finding],
-    question: str
-) -> Tuple[str, List[str], List[Evidence]]:
-    """
-    Deterministic grounded fallback reasoning engine when live Gemini API key is absent.
-    Handles standard adjuster inquiries with exact citations and flags off-topic queries.
-    """
-    q_lower = question.lower().strip()
-
-    # 1. Off-topic check
-    if any(k in q_lower for k in OFF_TOPIC_KEYWORDS) or "france" in q_lower or "capital" in q_lower:
-        ans = (
-            f"This question cannot be answered from the case file. The case file contains claim details, "
-            f"itemized billing, and multi-agent fraud inspection findings for Claim {claim.claim_id}, "
-            "but contains no information regarding that topic. If you need additional context, you may "
-            "request verified hospital records or policyholder documentation."
-        )
-        return ans, [], []
-
-    findings = dossier.findings if dossier else []
-
-    # 2. "Why was this flagged?" / "Why flagged"
-    if any(k in q_lower for k in ["why was this flagged", "why flagged", "what was flagged", "flags", "anomaly"]):
-        if not findings:
-            ans = (
-                f"Claim {claim.claim_id} was not flagged for fraud or irregularities. "
-                "All automated checks (document metadata forensics, policy limit rules, arithmetic reconciliation, "
-                f"and claims warehouse cross-referencing) completed clean with Risk Score {dossier.risk_score if dossier else 0}/100. "
-                "The claim is recommended for automated approval."
-            )
-            return ans, [], []
-
-        # Find primary findings
-        bullet_points = []
-        for idx, (alias, f) in enumerate(finding_map.items()):
-            if alias.startswith("F") and alias[1:].isdigit():
-                bullet_points.append(f"- [{alias}] {f.title}: {f.explanation}")
-
-        ans = (
-            f"Claim {claim.claim_id} was flagged due to {len(findings)} anomaly finding(s) "
-            f"resulting in a Hybrid Risk Score of {dossier.risk_score}/100 ({dossier.verdict.value.upper()}):\n\n"
-            + "\n".join(bullet_points[:3]) + "\n\n"
-            "Each cited flag indicates elevated risk requiring adjuster review or verification against original hospital books."
-        )
-        c_ids, c_ev = extract_citations(ans, finding_map)
-        return ans, c_ids, c_ev
-
-    # 3. "What's the strongest evidence?" / "evidence"
-    if any(k in q_lower for k in ["strongest evidence", "main evidence", "best evidence", "evidence"]):
-        if not findings:
-            ans = f"No adverse evidence was identified for Claim {claim.claim_id}. All line items and metadata match hospital norms."
-            return ans, [], []
-
-        # Find primary critical and high severity findings
-        crit_findings = [f for f in findings if f.severity == Severity.CRITICAL]
-        high_findings = [f for f in findings if f.severity == Severity.HIGH]
-        primary_findings = (crit_findings + high_findings)[:2] if (crit_findings or high_findings) else findings[:1]
-
-        points = []
-        for pf in primary_findings:
-            alias = next((k for k, v in finding_map.items() if v.finding_id == pf.finding_id and k.startswith("F") and k[1:].isdigit()), pf.finding_id)
-            ev_quote = pf.evidence[0].quote if pf.evidence and pf.evidence[0].quote else pf.title
-            points.append(f"[{alias}] {pf.title}: {pf.explanation} (Evidence: \"{ev_quote}\")")
-
-        ans = (
-            f"The strongest evidence for Claim {claim.claim_id} includes:\n\n"
-            + "\n\n".join(f"- {pt}" for pt in points)
-            + "\n\nThese findings carry the highest severity weighting in the adjuster audit dossier."
-        )
-        c_ids, c_ev = extract_citations(ans, finding_map)
-        return ans, c_ids, c_ev
-
-    # 4. "Which policy clause applies?" / "policy clause" / "clause"
-    if any(k in q_lower for k in ["policy clause", "clause", "limit", "cap"]):
-        policy_finding = next((f for f in findings if f.agent == AgentName.POLICY), None)
-        if policy_finding:
-            alias = next((k for k, v in finding_map.items() if v.finding_id == policy_finding.finding_id and k.startswith("F") and k[1:].isdigit()), policy_finding.finding_id)
-            ans = (
-                f"Under Policy {claim.policy_id}, the relevant clause is Arogya Sanjeevani Clause 3.1 "
-                f"which imposes a room rent ceiling of ₹5,000/day. Finding [{alias}] documents that "
-                f"the billed rate violates this clause: {policy_finding.explanation}"
-            )
-        else:
-            ans = (
-                f"Policy {claim.policy_id} applies standard IRDAI limits: Clause 3.1 limits room rent to ₹5,000/day, "
-                "and ICU charges to ₹10,000/day. No policy limit breaches were flagged on this claim."
-            )
-        c_ids, c_ev = extract_citations(ans, finding_map)
-        return ans, c_ids, c_ev
-
-    # 5. "What should I verify next?" / "verify next" / "next steps"
-    if any(k in q_lower for k in ["verify next", "next steps", "what should i do", "recommendation", "action"]):
-        if not findings:
-            ans = (
-                "No adverse findings require investigation. You may proceed with standard policy deductibles "
-                "verification and automated claim disbursement."
-            )
-            return ans, [], []
-
-        actions = []
-        if any(f.agent == AgentName.FORENSICS for f in findings):
-            actions.append("1. Request original digital invoice files directly from hospital billing administration.")
-        if any(f.agent == AgentName.POLICY for f in findings):
-            actions.append("2. Recalculate admissible room rent according to Clause 3.1 policy caps.")
-        if any(f.agent == AgentName.CROSSREF for f in findings):
-            actions.append("3. Issue an insurer inquiry notice to verify if an identical claim was submitted to another carrier.")
-        if any(f.agent == AgentName.SPACETIME for f in findings):
-            actions.append("4. Verify the attending doctor's physical presence via hospital shift and OT registers.")
-
-        if not actions:
-            actions.append("1. Request verified original physical hospital discharge papers.")
-
-        ans = (
-            f"Based on the flagged findings for Claim {claim.claim_id}, recommended next steps are:\n"
-            + "\n".join(actions)
-        )
-        return ans, [], []
-
-    # 6. General case inquiry
-    ans = (
-        f"Claim {claim.claim_id} was submitted for ₹{claim.total_claimed:,.2f} at {claim.provider.name} "
-        f"under Policy {claim.policy_id}. The multi-agent copilot computed a Hybrid Risk Score of "
-        f"{dossier.risk_score if dossier else 0}/100. "
-    )
-    if findings:
-        primary = findings[0]
-        alias = next((k for k, v in finding_map.items() if v.finding_id == primary.finding_id and k.startswith("F") and k[1:].isdigit()), primary.finding_id)
-        ans += f"Primary observation: [{alias}] {primary.title} ({primary.explanation})."
-    else:
-        ans += "All forensic, mathematical, and policy verifications are clean."
-
-    c_ids, c_ev = extract_citations(ans, finding_map)
-    return ans, c_ids, c_ev
-
 
 async def stream_chat_response(
     claim_id: str,
@@ -295,76 +166,87 @@ async def stream_chat_response(
             dossier = run_claims_fraud_pipeline(claim)
             db_service.save_dossier(dossier)
         except Exception as e:
-            print(f"[Adjuster Chat] Auto-generating dossier note: {e}")
+            logger.info("Auto-generating dossier note for claim %s: %s", claim_id, e)
 
     context_text, finding_map = build_case_file_context(claim, dossier)
 
     # 2. Check if live Gemini API is usable
-    used_gemini = False
+    path_taken: Optional[str] = None  # "live" | "retried" | "fallback"
     full_answer = ""
+    cited_ids = []
+    cited_evidence = []
+    try:
+        from google.genai import types
+        from backend.app.services.gemini_client import get_gemini_client, get_model_name
 
-    if settings.GOOGLE_API_KEY and not settings.LOCAL_FALLBACK:
-        try:
-            from google import genai
-            from google.genai import types
+        client = get_gemini_client()
+        model_name = get_model_name("pro")
 
-            if settings.GOOGLE_API_KEY:
-                client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-            else:
-                client = genai.Client(vertexai=True, project=settings.GCP_PROJECT, location=settings.GCP_REGION)
-
-            safe_query = sanitize_chat_context(user_message)
-            prompt = (
-                "You are FinShield's audit assistant talking to an insurance adjuster. "
-                "Answer only from the case file provided below. Cite finding IDs like [F1]. "
-                "If asked something the case file cannot answer, say what is missing. "
-                "Be brief, objective, and neutral. Never call the claimant a criminal.\n\n"
-                "<untrusted_case_file_context>\n"
-                f"{context_text}\n"
-                "</untrusted_case_file_context>\n\n"
-                "<untrusted_adjuster_query>\n"
-                f"{safe_query}\n"
-                "</untrusted_adjuster_query>\n\n"
-                "Respond based exclusively on the provided context."
-            )
-
-            # Stream via Gemini Pro
-            response_stream = client.models.generate_content_stream(
-                model=settings.GEMINI_PRO_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=CHAT_SYSTEM_PROMPT,
-                    temperature=0.2,
-                )
-            )
-
-            for chunk in response_stream:
-                if chunk.text:
-                    full_answer += chunk.text
-                    yield {"chunk": chunk.text, "done": False}
-                    await asyncio.sleep(0.01)
-
-            used_gemini = True
-        except Exception as e:
-            print(f"[Adjuster Chat] Live Gemini API call notice, falling back to deterministic engine: {e}")
-
-    # 3. Deterministic engine fallback
-    if not used_gemini:
-        full_answer, cited_ids, cited_evidence = generate_deterministic_answer(
-            claim=claim,
-            dossier=dossier,
-            finding_map=finding_map,
-            question=user_message
+        safe_query = sanitize_chat_context(user_message)
+        prompt = (
+            "You are FinShield's audit assistant talking to an insurance adjuster. "
+            "Answer only from the case file provided below. Cite finding IDs like [F1]. "
+            "If asked something the case file cannot answer, say what is missing. "
+            "Be brief, objective, and neutral. Never call the claimant a criminal.\n\n"
+            "<untrusted_case_file_context>\n"
+            f"{context_text}\n"
+            "</untrusted_case_file_context>\n\n"
+            "<untrusted_adjuster_query>\n"
+            f"{safe_query}\n"
+            "</untrusted_adjuster_query>\n\n"
+            "Respond based exclusively on the provided context."
         )
 
-        # Stream words smoothly to emulate realistic typing speed
-        words = full_answer.split(" ")
-        for i, word in enumerate(words):
-            chunk = word + (" " if i < len(words) - 1 else "")
-            yield {"chunk": chunk, "done": False}
-            await asyncio.sleep(0.015)
-    else:
-        cited_ids, cited_evidence = extract_citations(full_answer, finding_map)
+        for attempt in (1, 2):
+            try:
+                response_stream = client.models.generate_content_stream(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=CHAT_SYSTEM_PROMPT,
+                        temperature=0.2,
+                    )
+                )
+
+                attempt_chunks = []
+                for chunk in response_stream:
+                    if chunk.text:
+                        attempt_chunks.append(chunk.text)
+
+                candidate_text = "".join(attempt_chunks)
+                if not candidate_text.strip():
+                    raise ValueError("Gemini returned empty or whitespace-only response")
+
+                # Successfully generated non-empty answer
+                path_taken = "live" if attempt == 1 else "retried"
+                logger.info("Chat answer produced via %s Gemini path for claim %s", path_taken, claim_id)
+
+                for chunk_text in attempt_chunks:
+                    full_answer += chunk_text
+                    yield {"chunk": chunk_text, "done": False}
+                    await asyncio.sleep(0.01)
+
+                cited_ids, cited_evidence = extract_citations(full_answer, finding_map)
+                break
+            except Exception as e:
+                if attempt == 1:
+                    logger.warning("Live Gemini attempt 1 failed for claim %s: %s. Retrying once...", claim_id, e)
+                else:
+                    logger.warning("Live Gemini attempt 2 failed for claim %s: %s.", claim_id, e)
+    except Exception as e:
+        logger.warning("Failed to initialize or call Gemini client for claim %s: %s", claim_id, e)
+
+    # 3. Explicit error response if Gemini was unavailable or both attempts failed
+    if not path_taken:
+        path_taken = "unavailable"
+        logger.error("Chat generation failed for claim %s: live Gemini unavailable after retry.", claim_id)
+        full_answer = (
+            "AI Dossier Copilot is temporarily unavailable. The cloud Gemini model could not be reached. "
+            "Please verify API connectivity and try again."
+        )
+        cited_ids = []
+        cited_evidence = []
+        yield {"chunk": full_answer, "done": False}
 
     # 3b. Enforce Numeric Grounding Guard on chat output (Security Hardening)
     try:
@@ -374,7 +256,7 @@ async def stream_chat_response(
         grounded_answer, _ = sanitize_text_grounding(full_answer, computed_store, claim)
         full_answer = grounded_answer
     except Exception as e:
-        print(f"[Adjuster Chat] Grounding guard warning: {e}")
+        logger.warning("Grounding guard warning for claim %s: %s", claim_id, e)
 
     # 4. Save chat messages in database (Firestore / SQLite)
     db_service.save_chat_message(claim_id=claim_id, role="user", content=user_message)

@@ -64,7 +64,7 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         total_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings)
         risk_score = min(100, max(0, total_score))
 
-    # Intent to deceive: prompt injection attack or issued document tampering triggers REJECT
+    # Intent to deceive: prompt injection, provenance tampering, duplicate claim, or impossible travel triggers REJECT
     has_critical_injection = any(
         f.agent == AgentName.INJECTION and f.severity == Severity.CRITICAL
         for f in findings
@@ -74,8 +74,17 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         (f.check_id == "issued_doc_tampered")
         for f in findings
     )
+    has_critical_duplicate = any(
+        (f.agent == AgentName.CROSSREF and f.severity == Severity.CRITICAL) or
+        (f.check_id in ("CROSS_INSURER_DUPLICATE_CLAIM", "EXACT_DUPLICATE_BILL"))
+        for f in findings
+    )
+    has_impossible_travel = any(
+        f.check_id == "IMPOSSIBLE_TRAVEL_VELOCITY" and f.severity == Severity.CRITICAL
+        for f in findings
+    )
 
-    if has_critical_injection or has_critical_tampering:
+    if has_critical_injection or has_critical_tampering or has_critical_duplicate or has_impossible_travel:
         risk_score = max(risk_score, 85)
         verdict = Verdict.REJECT
     elif risk_score < 30:

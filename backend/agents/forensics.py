@@ -66,8 +66,10 @@ def create_forensics_agent() -> LlmAgent:
             font_consistency_check,
             image_exif_check,
             error_level_analysis,
-            synthid_check
+            synthid_check,
+            gemini_visual_review
         ],
         output_schema=ForensicsOutput,
         output_key="forensics_findings"
     )
+

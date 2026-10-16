@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS `finshield.claims` (
   -- Target labels
   is_fraud INT64 NOT NULL, -- 0 = authentic, 1 = fraud
   fraud_type STRING, -- clean, inflated_line_items, arithmetic_mismatch, policy_cap_breach, duplicate_bill, cross_insurer_duplicate, impossible_travel, shared_bank_account_ring, forged_document
+  bill_number STRING,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 PARTITION BY DATE(admission_ts)

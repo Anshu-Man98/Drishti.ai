@@ -382,10 +382,17 @@ def check_price_benchmarks(
     computed: Dict[str, Any] = {}
     chips: List[str] = []
 
-    diag_code = claim.get("diagnosis_code") or "K35.8"
+    if hasattr(claim, "model_dump"):
+        claim_dict = claim.model_dump()
+    elif isinstance(claim, dict):
+        claim_dict = claim
+    else:
+        claim_dict = getattr(claim, "__dict__", {})
+
+    diag_code = claim_dict.get("diagnosis_code") or "K35.8"
     diag_bench = benchmark_service.get_diagnosis_benchmark(diag_code)
 
-    total_rupees = float(claim.get("total_claimed") or claim.get("subtotal") or 0.0)
+    total_rupees = float(claim_dict.get("total_claimed") or claim_dict.get("subtotal") or 0.0)
     total_paise = to_paise(total_rupees)
     p95_total_paise = to_paise(diag_bench.p95)
     p90_total_paise = to_paise(diag_bench.p90)
@@ -402,72 +409,92 @@ def check_price_benchmarks(
     computed["total_claimed_paise"] = total_paise
 
     # 1. TOTAL_ABOVE_DIAGNOSIS_BENCHMARK
-    if total_paise > p95_total_paise:
-        ratio = total_paise / max(1, p95_total_paise)
-        diff_paise = total_paise - p95_total_paise
-        sev = Severity.HIGH if ratio >= 1.25 else Severity.LOW
+    # Widened effective upper band: accounts for realistic tier-1 / regional price variation
+    # rather than treating synthetic p95 as a hard ceiling.
+    # Exact benchmark (n >= 30) allows +25% tolerance; global or thin fallback allows +35%.
+    is_exact_diag = (diag_bench.fallback_level == "exact" and diag_bench.sample_count >= 30)
+    diag_tolerance_margin = 0.25 if is_exact_diag else 0.35
+    upper_band_paise = int(round(p95_total_paise * (1.0 + diag_tolerance_margin)))
+    upper_band_rupees = to_rupees(upper_band_paise)
 
-        chip_txt = f"Total vs p95: {ratio:.2f}x"
+    computed["diagnosis_tolerance_margin"] = diag_tolerance_margin
+    computed["diagnosis_upper_band"] = upper_band_rupees
+
+    if total_paise > upper_band_paise:
+        ratio_vs_p95 = total_paise / max(1, p95_total_paise)
+        excess_ratio = total_paise / max(1, upper_band_paise)
+        diff_paise = total_paise - p95_total_paise
+        
+        # Smooth severity based on excess above the widened upper band
+        if (excess_ratio >= 1.30 or ratio_vs_p95 >= 1.55) and is_exact_diag:
+            sev = Severity.CRITICAL
+        elif excess_ratio > 1.15 or ratio_vs_p95 >= 1.30:
+            sev = Severity.HIGH
+        elif excess_ratio > 1.0 or ratio_vs_p95 >= 1.10:
+            sev = Severity.MEDIUM
+        else:
+            sev = Severity.LOW
+
+        # Weak benchmark (thin sample size or global fallback) may never produce HIGH or CRITICAL
+        if diag_bench.sample_count < 30 or diag_bench.fallback_level in ("chapter", "global"):
+            sev = Severity.LOW
+
+        chip_txt = f"Total vs p95: {ratio_vs_p95:.2f}x"
         chips.append(chip_txt)
+        pct_diff = (ratio_vs_p95 - 1.0) * 100
+        pct_int = round(pct_diff)
+        pct_str = f"+{pct_diff:.1f}%" if pct_diff < 1.0 else f"+{pct_int}%"
+        pct_text = f"{pct_diff:.1f}%" if pct_diff < 1.0 else f"{pct_int}%"
+
+        computed["total_claimed_rupees"] = total_rupees
+        computed["benchmark_p95"] = diag_bench.p95
+        computed["benchmark_p50"] = diag_bench.p50
+        computed["benchmark_p75"] = diag_bench.p75
+        computed["benchmark_p90"] = diag_bench.p90
+        computed["benchmark_ratio_p95"] = round(ratio_vs_p95, 3)
+        computed["benchmark_pct_above_p95"] = round(pct_diff, 1)
+        computed["benchmark_pct_above_p95_int"] = pct_int
+        computed["benchmark_excess_rupees"] = to_rupees(diff_paise)
+
         findings.append(Finding(
             finding_id="F-BENCH-TOTAL-P95",
             agent=AgentName.POLICY,
             check_id="TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
             severity=sev,
-            title=f"Total claim amount exceeds diagnosis benchmark (+{round((ratio-1)*100)}% above p95)",
+            title=f"Total claim amount exceeds diagnosis benchmark ({pct_str} above p95)",
             explanation=(
-                f"Total claimed amount of ₹{total_rupees:,.2f} is {round((ratio-1)*100)}% above the 95th percentile benchmark "
-                f"(₹{diag_bench.p95:,.2f}) for diagnosis {diag_bench.diagnosis_code} "
-                f"(benchmark fallback level: '{diag_bench.fallback_level}', sample size n={diag_bench.sample_count}, "
+                f"Total claimed amount of ₹{total_rupees:,.2f} is {pct_text} above the 95th percentile benchmark "
+                f"(₹{diag_bench.p95:,.2f}) and exceeds the widened tolerance band of ₹{upper_band_rupees:,.2f} "
+                f"(+{int(diag_tolerance_margin*100)}% margin) for diagnosis {diag_bench.diagnosis_code} "
+                f"(benchmark level: '{diag_bench.fallback_level}', sample size n={diag_bench.sample_count}, "
                 f"distribution: p50=₹{diag_bench.p50:,.2f}, p75=₹{diag_bench.p75:,.2f}, p90=₹{diag_bench.p90:,.2f}, p95=₹{diag_bench.p95:,.2f})."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,
                 page=1,
-                quote=f"Total claimed: ₹{total_rupees:,.2f} vs diagnosis {diag_bench.diagnosis_code} benchmark p95=₹{diag_bench.p95:,.2f}"
+                quote=f"Total claimed: ₹{total_rupees:,.2f} vs diagnosis {diag_bench.diagnosis_code} (p95=₹{diag_bench.p95:,.2f}, upper band=₹{upper_band_rupees:,.2f}, level={diag_bench.fallback_level}, n={diag_bench.sample_count})"
             )],
             confidence=0.95,
             computed_chip=chip_txt,
             computed_details={
                 "total_claimed": total_rupees,
                 "benchmark_p95": diag_bench.p95,
+                "benchmark_upper_band": upper_band_rupees,
                 "benchmark_p50": diag_bench.p50,
-                "ratio_vs_p95": round(ratio, 3),
+                "benchmark_p75": diag_bench.p75,
+                "benchmark_p90": diag_bench.p90,
+                "ratio_vs_p95": round(ratio_vs_p95, 3),
+                "pct_above_p95": round(pct_diff, 1),
+                "pct_above_p95_int": pct_int,
                 "excess_paise": diff_paise,
+                "excess_rupees": to_rupees(diff_paise),
                 "fallback_level": diag_bench.fallback_level,
                 "sample_count": diag_bench.sample_count
             }
         ))
-    elif total_paise > p90_total_paise:
-        ratio = total_paise / max(1, p90_total_paise)
-        findings.append(Finding(
-            finding_id="F-BENCH-TOTAL-P90",
-            agent=AgentName.POLICY,
-            check_id="TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
-            severity=Severity.LOW,
-            title=f"Total claim amount elevated vs diagnosis 90th percentile (+{round((ratio-1)*100)}% above p90)",
-            explanation=(
-                f"Total claimed amount of ₹{total_rupees:,.2f} is {round((ratio-1)*100)}% above the 90th percentile benchmark "
-                f"(₹{diag_bench.p90:,.2f}) for diagnosis {diag_bench.diagnosis_code} "
-                f"(level: '{diag_bench.fallback_level}', n={diag_bench.sample_count})."
-            ),
-            evidence=[Evidence(
-                doc_id=doc_id,
-                page=1,
-                quote=f"Total claimed: ₹{total_rupees:,.2f} vs diagnosis {diag_bench.diagnosis_code} benchmark p90=₹{diag_bench.p90:,.2f}"
-            )],
-            confidence=0.90,
-            computed_chip=f"Total vs p90: {ratio:.2f}x",
-            computed_details={
-                "total_claimed": total_rupees,
-                "benchmark_p90": diag_bench.p90,
-                "ratio_vs_p90": round(ratio, 3),
-                "fallback_level": diag_bench.fallback_level
-            }
-        ))
 
     # 2. LINE_ITEM_PRICE_ABOVE_BENCHMARK
-    line_items = claim.get("line_items", []) or []
+    line_items = claim_dict.get("line_items", []) or []
     ancillary_items = []
     ancillary_paise = 0
 
@@ -475,30 +502,78 @@ def check_price_benchmarks(
         desc = it.get("description", "")
         unit_price = float(it.get("unit_price", 0.0) or 0.0)
         amt = float(it.get("amount", 0.0) or 0.0)
+        qty = float(it.get("qty", 1.0) or 1.0)
         cat = benchmark_service.normalize_line_item_category(desc)
         cat_bench = benchmark_service.get_category_benchmark(cat, diag_code)
 
         unit_paise = to_paise(unit_price)
         cat_p95_unit_paise = to_paise(cat_bench.unit_price_p95)
 
-        # Track ancillary / consumable items
-        if cat in ("ancillary", "diagnostics") or any(k in desc.lower() for k in ["consumable", "disposable", "monitoring", "supplies", "kit", "equipment", "panel", "cannula", "syringe"]):
+        # Track true ancillary / consumable items only (exclude diagnostics, labs, imaging, rehab, consultations)
+        desc_lower = desc.lower()
+        is_consumable_item = (
+            cat == "ancillary" or
+            any(k in desc_lower for k in [
+                "consumable", "disposable", "cannula", "trocar", "catheter",
+                "ppe kit", "bandage", "dressing", "gauze", "syringe pack", "surgical pack",
+                "hemostatic", "gel pack", "endosuture", "stapler"
+            ])
+        ) and not any(k in desc_lower for k in [
+            "mri", "ct ", "scan", "x-ray", "radiology", "pathology", "lab", "test", "physio", "rehab", "therapy",
+            "consult", "doctor", "visiting", "room", "bed", "ward", "icu"
+        ])
+
+        if is_consumable_item:
             ancillary_items.append(it)
             ancillary_paise += to_paise(amt)
 
-        if unit_paise > cat_p95_unit_paise and unit_price > 0:
-            ratio = unit_paise / max(1, cat_p95_unit_paise)
+        # Line item benchmark check: widened band logic
+        is_exact_cat = (cat_bench.fallback_level == "exact" and cat_bench.sample_count >= 30)
+        item_tolerance_margin = 0.20 if is_exact_cat else 0.30
+        item_upper_band_paise = int(round(cat_p95_unit_paise * (1.0 + item_tolerance_margin)))
+        item_upper_band_rupees = to_rupees(item_upper_band_paise)
+
+        # Compute monetary impact
+        item_excess_paise = max(0, (unit_paise - cat_p95_unit_paise)) * int(round(qty))
+        excess_share = (item_excess_paise / max(1, total_paise)) if total_paise > 0 else 0.0
+        item_excess_rupees = to_rupees(item_excess_paise)
+
+        # Materiality gate: Must exceed widened upper band AND have material rupee impact (>= ₹2,000 and >= 3% share)
+        if unit_paise > item_upper_band_paise and unit_price > 0 and (item_excess_rupees >= 2000.0 and excess_share >= 0.03):
+            ratio_vs_p95 = unit_paise / max(1, cat_p95_unit_paise)
+            excess_ratio = unit_paise / max(1, item_upper_band_paise)
+            pct_diff = (ratio_vs_p95 - 1.0) * 100
+            pct_int = round(pct_diff)
+            pct_str = f"+{pct_diff:.1f}%" if pct_diff < 1.0 else f"+{pct_int}%"
+            pct_text = f"{pct_diff:.1f}%" if pct_diff < 1.0 else f"{pct_int}%"
+
             if cat == "room_rent":
                 sev = Severity.LOW  # Room rent caps are primarily audited by check_policy_caps
-            elif ratio >= 1.50:
+            elif (excess_ratio >= 1.35 or ratio_vs_p95 >= 1.60) and item_excess_rupees >= 12000.0 and excess_share >= 0.20:
+                sev = Severity.CRITICAL
+            elif excess_ratio > 1.15 and item_excess_rupees >= 5000.0 and excess_share >= 0.08:
                 sev = Severity.HIGH
-            elif ratio >= 1.25:
+            elif excess_ratio > 1.0 and item_excess_rupees >= 2000.0 and excess_share >= 0.03:
                 sev = Severity.MEDIUM
             else:
                 sev = Severity.LOW
 
-            chip_item = f"{cat.title()} rate {ratio:.1f}x p95"
+            # Weak benchmark cap
+            if cat_bench.sample_count < 30 or cat_bench.fallback_level == "global":
+                sev = Severity.LOW
+
+            chip_item = f"{cat.title()} rate {ratio_vs_p95:.1f}x p95"
             chips.append(chip_item)
+
+            computed[f"line_{idx+1}_unit_price"] = unit_price
+            computed[f"line_{idx+1}_unit_p95"] = cat_bench.unit_price_p95
+            computed[f"line_{idx+1}_upper_band"] = item_upper_band_rupees
+            computed[f"line_{idx+1}_unit_p50"] = cat_bench.unit_price_p50
+            computed[f"line_{idx+1}_unit_p90"] = cat_bench.unit_price_p90
+            computed[f"line_{idx+1}_ratio"] = round(ratio_vs_p95, 2)
+            computed[f"line_{idx+1}_pct"] = pct_int
+            computed[f"line_{idx+1}_excess"] = item_excess_rupees
+
             findings.append(Finding(
                 finding_id=f"F-BENCH-ITEM-{idx+1}",
                 agent=AgentName.POLICY,
@@ -506,15 +581,16 @@ def check_price_benchmarks(
                 severity=sev,
                 title=f"Line item unit price exceeds benchmark: {desc}",
                 explanation=(
-                    f"Unit price of ₹{unit_price:,.2f} for '{desc}' (category: '{cat}') is {round((ratio-1)*100)}% above the "
-                    f"95th percentile benchmark of ₹{cat_bench.unit_price_p95:,.2f} (benchmark level: '{cat_bench.fallback_level}', "
+                    f"Unit price of ₹{unit_price:,.2f} for '{desc}' (category: '{cat}') is {pct_text} above the "
+                    f"95th percentile benchmark of ₹{cat_bench.unit_price_p95:,.2f} (widened band: ₹{item_upper_band_rupees:,.2f}, "
+                    f"excess: ₹{item_excess_rupees:,.2f}, {excess_share*100:.1f}% of claim, benchmark level: '{cat_bench.fallback_level}', "
                     f"n={cat_bench.sample_count}, p50=₹{cat_bench.unit_price_p50:,.2f}, p90=₹{cat_bench.unit_price_p90:,.2f}, p95=₹{cat_bench.unit_price_p95:,.2f})."
                 ),
                 evidence=[Evidence(
                     doc_id=doc_id,
                     page=it.get("page", 1),
                     bbox=it.get("bbox"),
-                    quote=f"{desc}: billed unit price ₹{unit_price:,.2f} vs p95 ₹{cat_bench.unit_price_p95:,.2f}"
+                    quote=f"{desc}: billed unit price ₹{unit_price:,.2f} vs p95 ₹{cat_bench.unit_price_p95:,.2f} (band ₹{item_upper_band_rupees:,.2f}, n={cat_bench.sample_count}, level={cat_bench.fallback_level})"
                 )],
                 confidence=0.95,
                 computed_chip=chip_item,
@@ -522,26 +598,52 @@ def check_price_benchmarks(
                     "description": desc,
                     "category": cat,
                     "unit_price": unit_price,
+                    "item_upper_band": item_upper_band_rupees,
+                    "benchmark_unit_p50": cat_bench.unit_price_p50,
+                    "benchmark_unit_p75": cat_bench.unit_price_p75,
+                    "benchmark_unit_p90": cat_bench.unit_price_p90,
                     "benchmark_unit_p95": cat_bench.unit_price_p95,
-                    "ratio_vs_p95": round(ratio, 3),
+                    "ratio_vs_p95": round(ratio_vs_p95, 3),
+                    "pct_above_p95": pct_int,
+                    "item_excess_rupees": item_excess_rupees,
+                    "excess_share_pct": round(excess_share * 100, 1),
                     "fallback_level": cat_bench.fallback_level,
                     "sample_count": cat_bench.sample_count
                 }
             ))
 
     # 3. UNBUNDLED_OR_PADDED_ANCILLARY
+    # Requires authentic category benchmark evidence:
+    # 1) At least 3 distinct consumable line items
+    # 2) Ancillary consumable share must exceed 28% of total bill
+    # 3) Total ancillary consumable billing must exceed max(1.35x p95, ₹15,000)
     ancillary_bench = benchmark_service.get_category_benchmark("ancillary", diag_code)
     ancillary_p95_amt_paise = to_paise(ancillary_bench.amount_p95)
+    ancillary_threshold_paise = max(int(round(ancillary_p95_amt_paise * 1.35)), to_paise(15000.0))
     ancillary_share = (ancillary_paise / max(1, total_paise)) if total_paise > 0 else 0.0
 
     computed["ancillary_total_rupees"] = to_rupees(ancillary_paise)
+    computed["ancillary_threshold_rupees"] = to_rupees(ancillary_threshold_paise)
     computed["ancillary_share_pct"] = round(ancillary_share * 100, 1)
+    computed["ancillary_share_pct_int"] = round(ancillary_share * 100)
+    computed["ancillary_p95_rupees"] = ancillary_bench.amount_p95
+    computed["ancillary_p50_rupees"] = ancillary_bench.amount_p50
+    computed["ancillary_item_count"] = len(ancillary_items)
 
-    if ancillary_paise > ancillary_p95_amt_paise and (ancillary_share > 0.15 or len(ancillary_items) >= 3):
+    if (
+        len(ancillary_items) >= 3 and
+        ancillary_share >= 0.28 and
+        ancillary_paise > ancillary_threshold_paise
+    ):
         ratio = ancillary_paise / max(1, ancillary_p95_amt_paise)
-        if ratio >= 1.50 or ancillary_share >= 0.25:
+        if ratio >= 2.2 and ancillary_share >= 0.40:
             sev = Severity.HIGH
+        elif ratio >= 1.60 or ancillary_share >= 0.32:
+            sev = Severity.MEDIUM
         else:
+            sev = Severity.LOW
+
+        if ancillary_bench.fallback_level == "global" and sev == Severity.HIGH:
             sev = Severity.MEDIUM
 
         chip_anc = f"Padded ancillary: ₹{to_rupees(ancillary_paise):,.0f} ({ancillary_share*100:.0f}%)"
@@ -554,14 +656,14 @@ def check_price_benchmarks(
             title=f"Unbundled or padded ancillary charges detected (₹{to_rupees(ancillary_paise):,.2f})",
             explanation=(
                 f"Cumulative ancillary/consumables charges total ₹{to_rupees(ancillary_paise):,.2f} across {len(ancillary_items)} lines "
-                f"({ancillary_share*100:.1f}% of total bill), exceeding category benchmark p95 of ₹{ancillary_bench.amount_p95:,.2f} "
-                f"(benchmark fallback level: '{ancillary_bench.fallback_level}', n={ancillary_bench.sample_count}, "
-                f"p50=₹{ancillary_bench.amount_p50:,.2f}, p95=₹{ancillary_bench.amount_p95:,.2f}). This pattern indicates micro-upcoding or unbundled supply padding."
+                f"({ancillary_share*100:.1f}% of total bill), exceeding category threshold of ₹{to_rupees(ancillary_threshold_paise):,.2f} "
+                f"(benchmark p95: ₹{ancillary_bench.amount_p95:,.2f}, level: '{ancillary_bench.fallback_level}', n={ancillary_bench.sample_count}, "
+                f"p50=₹{ancillary_bench.amount_p50:,.2f}). This pattern indicates unbundled surgical consumables padding."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,
                 page=1,
-                quote=f"Ancillary charges total: ₹{to_rupees(ancillary_paise):,.2f} across {len(ancillary_items)} items ({ancillary_share*100:.1f}% of bill)"
+                quote=f"Ancillary charges total: ₹{to_rupees(ancillary_paise):,.2f} across {len(ancillary_items)} items ({ancillary_share*100:.1f}% of bill vs threshold ₹{to_rupees(ancillary_threshold_paise):,.2f})"
             )],
             confidence=0.95,
             computed_chip=chip_anc,
@@ -569,7 +671,11 @@ def check_price_benchmarks(
                 "ancillary_total": to_rupees(ancillary_paise),
                 "ancillary_item_count": len(ancillary_items),
                 "ancillary_share": round(ancillary_share, 4),
+                "ancillary_share_pct": round(ancillary_share * 100, 1),
+                "ancillary_share_pct_int": round(ancillary_share * 100),
+                "benchmark_amount_p50": ancillary_bench.amount_p50,
                 "benchmark_amount_p95": ancillary_bench.amount_p95,
+                "benchmark_threshold": to_rupees(ancillary_threshold_paise),
                 "ratio_vs_p95": round(ratio, 3),
                 "fallback_level": ancillary_bench.fallback_level,
                 "sample_count": ancillary_bench.sample_count

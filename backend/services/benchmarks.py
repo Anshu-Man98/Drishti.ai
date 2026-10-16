@@ -237,15 +237,15 @@ class BenchmarkService:
             cat = "icu"
         elif any(k in desc_clean for k in ["room", "ward", "bed", "suite", "nursing home stay"]):
             cat = "room_rent"
-        elif any(k in desc_clean for k in ["consult", "doctor", "visiting", "visit", "physician", "specialist"]):
-            cat = "consultation"
+        elif any(k in desc_clean for k in ["pharmacy", "medicine", "medication", "drug", "injection", "antibiotic", "fluid", "saline", "tablet", "capsule", "iv ", "infusion"]):
+            cat = "pharmacy"
         elif any(k in desc_clean for k in ["surgery", "ot ", "ot charges", "operation", "procedure", "laparoscopic", "appendectomy", "cholecystectomy", "anesthesia", "surgeon"]):
             cat = "surgery_ot"
-        elif any(k in desc_clean for k in ["pharmacy", "medicine", "drug", "injection", "antibiotic", "fluid", "saline", "tablet", "capsule", "iv "]):
-            cat = "pharmacy"
-        elif any(k in desc_clean for k in ["mri", "ct ", "scan", "x-ray", "ultrasound", "usg", "radiology", "pathology", "lab", "test", "investigation", "ecg", "blood"]):
+        elif any(k in desc_clean for k in ["consult", "doctor", "visiting", "visit", "physician", "specialist", "physio", "physiotherapy", "physical therapy", "rehab", "rehabilitation", "dietitian", "nursing care", "nursing charges"]):
+            cat = "consultation"
+        elif any(k in desc_clean for k in ["mri", "ct ", "scan", "x-ray", "ultrasound", "usg", "radiology", "pathology", "lab", "test", "investigation", "ecg", "blood", "biopsy", "culture", "screening", "panel", "imaging", "sonography"]):
             cat = "diagnostics"
-        elif any(k in desc_clean for k in ["consumable", "disposable", "glove", "syringe", "cannula", "catheter", "ppe", "bandage", "dressing", "monitoring", "equip", "kit"]):
+        elif any(k in desc_clean for k in ["consumable", "disposable", "glove", "syringe", "cannula", "catheter", "ppe", "bandage", "dressing", "equip", "kit", "trocar", "pack", "hemostatic", "suture", "stapler"]):
             cat = "ancillary"
         else:
             # 2. Gemini classification fallback for unknown terms

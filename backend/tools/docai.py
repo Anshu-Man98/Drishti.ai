@@ -888,20 +888,8 @@ def _map_docai_result_to_claim(
     # Total Claimed
     total_claimed = None
     if docai_total is not None and docai_total_conf >= 0.8:
-        if gem_tot is not None and abs(docai_total - gem_tot) > 1.0 and not docai_consistent and gemini_consistent:
-            total_claimed = gem_tot
-            field_sources["total_claimed"] = "gemini"
-            extracted_entities.append(ExtractedEntity(
-                field_name="total_amount",
-                text=f"₹{total_claimed:,.2f}",
-                bbox=docai_total_bbox or [0.7, 0.8, 0.95, 0.85],
-                page=1,
-                confidence=0.95,
-                source="gemini"
-            ))
-        else:
-            total_claimed = docai_total
-            field_sources["total_claimed"] = "docai"
+        total_claimed = docai_total
+        field_sources["total_claimed"] = "docai"
     elif gem_tot is not None:
         total_claimed = gem_tot
         field_sources["total_claimed"] = "gemini"

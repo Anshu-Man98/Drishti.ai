@@ -170,21 +170,34 @@ class DatabaseService:
             )
 
     def get_agent_statuses(self, claim_id: str) -> Dict[str, str]:
-        statuses = {
-            "forensics": "idle",
-            "policy": "idle",
-            "crossref": "idle",
-            "spacetime": "idle",
-            "injection": "idle",
-            "provenance": "idle",
-            "synthesizer": "idle"
-        }
+        canonical_agents = [
+            "forensics",
+            "policy",
+            "crossref",
+            "spacetime",
+            "ml",
+            "injection",
+            "provenance",
+            "rag",
+        ]
+        statuses = {agent: "idle" for agent in canonical_agents}
         try:
-            docs = self.client.collection("claims").document(claim_id).collection("agent_status").stream()
+            docs = list(self.client.collection("claims").document(claim_id).collection("agent_status").stream())
             for doc in docs:
                 d = doc.to_dict()
                 if "status" in d:
                     statuses[doc.id] = d["status"]
+
+            # If no agent status docs were written yet, check if dossier exists to reflect completed state
+            if not docs:
+                dossier = self.get_dossier(claim_id)
+                if dossier:
+                    for agent in canonical_agents:
+                        if any(f.check_id.startswith(f"AGENT_FAILED:{agent}") for f in dossier.findings):
+                            statuses[agent] = "error"
+                        else:
+                            statuses[agent] = "done"
+
             return statuses
         except Exception as e:
             raise CloudServiceError(

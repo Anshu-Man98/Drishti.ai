@@ -195,9 +195,11 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
     Never exposes credentials, API keys, or secret names/values.
     """
     global _CACHED_HEALTH, _LAST_PROBE_TIME
-    if live or not _CACHED_HEALTH:
+    now = datetime.utcnow()
+    cache_expired = _LAST_PROBE_TIME is None or (now - _LAST_PROBE_TIME).total_seconds() > 30
+    if live or not _CACHED_HEALTH or cache_expired:
         _CACHED_HEALTH = probe_cloud_dependencies()
-        _LAST_PROBE_TIME = datetime.utcnow()
+        _LAST_PROBE_TIME = now
 
     deps = _CACHED_HEALTH
     all_ok = all(d.get("ok", False) for d in deps.values())

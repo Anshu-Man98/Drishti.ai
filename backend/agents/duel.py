@@ -185,12 +185,12 @@ def apply_mutation_to_claim(
             total_amount_paise += to_paise(amt)
 
             new_line_items.append(LineItem(
-                item_id=f"ITEM-D{round_num}-{idx+1}",
                 description=desc,
                 qty=qty,
                 unit_price=unit_price,
                 amount=amt,
-                category=item_data.get("category", "general")
+                page=1,
+                source="duel_fraudster"
             ))
     else:
         # Default inflation if empty
@@ -200,12 +200,13 @@ def apply_mutation_to_claim(
             new_amt = round(new_unit * it.qty, 2)
             total_amount_paise += to_paise(new_amt)
             new_line_items.append(LineItem(
-                item_id=f"{it.item_id}-D{round_num}",
                 description=it.description,
                 qty=it.qty,
                 unit_price=new_unit,
                 amount=new_amt,
-                category=it.category
+                bbox=it.bbox,
+                page=it.page,
+                source="duel_fraudster"
             ))
 
     mutated.line_items = new_line_items

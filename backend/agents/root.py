@@ -91,8 +91,8 @@ def run_claims_fraud_pipeline(
 
     claim_id = claim.claim_id
 
-    # 1. Initialize all specialist agents to 'pending' in Firestore
-    all_agent_names = ["injection", "provenance", "forensics", "policy", "crossref", "spacetime", "ml", "synthesizer"]
+    # 1. Initialize all 8 canonical specialist agents to 'pending' in Firestore
+    all_agent_names = ["injection", "provenance", "forensics", "policy", "crossref", "spacetime", "ml", "rag"]
     for agent_name in all_agent_names:
         db_service.set_agent_status(claim_id, agent_name, "pending")
 
@@ -108,9 +108,12 @@ def run_claims_fraud_pipeline(
         db_service.set_agent_status(claim_id, "injection", "running")
         try:
             res = detect_hidden_text_injection(claim)
-        finally:
-            db_service.set_agent_status(claim_id, "injection", "done")
-        return res
+            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
+            db_service.set_agent_status(claim_id, "injection", status)
+            return res
+        except Exception:
+            db_service.set_agent_status(claim_id, "injection", "error")
+            raise
 
     def run_provenance_specialist() -> Tuple[List[Finding], Optional[Provenance]]:
         if not settings.WATERMARK_ENABLED:
@@ -249,41 +252,56 @@ def run_claims_fraud_pipeline(
                     status="not_applicable",
                     detail="Third-party document; no provenance mark expected."
                 )
-        finally:
-            db_service.set_agent_status(claim_id, "provenance", "done")
-        return prov_findings, prov_item
+            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in prov_findings) else "done"
+            db_service.set_agent_status(claim_id, "provenance", status)
+            return prov_findings, prov_item
+        except Exception:
+            db_service.set_agent_status(claim_id, "provenance", "error")
+            raise
 
     def run_forensics_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "forensics", "running")
         try:
             res = analyze_document_forensics(claim)
-        finally:
-            db_service.set_agent_status(claim_id, "forensics", "done")
-        return res
+            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
+            db_service.set_agent_status(claim_id, "forensics", status)
+            return res
+        except Exception:
+            db_service.set_agent_status(claim_id, "forensics", "error")
+            raise
 
     def run_policy_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "policy", "running")
         try:
             res = analyze_policy_and_arithmetic(claim)
-        finally:
-            db_service.set_agent_status(claim_id, "policy", "done")
-        return res
+            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
+            db_service.set_agent_status(claim_id, "policy", status)
+            return res
+        except Exception:
+            db_service.set_agent_status(claim_id, "policy", "error")
+            raise
 
     def run_crossref_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "crossref", "running")
         try:
             res = analyze_cross_references(claim)
-        finally:
-            db_service.set_agent_status(claim_id, "crossref", "done")
-        return res
+            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
+            db_service.set_agent_status(claim_id, "crossref", status)
+            return res
+        except Exception:
+            db_service.set_agent_status(claim_id, "crossref", "error")
+            raise
 
     def run_spacetime_specialist() -> Tuple[List[Finding], List[TimelineEvent]]:
         db_service.set_agent_status(claim_id, "spacetime", "running")
         try:
             f, t = analyze_spacetime_feasibility(claim)
-        finally:
-            db_service.set_agent_status(claim_id, "spacetime", "done")
-        return f, t
+            status = "error" if any(x.check_id.startswith("AGENT_FAILED:") for x in f) else "done"
+            db_service.set_agent_status(claim_id, "spacetime", status)
+            return f, t
+        except Exception:
+            db_service.set_agent_status(claim_id, "spacetime", "error")
+            raise
 
     # 3. Execute Parallel Specialists Concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
@@ -431,44 +449,50 @@ def run_claims_fraud_pipeline(
 
     if settings.RAG_PATTERNS_ENABLED:
         db_service.set_agent_status(claim_id, "rag", "running")
-        from backend.tools.pattern_tools import build_claim_fingerprint, search_patterns
-        fingerprint = build_claim_fingerprint(claim, all_findings)
-        matched_patterns = search_patterns(fingerprint, k=3, min_score=0.5)
+        try:
+            from backend.tools.pattern_tools import build_claim_fingerprint, search_patterns
+            fingerprint = build_claim_fingerprint(claim, all_findings)
+            matched_patterns = search_patterns(fingerprint, k=3, min_score=0.5)
 
-        for p in matched_patterns:
-            retrieved_contexts.append(RetrievedContext(
-                source="pattern",
-                ref_id=p["pattern_id"],
-                title=p["title"],
-                snippet=f"{p['title']} — Signature: {p['signature']}",
-                score=p["score"]
-            ))
+            for p in matched_patterns:
+                retrieved_contexts.append(RetrievedContext(
+                    source="pattern",
+                    ref_id=p["pattern_id"],
+                    title=p["title"],
+                    snippet=f"{p['title']} — Signature: {p['signature']}",
+                    score=p["score"]
+                ))
 
-        if matched_patterns:
-            best_pattern = matched_patterns[0]
-            all_findings.append(Finding(
-                finding_id="F-RAG-PATTERN-1",
-                agent=AgentName.RAG,
-                check_id="matches_known_pattern",
-                severity=Severity.LOW,
-                title=f"Corroborating Historical Fraud Pattern ({best_pattern['pattern_id']})",
-                explanation=(
-                    f"Claim matches historical fraud pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
-                    f"Observed signature: {best_pattern['signature']}. Corroborating context only, not primary proof."
-                ),
-                evidence=[Evidence(
-                    doc_id=best_pattern["pattern_id"],
-                    quote=best_pattern["narrative"],
-                    layer="retrieved"
-                )],
-                confidence=best_pattern["score"],
-                computed_chip=f"Pattern: {best_pattern['pattern_id']} ({int(best_pattern['score']*100)}% match)",
-                computed_details={
-                    "pattern_id": best_pattern["pattern_id"],
-                    "fraud_type": best_pattern["fraud_type"],
-                    "match_score": best_pattern["score"]
-                }
-            ))
+            if matched_patterns:
+                best_pattern = matched_patterns[0]
+                all_findings.append(Finding(
+                    finding_id="F-RAG-PATTERN-1",
+                    agent=AgentName.RAG,
+                    check_id="matches_known_pattern",
+                    severity=Severity.LOW,
+                    title=f"Corroborating Historical Fraud Pattern ({best_pattern['pattern_id']})",
+                    explanation=(
+                        f"Claim matches historical fraud pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
+                        f"Observed signature: {best_pattern['signature']}. Corroborating context only, not primary proof."
+                    ),
+                    evidence=[Evidence(
+                        doc_id=best_pattern["pattern_id"],
+                        quote=best_pattern["narrative"],
+                        layer="retrieved"
+                    )],
+                    confidence=best_pattern["score"],
+                    computed_chip=f"Pattern: {best_pattern['pattern_id']} ({int(best_pattern['score']*100)}% match)",
+                    computed_details={
+                        "pattern_id": best_pattern["pattern_id"],
+                        "fraud_type": best_pattern["fraud_type"],
+                        "match_score": best_pattern["score"]
+                    }
+                ))
+            db_service.set_agent_status(claim_id, "rag", "done")
+        except Exception as e:
+            logger.warning("RAG pattern search failed: %s", e)
+            db_service.set_agent_status(claim_id, "rag", "error")
+    else:
         db_service.set_agent_status(claim_id, "rag", "done")
 
     # 6. Synthesizer Agent Step

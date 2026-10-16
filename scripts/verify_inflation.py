@@ -218,6 +218,26 @@ def test_inflation_ladder() -> bool:
         print(f"| {r['test']:<25} | ₹{r['total']:>11,.2f} | {r['verdict']:<8} | {r['risk']:<5} | {('PASS' if r['passed'] else 'FAIL'):<6} | {r['flags'][:24]:<24} |")
     print("-" * 95 + "\n")
 
+    # Strict monotonicity verification: risk must strictly increase across inflation levels
+    ladder_risks = [r["risk"] for r in results]
+    print("MONOTONICITY AUDIT:")
+    monotonic = True
+    for i in range(len(ladder_risks) - 1):
+        prev_test = results[i]["test"]
+        next_test = results[i+1]["test"]
+        prev_risk = ladder_risks[i]
+        next_risk = ladder_risks[i+1]
+        step_ok = next_risk > prev_risk
+        if not step_ok:
+            monotonic = False
+        print(f"  {prev_test} (Risk {prev_risk}) < {next_test} (Risk {next_risk}) -> {'PASS' if step_ok else 'VIOLATION'}")
+    
+    if not monotonic:
+        print("\nFAIL: Non-monotonic risk scoring detected across inflation ladder!\n")
+        all_passed = False
+    else:
+        print("\nPASS: All risk scores are strictly monotonic across the inflation ladder.\n")
+
     return all_passed
 
 

@@ -426,11 +426,11 @@ def check_price_benchmarks(
         diff_paise = total_paise - p95_total_paise
         
         # Smooth severity based on excess above the widened upper band
-        if (excess_ratio >= 1.30 or ratio_vs_p95 >= 1.55) and is_exact_diag:
+        if excess_ratio > 1.50 and is_exact_diag:
             sev = Severity.CRITICAL
-        elif excess_ratio > 1.15 or ratio_vs_p95 >= 1.30:
+        elif excess_ratio > 1.30:
             sev = Severity.HIGH
-        elif excess_ratio > 1.0 or ratio_vs_p95 >= 1.10:
+        elif excess_ratio > 1.15:
             sev = Severity.MEDIUM
         else:
             sev = Severity.LOW
@@ -549,11 +549,11 @@ def check_price_benchmarks(
 
             if cat == "room_rent":
                 sev = Severity.LOW  # Room rent caps are primarily audited by check_policy_caps
-            elif (excess_ratio >= 1.35 or ratio_vs_p95 >= 1.60) and item_excess_rupees >= 12000.0 and excess_share >= 0.20:
+            elif excess_ratio > 1.45 and item_excess_rupees >= 12000.0 and excess_share >= 0.20:
                 sev = Severity.CRITICAL
-            elif excess_ratio > 1.15 and item_excess_rupees >= 5000.0 and excess_share >= 0.08:
+            elif excess_ratio > 1.25 and item_excess_rupees >= 5000.0 and excess_share >= 0.08:
                 sev = Severity.HIGH
-            elif excess_ratio > 1.0 and item_excess_rupees >= 2000.0 and excess_share >= 0.03:
+            elif excess_ratio > 1.10 and item_excess_rupees >= 2000.0 and excess_share >= 0.03:
                 sev = Severity.MEDIUM
             else:
                 sev = Severity.LOW

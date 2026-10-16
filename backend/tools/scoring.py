@@ -44,20 +44,72 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
 
     def _calc_score(items: List[Finding]) -> int:
         low_count = 0
-        tot = 0
+        non_low = []
         for f in items:
             if f.severity == Severity.LOW:
                 low_count += 1
-                if low_count == 1:
-                    tot += 5
-                elif low_count == 2:
-                    tot += 3
-                elif low_count == 3:
-                    tot += 2
-                # 4th and subsequent low findings contribute 0 (diminishing returns, cap at 10)
+            elif f.severity != Severity.INFO:
+                non_low.append(f)
+
+        low_score = 0
+        if low_count == 1:
+            low_score = 5
+        elif low_count == 2:
+            low_score = 8
+        elif low_count >= 3:
+            low_score = 10
+
+        # Separate benchmark inflation findings to avoid double-counting macro & micro price inflation
+        bench_findings = [f for f in non_low if "BENCH" in f.check_id or "ANCILLARY" in f.check_id]
+        other_findings = [f for f in non_low if "BENCH" not in f.check_id and "ANCILLARY" not in f.check_id]
+
+        # Other specialist findings (policy, spacetime, forgery, duplicate, etc.)
+        other_weights = sorted([SEVERITY_WEIGHTS.get(f.severity, 0) for f in other_findings], reverse=True)
+        other_score = 0.0
+        for idx, w in enumerate(other_weights):
+            if idx == 0:
+                other_score += w * 1.0
+            elif idx == 1:
+                other_score += w * 0.6
+            elif idx == 2:
+                other_score += w * 0.4
             else:
-                tot += SEVERITY_WEIGHTS.get(f.severity, 0)
-        return tot
+                other_score += w * 0.2
+
+        # Benchmark inflation findings: primary finding carries major weight, secondary items corroborate
+        bench_score = 0.0
+        if bench_findings:
+            bench_weights = sorted([SEVERITY_WEIGHTS.get(f.severity, 0) for f in bench_findings], reverse=True)
+            for idx, w in enumerate(bench_weights):
+                if idx == 0:
+                    bench_score += w * 0.8
+                elif idx == 1:
+                    bench_score += w * 0.3
+                else:
+                    bench_score += w * 0.15
+
+            # Continuous excess scaling ensures strict monotonicity as inflation ratio grows
+            max_ratio = 1.0
+            for f in bench_findings:
+                if f.computed_details:
+                    r = float(f.computed_details.get("ratio_vs_p95", 1.0) or 1.0)
+                    if r > max_ratio:
+                        max_ratio = r
+            if max_ratio > 1.0:
+                bench_score += min(18.0, (max_ratio - 1.0) * 18.0)
+
+        # Cross-dimension sub-additive combination: prevents premature saturation when both
+        # general policy rules and price benchmarks trigger on the same claim
+        if bench_score > 0 and other_score > 0:
+            if bench_score >= other_score:
+                combined_non_low = bench_score + 0.5 * other_score
+            else:
+                combined_non_low = other_score + 0.5 * bench_score
+        else:
+            combined_non_low = bench_score + other_score
+
+        tot = round(combined_non_low + low_score)
+        return min(100, max(0, tot))
 
     # Calculate baseline non-RAG score
     non_rag_findings = [
@@ -174,20 +226,7 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         len(findings) > 0 and any(
             f.check_id in ("POLICY_ROOM_RENT_CAP_EXCEEDED", "POLICY_COPAY_MISCALCULATION")
             for f in findings
-        ) and all(
-            f.agent in (AgentName.POLICY, AgentName.ML, AgentName.RAG) or
-            f.check_id in (
-                "POLICY_ROOM_RENT_CAP_EXCEEDED",
-                "POLICY_COPAY_MISCALCULATION",
-                "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
-                "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
-                "UNBUNDLED_OR_PADDED_ANCILLARY",
-                "BQML_HIGH_RISK_ANOMALY",
-                "matches_known_pattern",
-                "ungrounded_number"
-            )
-            for f in findings
-        ) and not has_deception_fraud and not has_procedure_inflation
+        ) and not has_procedure_inflation and not has_critical_inflation and not has_deception_fraud
     )
 
     if has_deception_fraud or (has_critical_inflation and not has_policy_clause_only):
@@ -199,10 +238,10 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
             risk_score = max(risk_score, 30)
         elif has_high_inflation:
             verdict = Verdict.REVIEW
-            risk_score = max(risk_score, 45)
+            risk_score = max(risk_score, 35)
         elif has_benchmark_inflation:
             verdict = Verdict.REVIEW
-            risk_score = max(risk_score, 40)
+            risk_score = max(risk_score, 30)
         else:
             verdict = Verdict.APPROVE
     elif risk_score < 70:
@@ -238,10 +277,10 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     # Inflation guardrail: benchmark inflation findings cannot leave a claim at APPROVE
     if has_high_inflation and verdict == Verdict.APPROVE:
         verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 45)
+        risk_score = max(risk_score, 35)
     elif has_benchmark_inflation and verdict == Verdict.APPROVE:
         verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 40)
+        risk_score = max(risk_score, 30)
 
     # Incomplete dossier guardrail: never allow APPROVE if an agent failed
     if has_failed_agent and verdict == Verdict.APPROVE:

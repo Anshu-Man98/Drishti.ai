@@ -449,6 +449,23 @@ class FakeGenAIClient:
         self.models = FakeGenAIModels()
 
 
+# Strict Test Isolation: Forbid real Google Cloud client construction
+def _forbidden_cloud_client_init(service_name: str):
+    def _raiser(self, *args, **kwargs):
+        raise RuntimeError(
+            f"CRITICAL TEST ISOLATION VIOLATION: Attempted to construct real google.cloud.{service_name}.Client "
+            f"during test execution! The test suite must never connect to or write to real cloud data."
+        )
+    return _raiser
+
+from google.cloud import firestore as _gc_firestore
+from google.cloud import storage as _gc_storage
+from google.cloud import bigquery as _gc_bigquery
+
+_gc_firestore.Client.__init__ = _forbidden_cloud_client_init("firestore")
+_gc_storage.Client.__init__ = _forbidden_cloud_client_init("storage")
+_gc_bigquery.Client.__init__ = _forbidden_cloud_client_init("bigquery")
+
 # Initialize singleton test fakes
 fake_fs = FakeFirestoreClient()
 fake_storage = FakeStorageClient()

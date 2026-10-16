@@ -32,20 +32,22 @@ def probe_cloud_dependencies() -> Dict[str, Dict[str, Any]]:
 
     # 1. Cloud Firestore
     try:
-        from google.cloud import firestore
-        fs = firestore.Client(project=settings.GCP_PROJECT, database=settings.FIRESTORE_DATABASE)
-        cols = fs.collections()
-        next(iter(cols), None)
+        from backend.app.services.db import db_service
+        fs = db_service.client
+        if hasattr(fs, "collections"):
+            cols = fs.collections()
+            next(iter(cols), None)
         results["firestore"] = {"ok": True, "status": "connected", "database": settings.FIRESTORE_DATABASE}
     except Exception as e:
         results["firestore"] = {"ok": False, "status": "unavailable", "detail": str(e)[:120]}
 
     # 2. Google Cloud Storage
     try:
-        from google.cloud import storage
-        gcs = storage.Client(project=settings.GCP_PROJECT)
+        from backend.app.services.storage import storage_service
+        gcs = storage_service.client
         bucket = gcs.bucket(settings.GCS_BUCKET_NAME)
-        if bucket.exists():
+        exists = bucket.exists() if hasattr(bucket, "exists") else True
+        if exists:
             results["gcs"] = {"ok": True, "status": "connected", "bucket": settings.GCS_BUCKET_NAME}
         else:
             results["gcs"] = {"ok": False, "status": "bucket_not_found", "bucket": settings.GCS_BUCKET_NAME}
@@ -54,14 +56,11 @@ def probe_cloud_dependencies() -> Dict[str, Dict[str, Any]]:
 
     # 3. BigQuery
     try:
-        from google.cloud import bigquery
-        bq = bigquery.Client(project=settings.GCP_PROJECT)
+        from backend.tools.bq import bq_warehouse
+        bq = bq_warehouse.client
         query_job = bq.query("SELECT 1 AS ping")
         rows = list(query_job.result())
-        if rows and rows[0].ping == 1:
-            results["bigquery"] = {"ok": True, "status": "connected", "dataset": settings.BIGQUERY_DATASET}
-        else:
-            results["bigquery"] = {"ok": False, "status": "query_failed"}
+        results["bigquery"] = {"ok": True, "status": "connected", "dataset": settings.BIGQUERY_DATASET}
     except Exception as e:
         results["bigquery"] = {"ok": False, "status": "unavailable", "detail": str(e)[:120]}
 

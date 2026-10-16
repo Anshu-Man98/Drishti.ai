@@ -15,6 +15,8 @@ os.environ["GCP_PROJECT"] = "drishti-demo"
 os.environ["BIGQUERY_DATASET"] = "finshield"
 os.environ["FIRESTORE_DATABASE"] = "(default)"
 os.environ["GCS_BUCKET_NAME"] = "finshield-claims-docs-drishti-demo"
+os.environ["DOCUMENTAI_PROCESSOR_ID"] = "projects/drishti-demo/locations/us/processors/test-processor"
+os.environ["FINSHIELD_PROVENANCE_KEY"] = "test-provenance-key-32-bytes-ok!"
 
 # --- Client Boundary Fakes ---
 
@@ -369,6 +371,9 @@ class FakeDocAIClient:
     def __init__(self, *args, **kwargs):
         pass
 
+    def get_processor(self, name=None, *args, **kwargs):
+        return type("Proc", (), {"name": name or "test-processor", "type_": "INVOICE_PROCESSOR"})()
+
     def process_document(self, request=None):
         raw_doc = getattr(request, "raw_document", None)
         pdf_bytes = getattr(raw_doc, "content", b"")
@@ -598,6 +603,10 @@ from backend.app.dependencies import get_current_user
 db_service._fs_client = fake_fs
 storage_service._client = fake_storage
 bq_warehouse._client = fake_bq
+if not settings.DOCUMENTAI_PROCESSOR_ID:
+    settings.DOCUMENTAI_PROCESSOR_ID = "projects/drishti-demo/locations/us/processors/test-processor"
+if not settings.FINSHIELD_PROVENANCE_KEY:
+    settings.FINSHIELD_PROVENANCE_KEY = "test-provenance-key-32-bytes-ok!"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -605,6 +614,7 @@ def setup_test_boundary_fakes():
     """Sets up client boundary fakes for Document AI and Gemini during tests."""
     from unittest.mock import patch
     with patch("google.cloud.documentai_v1.DocumentProcessorServiceClient", FakeDocAIClient), \
+         patch("google.cloud.documentai.DocumentProcessorServiceClient", FakeDocAIClient), \
          patch("google.genai.Client", FakeGenAIClient):
         yield
 

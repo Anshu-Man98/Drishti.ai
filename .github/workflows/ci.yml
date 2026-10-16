@@ -35,7 +35,8 @@ jobs:
           GCS_BUCKET_NAME: "finshield-claims-docs"
           FIRESTORE_DATABASE: "(default)"
           BIGQUERY_DATASET: "finshield"
-          FINSHIELD_PROVENANCE_KEY: "test-provenance-key-32-chars-long!"
+          DOCUMENTAI_PROCESSOR_ID: "projects/finshield-dev/locations/us/processors/test-processor"
+          FINSHIELD_PROVENANCE_KEY: "test-provenance-key-32-bytes-ok!"
         run: |
           pytest backend/tests -q
 

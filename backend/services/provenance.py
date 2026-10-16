@@ -49,7 +49,12 @@ def get_signing_key() -> ed25519.Ed25519PrivateKey:
     # 1. Check for explicit environment variable or settings
     env_key = getattr(settings, "FINSHIELD_PROVENANCE_KEY", None) or os.getenv("FINSHIELD_PROVENANCE_KEY")
     if env_key:
-        raw_bytes = env_key.encode("utf-8") if len(env_key) == 32 else bytes.fromhex(env_key)
+        try:
+            raw_bytes = bytes.fromhex(env_key) if len(env_key) == 64 else env_key.encode("utf-8")
+        except ValueError:
+            raw_bytes = env_key.encode("utf-8")
+        if len(raw_bytes) < 32:
+            raw_bytes = hashlib.sha256(raw_bytes).digest()
         return ed25519.Ed25519PrivateKey.from_private_bytes(raw_bytes[:32])
 
     # 2. Cloud Secret Manager path
@@ -499,12 +504,21 @@ def verify_document(
         sig_bytes = base64.b64decode(sig_b64)
         payload_bytes = json.dumps(payload, sort_keys=True, separators=(',', ':')).encode('utf-8')
 
-        pubkey = get_verifying_key()
-        try:
-            pubkey.verify(sig_bytes, payload_bytes)
-            sig_valid = True
-        except Exception:
-            sig_valid = False
+        candidate_pubkeys = [get_verifying_key()]
+        if getattr(settings, "FINSHIELD_PROVENANCE_KEY", None) or os.getenv("FINSHIELD_PROVENANCE_KEY"):
+            try:
+                candidate_pubkeys.append(get_signing_key().public_key())
+            except Exception:
+                pass
+
+        sig_valid = False
+        for pubkey in candidate_pubkeys:
+            try:
+                pubkey.verify(sig_bytes, payload_bytes)
+                sig_valid = True
+                break
+            except Exception:
+                continue
 
         if not sig_valid:
             return {

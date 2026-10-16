@@ -377,20 +377,29 @@ class BigQueryWarehouse:
 bq_warehouse = BigQueryWarehouse()
 
 
-DIAGNOSIS_MEDIANS = {
-    "A09": 18000.0,
-    "K35.8": 65000.0,
-    "K80.0": 85000.0,
-    "S82.2": 75000.0,
-    "I20.9": 110000.0,
-    "J18.9": 35000.0,
-    "E11.9": 25000.0,
-    "M54.5": 22000.0,
-}
+class _DiagnosisMediansDict(dict):
+    """Backwards-compatible accessor for diagnosis median benchmark values."""
+    def __getitem__(self, key: str) -> float:
+        from backend.services.benchmarks import benchmark_service
+        return float(benchmark_service.get_diagnosis_benchmark(key).p50)
+
+    def get(self, key: str, default: float = 49916.56) -> float:
+        from backend.services.benchmarks import benchmark_service
+        try:
+            return float(benchmark_service.get_diagnosis_benchmark(key).p50)
+        except Exception:
+            return default
+
+
+DIAGNOSIS_MEDIANS = _DiagnosisMediansDict()
+
 
 FEATURE_COLUMNS = [
     "claim_amount",
     "amount_vs_diagnosis_median_ratio",
+    "total_percentile_vs_diagnosis",
+    "max_line_item_price_ratio",
+    "ancillary_share_of_total",
     "length_of_stay",
     "claimant_prior_claims_90d",
     "provider_claims_per_day",
@@ -404,15 +413,56 @@ FEATURE_COLUMNS = [
 
 def extract_claim_features(claim: Any) -> Dict[str, Any]:
     """
-    Extracts engineered numeric features from Claim for BigQuery ML fraud model.
+    Extracts engineered numeric features from Claim for BigQuery ML fraud model,
+    grounded against BigQuery diagnosis and category benchmarks.
     """
+    from backend.services.benchmarks import benchmark_service
+
     claim_amount = float(getattr(claim, "total_claimed", 0.0) or 0.0)
 
-    # Diagnosis median cost
+    # Diagnosis benchmark cost distribution
     diag_code = getattr(claim, "diagnosis_code", "") or "K35.8"
-    code_prefix = diag_code.split()[0].replace("(", "").replace(")", "").strip()
-    median_cost = DIAGNOSIS_MEDIANS.get(code_prefix, 60000.0)
+    diag_bench = benchmark_service.get_diagnosis_benchmark(diag_code)
+    median_cost = diag_bench.p50 or 49916.56
     amount_vs_median = round(claim_amount / median_cost, 3)
+
+    # Continuous percentile position vs diagnosis distribution
+    if claim_amount <= diag_bench.p50:
+        total_percentile = round(0.50 * max(0.0, claim_amount / max(1.0, diag_bench.p50)), 4)
+    elif claim_amount <= diag_bench.p75:
+        denom = max(1.0, diag_bench.p75 - diag_bench.p50)
+        total_percentile = round(0.50 + 0.25 * ((claim_amount - diag_bench.p50) / denom), 4)
+    elif claim_amount <= diag_bench.p90:
+        denom = max(1.0, diag_bench.p90 - diag_bench.p75)
+        total_percentile = round(0.75 + 0.15 * ((claim_amount - diag_bench.p75) / denom), 4)
+    elif claim_amount <= diag_bench.p95:
+        denom = max(1.0, diag_bench.p95 - diag_bench.p90)
+        total_percentile = round(0.90 + 0.05 * ((claim_amount - diag_bench.p90) / denom), 4)
+    else:
+        denom = max(1.0, diag_bench.p95 * 0.5)
+        total_percentile = round(min(0.9999, 0.95 + 0.04 * ((claim_amount - diag_bench.p95) / denom)), 4)
+
+    # Line item features: max price ratio & ancillary share
+    line_items = getattr(claim, "line_items", []) or []
+    line_item_count = len(line_items)
+
+    max_price_ratio = 1.0
+    ancillary_sum = 0.0
+    for it in line_items:
+        desc = getattr(it, "description", "")
+        rate = float(getattr(it, "unit_price", 0.0) or 0.0)
+        amt = float(getattr(it, "amount", 0.0) or 0.0)
+        cat = benchmark_service.normalize_line_item_category(desc)
+        cat_bench = benchmark_service.get_category_benchmark(cat, diag_code)
+        bench_unit = cat_bench.unit_price_p50 or 2000.0
+        ratio = rate / max(1.0, bench_unit)
+        if ratio > max_price_ratio:
+            max_price_ratio = ratio
+        if cat in ("ancillary", "diagnostics") or any(k in desc.lower() for k in ["consumable", "disposable", "monitoring", "supplies"]):
+            ancillary_sum += amt
+
+    ancillary_share = round(ancillary_sum / max(1.0, claim_amount), 4)
+    max_line_item_price_ratio = round(max_price_ratio, 2)
 
     # Length of stay
     adm = normalize_to_utc(getattr(claim, "admission_ts", None))
@@ -470,10 +520,6 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     else:
         days_policy_to_claim = 180
 
-    # Line item count
-    line_items = getattr(claim, "line_items", []) or []
-    line_item_count = len(line_items)
-
     # Room rent vs cap ratio (standard cap ₹5,000/day)
     room_item = next(
         (it for it in line_items if any(k in getattr(it, "description", "").lower() for k in ["room", "suite", "bed", "ward"])),
@@ -485,6 +531,9 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     return {
         "claim_amount": claim_amount,
         "amount_vs_diagnosis_median_ratio": amount_vs_median,
+        "total_percentile_vs_diagnosis": total_percentile,
+        "max_line_item_price_ratio": max_line_item_price_ratio,
+        "ancillary_share_of_total": ancillary_share,
         "length_of_stay": stay_days,
         "claimant_prior_claims_90d": prior_claims,
         "provider_claims_per_day": provider_claims_day,
@@ -512,6 +561,9 @@ def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]
         MODEL `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.fraud_model`,
         (SELECT @claim_amount AS claim_amount,
                 @amount_vs_median AS amount_vs_diagnosis_median_ratio,
+                @total_percentile AS total_percentile_vs_diagnosis,
+                @max_price_ratio AS max_line_item_price_ratio,
+                @ancillary_share AS ancillary_share_of_total,
                 @length_of_stay AS length_of_stay,
                 @prior_claims AS claimant_prior_claims_90d,
                 @provider_claims_day AS provider_claims_per_day,
@@ -526,6 +578,9 @@ def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]
     query_params = [
         bigquery.ScalarQueryParameter("claim_amount", "FLOAT64", float(claim_features["claim_amount"])),
         bigquery.ScalarQueryParameter("amount_vs_median", "FLOAT64", float(claim_features["amount_vs_diagnosis_median_ratio"])),
+        bigquery.ScalarQueryParameter("total_percentile", "FLOAT64", float(claim_features.get("total_percentile_vs_diagnosis", 0.5))),
+        bigquery.ScalarQueryParameter("max_price_ratio", "FLOAT64", float(claim_features.get("max_line_item_price_ratio", 1.0))),
+        bigquery.ScalarQueryParameter("ancillary_share", "FLOAT64", float(claim_features.get("ancillary_share_of_total", 0.0))),
         bigquery.ScalarQueryParameter("length_of_stay", "INT64", int(claim_features["length_of_stay"])),
         bigquery.ScalarQueryParameter("prior_claims", "INT64", int(claim_features["claimant_prior_claims_90d"])),
         bigquery.ScalarQueryParameter("provider_claims_day", "FLOAT64", float(claim_features["provider_claims_per_day"])),

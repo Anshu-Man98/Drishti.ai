@@ -98,20 +98,81 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         f.check_id.startswith("AGENT_FAILED:") for f in findings
     )
 
-    if has_critical_injection or has_critical_tampering or has_critical_duplicate or has_impossible_travel or has_critical_arithmetic:
+    has_critical_inflation = any(
+        f.severity == Severity.CRITICAL and f.check_id in (
+            "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+            "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+            "UNBUNDLED_OR_PADDED_ANCILLARY"
+        )
+        for f in findings
+    )
+    has_high_inflation = any(
+        f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+            "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+            "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+            "UNBUNDLED_OR_PADDED_ANCILLARY"
+        )
+        for f in findings
+    )
+
+    has_deception_fraud = (
+        has_critical_injection or
+        has_critical_tampering or
+        has_critical_duplicate or
+        has_impossible_travel or
+        has_critical_arithmetic or
+        any(
+            f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+                "EXACT_DUPLICATE_BILL",
+                "CROSS_INSURER_DUPLICATE_CLAIM",
+                "issued_doc_tampered",
+                "FONT_INCONSISTENCY_TAMPERING",
+                "SUSPICIOUS_PRODUCER_METADATA",
+                "DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL",
+                "IMPOSSIBLE_TRAVEL_VELOCITY",
+                "SUBTOTAL_SUM_MISMATCH",
+                "TOTAL_PAYABLE_MISMATCH",
+                "LINE_ITEM_ARITHMETIC_MISMATCH"
+            )
+            for f in findings
+        )
+    )
+
+    has_policy_or_tariff_only = (
+        len(findings) > 0 and all(
+            f.agent in (AgentName.POLICY, AgentName.ML, AgentName.RAG) or
+            f.check_id in (
+                "POLICY_ROOM_RENT_CAP_EXCEEDED",
+                "POLICY_COPAY_MISCALCULATION",
+                "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+                "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+                "UNBUNDLED_OR_PADDED_ANCILLARY",
+                "BQML_HIGH_RISK_ANOMALY",
+                "matches_known_pattern",
+                "ungrounded_number"
+            )
+            for f in findings
+        )
+    )
+
+    if has_deception_fraud:
         risk_score = max(risk_score, 85)
         verdict = Verdict.REJECT
     elif risk_score < 30:
         if has_failed_agent:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 30)
+        elif has_high_inflation:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 45)
         else:
             verdict = Verdict.APPROVE
     elif risk_score < 70:
         verdict = Verdict.REVIEW
     else:
-        # A retrieved pattern cannot by itself move a verdict from approve to reject
-        if baseline_agent_score < 30 and not has_critical_injection:
+        # Claims where findings are strictly policy tariff caps, benchmarks, or RAG patterns
+        # belong in adjuster REVIEW for line-item deduction, not fraud rejection.
+        if has_policy_or_tariff_only or (baseline_agent_score < 30 and not has_critical_injection):
             verdict = Verdict.REVIEW
             risk_score = min(risk_score, 65)
         else:
@@ -125,6 +186,11 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         if verdict == Verdict.APPROVE:
             verdict = Verdict.REVIEW
         risk_score = max(risk_score, 65)
+
+    # Inflation guardrail: high inflation findings cannot leave a claim at APPROVE
+    if has_high_inflation and verdict == Verdict.APPROVE:
+        verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 45)
 
     # Incomplete dossier guardrail: never allow APPROVE if an agent failed
     if has_failed_agent and verdict == Verdict.APPROVE:

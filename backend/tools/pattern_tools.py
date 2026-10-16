@@ -178,7 +178,7 @@ def build_claim_fingerprint(
         for f in findings:
             cid = f.check_id.lower()
             fingerprint_parts.append(f"finding_check:{cid}")
-            if "total" in cid or "mismatch" in cid or "arithmetic" in cid:
+            if ("mismatch" in cid or "subtotal_sum" in cid or "total_payable" in cid or "arithmetic" in cid) and "benchmark" not in cid:
                 fingerprint_parts.append("arithmetic_mismatch total_payable_discrepancy printed_total")
             elif "room" in cid or "cap" in cid:
                 fingerprint_parts.append("policy_cap_breach deluxe_suite_over_invoicing clause_3_1")

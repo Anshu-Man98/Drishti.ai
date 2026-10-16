@@ -206,7 +206,7 @@ class FakeBQClient:
             prior = int(params.get("prior_claims", 0))
             claim_amt = float(params.get("claim_amount", 50000.0))
 
-            is_fraud = (amt_ratio > 1.25 or room_ratio > 1.1 or cities > 1 or shared_bank > 2 or prior > 1 or claim_amt > 80000)
+            is_fraud = (amt_ratio > 1.45 or room_ratio > 1.1 or cities > 1 or shared_bank > 2 or prior > 1 or claim_amt > 80000)
             if is_fraud:
                 fraud_prob = min(0.95, max(0.20, 0.20 + (amt_ratio - 1.0) * 0.2 + (room_ratio - 1.0) * 0.2 + (cities - 1) * 0.2 + max(0.0, (claim_amt - 75000) / 100000 * 0.2) + min(0.30, max(0, shared_bank - 1) * 0.02) + min(0.20, prior * 0.1)))
                 pred = 1
@@ -287,6 +287,41 @@ class FakeBQClient:
 
         elif "EXT_PROVIDER_FRAUD" in q:
             return FakeBQQueryJob([])
+
+        elif "DIAGNOSIS_BENCHMARKS" in q:
+            rows = [
+                FakeBQRow(diagnosis_code="K35.8", fallback_level="exact", sample_count=301, p50=52955.82, p75=56849.74, p90=58537.87, p95=59644.85),
+                FakeBQRow(diagnosis_code="K35", fallback_level="block", sample_count=301, p50=52955.82, p75=56849.74, p90=58537.87, p95=59644.85),
+                FakeBQRow(diagnosis_code="K", fallback_level="chapter", sample_count=657, p50=57867.39, p75=63296.69, p90=68054.96, p95=70226.87),
+                FakeBQRow(diagnosis_code="GLOBAL", fallback_level="global", sample_count=2637, p50=49916.56, p75=67704.70, p90=119472.78, p95=134867.98),
+            ]
+            return FakeBQQueryJob(rows)
+
+        elif "CATEGORY_BENCHMARKS" in q:
+            rows = [
+                FakeBQRow(diagnosis_code="K35.8", category="surgery_ot", fallback_level="exact", sample_count=301,
+                          unit_price_p50=28257.11, unit_price_p75=32954.73, unit_price_p90=36692.20, unit_price_p95=38627.62,
+                          amount_p50=28257.11, amount_p75=32954.73, amount_p90=36692.20, amount_p95=38627.62),
+                FakeBQRow(diagnosis_code="K35.8", category="consultation", fallback_level="exact", sample_count=301,
+                          unit_price_p50=2000.0, unit_price_p75=2500.0, unit_price_p90=2500.0, unit_price_p95=2500.0,
+                          amount_p50=6000.0, amount_p75=7500.0, amount_p90=10000.0, amount_p95=10000.0),
+                FakeBQRow(diagnosis_code="K35.8", category="room_rent", fallback_level="exact", sample_count=301,
+                          unit_price_p50=4000.0, unit_price_p75=4800.0, unit_price_p90=4800.0, unit_price_p95=4800.0,
+                          amount_p50=12000.0, amount_p75=16000.0, amount_p90=16000.0, amount_p95=19200.0),
+                FakeBQRow(diagnosis_code="K35.8", category="pharmacy", fallback_level="exact", sample_count=301,
+                          unit_price_p50=5154.93, unit_price_p75=6765.50, unit_price_p90=7474.77, unit_price_p95=7812.79,
+                          amount_p50=5154.93, amount_p75=6765.50, amount_p90=7474.77, amount_p95=7812.79),
+                FakeBQRow(diagnosis_code="GLOBAL", category="ancillary", fallback_level="global", sample_count=2637,
+                          unit_price_p50=2000.0, unit_price_p75=3200.0, unit_price_p90=4500.0, unit_price_p95=5500.0,
+                          amount_p50=3500.0, amount_p75=5500.0, amount_p90=8000.0, amount_p95=10000.0),
+                FakeBQRow(diagnosis_code="GLOBAL", category="diagnostics", fallback_level="global", sample_count=2637,
+                          unit_price_p50=3500.0, unit_price_p75=4800.0, unit_price_p90=6000.0, unit_price_p95=7500.0,
+                          amount_p50=4000.0, amount_p75=6500.0, amount_p90=8500.0, amount_p95=10500.0),
+                FakeBQRow(diagnosis_code="GLOBAL", category="icu", fallback_level="global", sample_count=2637,
+                          unit_price_p50=8000.0, unit_price_p75=9500.0, unit_price_p90=10000.0, unit_price_p95=12000.0,
+                          amount_p50=16000.0, amount_p75=24000.0, amount_p90=30000.0, amount_p95=36000.0),
+            ]
+            return FakeBQQueryJob(rows)
 
         return FakeBQQueryJob([])
 

@@ -10,7 +10,7 @@ from google.adk.agents import LlmAgent
 
 from backend.app.schemas import Finding, Claim
 from backend.app.config import settings
-from backend.tools.registry import call_tool, validate_arithmetic, check_dates, check_policy_caps
+from backend.tools.registry import call_tool, validate_arithmetic, check_dates, check_policy_caps, check_price_benchmarks
 from backend.tools.policy_tools import search_policy
 
 POLICY_SYSTEM_PROMPT = """You are a claims auditor. You NEVER compute numbers yourself — always call the tools. For every
@@ -80,6 +80,18 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     )
     findings.extend(cap_result.get("findings", []))
 
+    # 4. Check Price Benchmarks (BigQuery statistical distributions)
+    bench_result = call_tool(
+        "check_price_benchmarks",
+        {
+            "claim": claim_dict,
+            "doc_id": doc_id
+        },
+        claim_id=claim.claim_id,
+        agent_name="policy"
+    )
+    findings.extend(bench_result.get("findings", []))
+
     return findings
 
 
@@ -92,6 +104,7 @@ def create_policy_agent() -> LlmAgent:
             validate_arithmetic,
             check_dates,
             check_policy_caps,
+            check_price_benchmarks,
             search_policy
         ],
         output_schema=PolicyOutput,

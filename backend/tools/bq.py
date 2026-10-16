@@ -184,6 +184,8 @@ class BigQueryWarehouse:
         ]
         if current_claim_id:
             where_conditions.append("claim_id != @current_claim_id")
+        if insurer_id:
+            where_conditions.append("insurer_id != @insurer_id")
 
         query = f"""
         SELECT claim_id, claimant_id, insurer_id, total_claimed, admission_ts
@@ -199,6 +201,8 @@ class BigQueryWarehouse:
         ]
         if current_claim_id:
             query_params.append(bigquery.ScalarQueryParameter("current_claim_id", "STRING", current_claim_id))
+        if insurer_id:
+            query_params.append(bigquery.ScalarQueryParameter("insurer_id", "STRING", insurer_id))
 
         job_config = bigquery.QueryJobConfig(query_parameters=query_params)
         try:

@@ -92,7 +92,8 @@ class StorageService:
         bucket_name = parts[0]
         blob_name = parts[1] if len(parts) > 1 else ""
 
-        if bucket_name != self.bucket_name or not blob_name.startswith("uploads/"):
+        ALLOWED_PREFIXES = ("uploads/", "claims/")
+        if bucket_name != self.bucket_name or not any(blob_name.startswith(p) for p in ALLOWED_PREFIXES):
             raise PermissionError(f"Security error: Invalid GCS storage path or bucket: {uri}")
 
         try:

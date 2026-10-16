@@ -147,6 +147,7 @@ export interface Dossier {
   risk_score: number;
   ml_score?: number | null;
   verdict: Verdict;
+  status?: 'complete' | 'incomplete';
   summary: string;
   findings: Finding[];
   top_ml_features?: MlFeature[];

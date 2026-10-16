@@ -12,6 +12,7 @@ Supports:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -494,7 +495,9 @@ def run_dry_run() -> int:
         pdf_path = DEMO_DIR / claim["file"]
         status = "FOUND" if pdf_path.exists() else "MISSING"
         size = f"({pdf_path.stat().st_size:,} bytes)" if pdf_path.exists() else ""
-        target_gcs = f"gs://{settings.GCS_BUCKET_NAME}/claims/{claim['claim_id']}/original.pdf"
+        pdf_bytes = pdf_path.read_bytes() if pdf_path.exists() else b""
+        real_sha256 = hashlib.sha256(pdf_bytes).hexdigest() if pdf_bytes else "unknown"
+        target_gcs = f"gs://{settings.GCS_BUCKET_NAME}/uploads/{claim['claim_id']}/{real_sha256}.pdf"
         print(f"  • {claim['key']} [{claim['claim_id']}]: {claim['file']} -> {status} {size}")
         print(f"    Target GCS: {target_gcs}")
         if not pdf_path.exists():
@@ -607,6 +610,12 @@ def run_apply() -> int:
             if not hash_blob.exists():
                 hash_blob.upload_from_string(pdf_bytes, content_type="application/pdf")
 
+            # Upload canonical uploads/{claim_id}/original.pdf
+            upload_orig_name = f"uploads/{claim['claim_id']}/original.pdf"
+            upload_orig_blob = bucket.blob(upload_orig_name)
+            if not upload_orig_blob.exists():
+                upload_orig_blob.upload_from_string(pdf_bytes, content_type="application/pdf")
+
             # Pre-render 150 DPI page preview images into GCS
             try:
                 render_pdf_to_page_images(pdf_bytes, claim["claim_id"])
@@ -671,7 +680,7 @@ def run_apply() -> int:
                 "documents": [
                     {
                         "doc_id": f"DOC-{claim_id}-ORIGINAL",
-                        "gcs_uri": f"gs://{settings.GCS_BUCKET_NAME}/claims/{claim_id}/original.pdf",
+                        "gcs_uri": f"gs://{settings.GCS_BUCKET_NAME}/uploads/{claim_id}/{real_sha256}.pdf",
                         "doc_type": "approval_letter" if claim["key"] == "G8" else "bill",
                         "sha256": real_sha256,
                         "filename": claim["file"],

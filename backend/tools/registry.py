@@ -136,11 +136,14 @@ def validate_arithmetic(
         chip = f"₹{sub_rupees:,.0f} + ₹{tax_rupees:,.0f} = ₹{tot_rupees:,.0f} (Exact match)"
 
     if subtotal_diff_paise > tolerance_paise:
+        diff_val = to_rupees(subtotal_diff_paise)
+        is_large = (diff_val > 5000.0 or (subtotal_diff_paise / max(1, to_paise(sub_rupees))) > 0.05)
+        severity = Severity.CRITICAL if is_large else Severity.HIGH
         findings.append(Finding(
             finding_id="F-MATH-SUBTOTAL",
             agent=AgentName.POLICY,
             check_id="SUBTOTAL_SUM_MISMATCH",
-            severity=Severity.HIGH,
+            severity=severity,
             title="Subtotal does not match sum of itemized charges",
             explanation=(
                 f"The sum of all line items is ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "

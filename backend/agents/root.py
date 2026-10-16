@@ -126,7 +126,20 @@ def run_claims_fraud_pipeline(
             for doc in claim.documents:
                 try:
                     doc_bytes = storage_service.read_file(doc.gcs_uri)
-                except Exception:
+                except Exception as e:
+                    logger.error("Provenance specialist failed to read document %s (%s): %s", doc.doc_id, doc.gcs_uri, e)
+                    prov_findings.append(Finding(
+                        finding_id=f"F-ERR-PROVENANCE-{len(prov_findings)+1}",
+                        agent=AgentName.PROVENANCE,
+                        check_id="AGENT_FAILED:provenance",
+                        severity=Severity.HIGH,
+                        title=f"Provenance specialist could not read document {doc.doc_id}",
+                        explanation=f"Storage read failed for document {doc.doc_id} at {doc.gcs_uri}: {e}. Dossier marked incomplete.",
+                        evidence=[Evidence(doc_id=doc.doc_id, page=1, quote=str(e)[:120])],
+                        confidence=1.0,
+                        computed_chip="Read Error",
+                        computed_details={"error": str(e), "gcs_uri": doc.gcs_uri}
+                    ))
                     continue
 
                 v_res = verify_document(doc_bytes, claim_id=claim.claim_id)

@@ -163,6 +163,7 @@ class Dossier(BaseModel):
     risk_score: int = Field(ge=0, le=100)
     ml_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     verdict: Verdict
+    status: str = Field(default="complete", description="'complete' | 'incomplete'")
     summary: str
     findings: List[Finding] = Field(default_factory=list)
     top_ml_features: Optional[List[MlFeature]] = None

@@ -458,15 +458,23 @@ def detect_hidden_text_injection(claim: Claim) -> List[Finding]:
         try:
             pdf_bytes = storage_service.read_file(doc.gcs_uri)
         except Exception as e:
-            pdf_bytes = None
+            logger.error("Injection detector failed to read document %s (%s): %s", doc.doc_id, doc.gcs_uri, e)
+            findings.append(Finding(
+                finding_id=f"F-ERR-INJECTION-{len(findings)+1}",
+                agent=AgentName.INJECTION,
+                check_id="AGENT_FAILED:injection",
+                severity=Severity.HIGH,
+                title=f"Injection detector could not read document {doc.doc_id}",
+                explanation=f"Storage read failed for document {doc.doc_id} at {doc.gcs_uri}: {e}. Dossier marked incomplete.",
+                evidence=[Evidence(doc_id=doc.doc_id, page=1, quote=str(e)[:120])],
+                confidence=1.0,
+                computed_chip="Read Error",
+                computed_details={"error": str(e), "gcs_uri": doc.gcs_uri}
+            ))
+            continue
 
         if not pdf_bytes:
-            # Check cached hidden layers if already processed during extraction
-            cached_hidden = CLAIM_HIDDEN_LAYERS.get(claim.claim_id, [])
-            if not cached_hidden:
-                continue
-            hidden_runs = cached_hidden
-            visible_text_str = ""
+            continue
         else:
             layers = extract_text_layers(pdf_bytes)
             visible_text_str = " ".join(r["text"] for r in layers["visible"])

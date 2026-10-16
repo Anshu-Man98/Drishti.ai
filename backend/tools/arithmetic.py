@@ -64,11 +64,13 @@ def validate_arithmetic(
     # 2. Validate sum(line_items) == subtotal
     subtotal_diff = abs(calculated_subtotal - subtotal)
     if subtotal_diff > TOLERANCE:
+        is_large = (subtotal_diff > 5000.0 or (subtotal_diff / max(1.0, subtotal)) > 0.05)
+        severity = Severity.CRITICAL if is_large else Severity.HIGH
         findings.append(Finding(
             finding_id="F-MATH-SUBTOTAL",
             agent=AgentName.POLICY,
             check_id="SUBTOTAL_SUM_MISMATCH",
-            severity=Severity.HIGH,
+            severity=severity,
             title="Subtotal does not match sum of itemized charges",
             explanation=(
                 f"The sum of all line items is ₹{calculated_subtotal:,.2f}, but the printed subtotal is "

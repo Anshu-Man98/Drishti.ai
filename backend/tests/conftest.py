@@ -207,7 +207,7 @@ class FakeBQClient:
 
             is_fraud = (amt_ratio > 1.25 or room_ratio > 1.1 or cities > 1 or shared_bank > 2 or prior > 1 or claim_amt > 80000)
             if is_fraud:
-                fraud_prob = min(0.95, max(0.20, 0.20 + (amt_ratio - 1.0) * 0.2 + (room_ratio - 1.0) * 0.2 + (cities - 1) * 0.2 + max(0.0, (claim_amt - 75000) / 100000 * 0.2)))
+                fraud_prob = min(0.95, max(0.20, 0.20 + (amt_ratio - 1.0) * 0.2 + (room_ratio - 1.0) * 0.2 + (cities - 1) * 0.2 + max(0.0, (claim_amt - 75000) / 100000 * 0.2) + min(0.30, max(0, shared_bank - 1) * 0.02) + min(0.20, prior * 0.1)))
                 pred = 1
                 prob = fraud_prob
             else:

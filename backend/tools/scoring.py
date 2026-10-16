@@ -80,15 +80,33 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         for f in findings
     )
     has_impossible_travel = any(
-        f.check_id == "IMPOSSIBLE_TRAVEL_VELOCITY" and f.severity == Severity.CRITICAL
+        f.severity == Severity.CRITICAL and (
+            f.check_id in ("DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL", "IMPOSSIBLE_TRAVEL_VELOCITY")
+            or f.agent == AgentName.SPACETIME
+        )
+        for f in findings
+    )
+    has_critical_arithmetic = any(
+        f.severity == Severity.CRITICAL and (
+            f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH")
+            or (f.agent == AgentName.POLICY and "ARITHMETIC" in f.check_id)
+        )
         for f in findings
     )
 
-    if has_critical_injection or has_critical_tampering or has_critical_duplicate or has_impossible_travel:
+    has_failed_agent = any(
+        f.check_id.startswith("AGENT_FAILED:") for f in findings
+    )
+
+    if has_critical_injection or has_critical_tampering or has_critical_duplicate or has_impossible_travel or has_critical_arithmetic:
         risk_score = max(risk_score, 85)
         verdict = Verdict.REJECT
     elif risk_score < 30:
-        verdict = Verdict.APPROVE
+        if has_failed_agent:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 30)
+        else:
+            verdict = Verdict.APPROVE
     elif risk_score < 70:
         verdict = Verdict.REVIEW
     else:
@@ -98,6 +116,20 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
             risk_score = min(risk_score, 65)
         else:
             verdict = Verdict.REJECT
+
+    # Guardrail: two or more high/critical findings cannot end at APPROVE or low REVIEW (< 65)
+    high_or_critical_count = sum(
+        1 for f in findings if f.severity in (Severity.HIGH, Severity.CRITICAL)
+    )
+    if high_or_critical_count >= 2:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 65)
+
+    # Incomplete dossier guardrail: never allow APPROVE if an agent failed
+    if has_failed_agent and verdict == Verdict.APPROVE:
+        verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 30)
 
     return risk_score, verdict
 

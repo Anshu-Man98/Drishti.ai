@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from pydantic import BaseModel
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Finding, Claim
+from backend.app.schemas import Finding, Claim, AgentName, Severity, Evidence
 from backend.app.config import settings
 from backend.tools.forensics_tools import (
     pdf_metadata_check, font_consistency_check,
@@ -35,7 +35,19 @@ def analyze_document_forensics(claim: Claim) -> List[Finding]:
     for doc in claim.documents:
         try:
             doc_bytes = storage_service.read_file(doc.gcs_uri)
-        except Exception:
+        except Exception as e:
+            findings.append(Finding(
+                finding_id=f"F-ERR-FORENSICS-{len(findings)+1}",
+                agent=AgentName.FORENSICS,
+                check_id="AGENT_FAILED:forensics",
+                severity=Severity.HIGH,
+                title=f"Forensics specialist could not read document {doc.doc_id}",
+                explanation=f"Storage read failed for document {doc.doc_id} at {doc.gcs_uri}: {e}. Dossier marked incomplete.",
+                evidence=[Evidence(doc_id=doc.doc_id, page=1, quote=str(e)[:120])],
+                confidence=1.0,
+                computed_chip="Read Error",
+                computed_details={"error": str(e), "gcs_uri": doc.gcs_uri}
+            ))
             continue
 
         # 1. PDF Metadata Check

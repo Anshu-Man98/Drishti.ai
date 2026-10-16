@@ -175,11 +175,21 @@ def synthesize_dossier(
                     confidence=1.0
                 ))
 
+    is_incomplete = any(
+        f.check_id.startswith("AGENT_FAILED:") or f.check_id == "BQML_SERVICE_FAILURE"
+        for f in all_findings
+    )
+    dossier_status = "incomplete" if is_incomplete else "complete"
+    if is_incomplete and verdict == Verdict.APPROVE:
+        verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 30)
+
     return Dossier(
         claim_id=claim.claim_id,
         risk_score=risk_score,
         ml_score=ml_score,
         verdict=verdict,
+        status=dossier_status,
         summary=summary,
         findings=all_findings,
         top_ml_features=top_ml_features,

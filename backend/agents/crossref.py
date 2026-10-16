@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from pydantic import BaseModel
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Finding, Claim
+from backend.app.schemas import Finding, Claim, AgentName, Severity, Evidence
 from backend.app.config import settings
 from backend.tools.bq import bq_warehouse
 
@@ -36,15 +36,27 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
 
     # Extract invoice / bill number from document text if available
     if claim.documents:
+        doc = claim.documents[0]
         try:
-            doc_bytes = storage_service.read_file(claim.documents[0].gcs_uri)
+            doc_bytes = storage_service.read_file(doc.gcs_uri)
             with pdfplumber.open(io.BytesIO(doc_bytes)) as pdf:
                 page_text = pdf.pages[0].extract_text() or ""
                 m = re.search(r"Bill\s*(?:No|Number)?[:\s]+([A-Za-z0-9\-]+)", page_text)
                 if m:
                     bill_no = m.group(1).strip()
-        except Exception:
-            pass
+        except Exception as e:
+            findings.append(Finding(
+                finding_id=f"F-ERR-CROSSREF-{len(findings)+1}",
+                agent=AgentName.CROSSREF,
+                check_id="AGENT_FAILED:crossref",
+                severity=Severity.HIGH,
+                title=f"Cross-reference specialist could not read document {doc.doc_id}",
+                explanation=f"Storage read failed for document {doc.doc_id} at {doc.gcs_uri}: {e}. Dossier marked incomplete.",
+                evidence=[Evidence(doc_id=doc.doc_id, page=1, quote=str(e)[:120])],
+                confidence=1.0,
+                computed_chip="Read Error",
+                computed_details={"error": str(e), "gcs_uri": doc.gcs_uri}
+            ))
 
     # 1. Exact Duplicate Search
     exact_matches = bq_warehouse.find_exact_duplicates(

@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import re
 from datetime import datetime
 from typing import Any, List, Dict, Optional
 import pytest
@@ -418,6 +419,85 @@ class FakeGenAIModels:
                     "quoted_excerpt": ""
                 }
             return type("GenAIResp", (), {"text": json.dumps(resp_json)})()
+
+        if config and hasattr(config, "response_schema") and config.response_schema:
+            schema_name = getattr(config.response_schema, "__name__", str(config.response_schema))
+            if "GeminiExtractedBill" in schema_name:
+                p_text = prompt_str
+                # If unrecognized text or blank:
+                if "unrecognized" in p_text.lower() or ("hospital" not in p_text.lower() and "clinic" not in p_text.lower()):
+                    return type("GenAIResp", (), {"text": json.dumps({
+                        "claimant_name": None, "hospital_name": None, "city": None,
+                        "doctor_name": None, "doctor_id": None, "admission_date": None,
+                        "discharge_date": None, "diagnosis_code": None, "policy_id": None,
+                        "insurer_name": None, "line_items": [], "subtotal": None, "tax": None, "total_claimed": None
+                    })})()
+
+                # Extract claimant
+                m_claimant = re.search(r"Patient Name:\s*([^\n\r|]+)", p_text)
+                claimant_name = m_claimant.group(1).strip() if m_claimant else None
+
+                # Extract hospital & city
+                m_hosp = re.search(r"<b>([^<]+(?:Hospital|Clinic)[^<]*)</b>", p_text)
+                if not m_hosp:
+                    m_hosp = re.search(r"([A-Za-z\s]+(?:Hospital|Clinic)[^\n\r,]*)", p_text)
+                hospital_name = m_hosp.group(1).strip() if m_hosp else None
+
+                city = None
+                for c_cand in ["Jaipur", "Bengaluru", "Pune", "Lucknow", "Chennai", "Hyderabad", "Delhi", "New Delhi", "Mumbai"]:
+                    if c_cand.lower() in p_text.lower():
+                        city = c_cand
+                        break
+
+                # Extract doctor
+                m_doc = re.search(r"Treating Doctor:\s*([^(\n\r]+)(?:\(([^\)]+)\))?", p_text)
+                doctor_name = m_doc.group(1).strip() if m_doc else None
+                doctor_id = m_doc.group(2).strip() if (m_doc and m_doc.group(2)) else None
+
+                # Extract dates
+                m_adm = re.search(r"Admission Date:\s*([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4}(?:\s+[0-9]{1,2}:[0-9]{2}(?:\s*[APap][Mm])?)?)", p_text)
+                admission_date = m_adm.group(1).strip() if m_adm else None
+
+                m_dis = re.search(r"Discharge Date:\s*([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4}(?:\s+[0-9]{1,2}:[0-9]{2}(?:\s*[APap][Mm])?)?)", p_text)
+                discharge_date = m_dis.group(1).strip() if m_dis else None
+
+                # Extract diagnosis
+                m_diag = re.search(r"Primary Diagnosis:\s*([^\n\r]+)", p_text)
+                diag_full = m_diag.group(1).strip() if m_diag else None
+                m_code = re.search(r"([A-Z]\d{2}(?:\.\d{1,2})?)", diag_full or "")
+                diagnosis_code = m_code.group(1) if m_code else None
+
+                # Extract policy
+                m_pol = re.search(r"Policy Number:\s*([^\n\r\s]+)", p_text)
+                policy_id = m_pol.group(1).strip() if m_pol else None
+
+                # Extract insurer
+                m_ins = re.search(r"Insurer:\s*([^\n\r|]+)", p_text)
+                insurer_name = m_ins.group(1).strip() if m_ins else None
+
+                extracted_data = {
+                    "claimant_name": claimant_name,
+                    "hospital_name": hospital_name,
+                    "city": city,
+                    "doctor_name": doctor_name,
+                    "doctor_id": doctor_id,
+                    "admission_date": admission_date,
+                    "discharge_date": discharge_date,
+                    "diagnosis_code": diagnosis_code,
+                    "policy_id": policy_id,
+                    "insurer_name": insurer_name,
+                    "line_items": [],
+                    "subtotal": None,
+                    "tax": None,
+                    "total_claimed": None
+                }
+                return type("GenAIResp", (), {"text": json.dumps(extracted_data)})()
+            elif "GeminiReExtractionResult" in schema_name:
+                re_data = {
+                    "line_items": [],
+                    "all_visible_rows_extracted": True
+                }
+                return type("GenAIResp", (), {"text": json.dumps(re_data)})()
 
         return type("GenAIResp", (), {"text": "Analysis response"})()
 

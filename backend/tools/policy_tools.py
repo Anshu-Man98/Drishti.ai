@@ -164,6 +164,8 @@ def check_policy_caps(
 
         for idx, item in enumerate(line_items):
             desc = item.get("description", "").lower()
+            if any(term in desc for term in ["icu", "iccu", "intensive care"]):
+                continue  # Evaluated under ICU cap below
             if any(term in desc for term in ["room", "ward", "bed", "suite"]):
                 unit_price = float(item.get("unit_price", 0.0))
                 qty = float(item.get("qty", 1.0))

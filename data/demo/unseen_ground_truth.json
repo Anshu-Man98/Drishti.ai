@@ -1,0 +1,154 @@
+[
+  {
+    "id": "UNSEEN-01",
+    "file": "bill_1_sunrise_jaipur_clean.pdf",
+    "type": "clean",
+    "expected": {
+      "claimant_name": "Meera Nair",
+      "hospital_name": "Sunrise Multispeciality Hospital",
+      "city": "Jaipur",
+      "doctor_id": "DOC-7788",
+      "diagnosis_code": "M54.5",
+      "admission_date": "02-Sep-2026",
+      "discharge_date": "05-Sep-2026",
+      "subtotal": 32700.0,
+      "tax": 1635.0,
+      "total_claimed": 34335.0,
+      "line_items_count": 4,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-02",
+    "file": "bill_2_sunrise_jaipur_padded.pdf",
+    "type": "padded_arithmetic",
+    "expected": {
+      "claimant_name": "Meera Nair",
+      "hospital_name": "Sunrise Multispeciality Hospital",
+      "city": "Jaipur",
+      "doctor_id": "DOC-7788",
+      "diagnosis_code": "M54.5",
+      "admission_date": "02-Sep-2026",
+      "discharge_date": "05-Sep-2026",
+      "subtotal": 50700.0,
+      "tax": 2535.0,
+      "total_claimed": 53235.0,
+      "line_items_count": 4,
+      "expected_verdict": "REJECT"
+    }
+  },
+  {
+    "id": "UNSEEN-03",
+    "file": "bill_3_narayana_bengaluru_multipage.pdf",
+    "type": "clean_multipage",
+    "expected": {
+      "claimant_name": "Suresh Menon",
+      "hospital_name": "Narayana Hrudayalaya Speciality Hospital",
+      "city": "Bengaluru",
+      "doctor_id": "DOC-3312",
+      "diagnosis_code": "I25.1",
+      "admission_date": "10-Aug-2026",
+      "discharge_date": "14-Aug-2026",
+      "subtotal": 88000.0,
+      "tax": 4400.0,
+      "total_claimed": 92400.0,
+      "line_items_count": 6,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-04",
+    "file": "bill_4_rubyhall_pune_clean.pdf",
+    "type": "clean",
+    "expected": {
+      "claimant_name": "Sunita Kulkarni",
+      "hospital_name": "Ruby Hall Clinic",
+      "city": "Pune",
+      "doctor_id": "DOC-4491",
+      "diagnosis_code": "K80.2",
+      "admission_date": "15-Jul-2026",
+      "discharge_date": "18-Jul-2026",
+      "subtotal": 48500.0,
+      "tax": 2425.0,
+      "total_claimed": 50925.0,
+      "line_items_count": 5,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-05",
+    "file": "bill_5_medanta_lucknow_clean.pdf",
+    "type": "clean_serif",
+    "expected": {
+      "claimant_name": "Amit Saxena",
+      "hospital_name": "Medanta The Medicity Hospital",
+      "city": "Lucknow",
+      "doctor_id": "DOC-5520",
+      "diagnosis_code": "J18.9",
+      "admission_date": "01-Oct-2026",
+      "discharge_date": "04-Oct-2026",
+      "subtotal": 26000.0,
+      "tax": 1300.0,
+      "total_claimed": 27300.0,
+      "line_items_count": 4,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-06",
+    "file": "bill_6_apollo_chennai_clean.pdf",
+    "type": "clean",
+    "expected": {
+      "claimant_name": "Priya Sundaram",
+      "hospital_name": "Apollo Specialty Hospital",
+      "city": "Chennai",
+      "doctor_id": "DOC-6631",
+      "diagnosis_code": "N20.1",
+      "admission_date": "12-Sep-2026",
+      "discharge_date": "14-Sep-2026",
+      "subtotal": 38500.0,
+      "tax": 1925.0,
+      "total_claimed": 40425.0,
+      "line_items_count": 4,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-07",
+    "file": "bill_7_fortis_jaipur_image.png",
+    "type": "image_png",
+    "expected": {
+      "claimant_name": "Vikram Rathore",
+      "hospital_name": "Fortis Escorts Hospital",
+      "city": "Jaipur",
+      "doctor_id": "DOC-8819",
+      "diagnosis_code": "E11.9",
+      "admission_date": "20-Aug-2026",
+      "discharge_date": "22-Aug-2026",
+      "subtotal": 18000.0,
+      "tax": 900.0,
+      "total_claimed": 18900.0,
+      "line_items_count": 3,
+      "expected_verdict": "APPROVE"
+    }
+  },
+  {
+    "id": "UNSEEN-08",
+    "file": "bill_8_care_hyderabad_scanned.jpg",
+    "type": "scanned_jpeg",
+    "expected": {
+      "claimant_name": "Lakshmi Rao",
+      "hospital_name": "Care Hospital",
+      "city": "Hyderabad",
+      "doctor_id": "DOC-9904",
+      "diagnosis_code": "M17.0",
+      "admission_date": "05-Sep-2026",
+      "discharge_date": "08-Sep-2026",
+      "subtotal": 47500.0,
+      "tax": 2375.0,
+      "total_claimed": 49875.0,
+      "line_items_count": 4,
+      "expected_verdict": "APPROVE"
+    }
+  }
+]

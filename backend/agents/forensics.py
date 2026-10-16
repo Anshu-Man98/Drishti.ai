@@ -50,20 +50,35 @@ def analyze_document_forensics(claim: Claim) -> List[Finding]:
             ))
             continue
 
-        # 1. PDF Metadata Check
-        meta_info, meta_findings = pdf_metadata_check(doc_bytes, doc_id=doc.doc_id)
-        findings.extend(meta_findings)
+        # 1. PDF vs Image Forensics Routing
+        is_pdf = doc_bytes.startswith(b"%PDF")
+        if is_pdf:
+            meta_info, meta_findings = pdf_metadata_check(doc_bytes, doc_id=doc.doc_id)
+            findings.extend(meta_findings)
 
-        # 2. Font Consistency Check
-        anomalies, font_findings = font_consistency_check(doc_bytes, doc_id=doc.doc_id)
-        findings.extend(font_findings)
+            anomalies, font_findings = font_consistency_check(doc_bytes, doc_id=doc.doc_id)
+            findings.extend(font_findings)
 
-        # 3. SynthID Check
-        synthid_res = synthid_check(doc_bytes)
+            synthid_res = synthid_check(doc_bytes)
 
-        # 4. Gemini Visual Review
-        if anomalies or meta_findings:
-            review_text = gemini_visual_review(doc_bytes, anomalies)
+            if anomalies or meta_findings:
+                review_text = gemini_visual_review(doc_bytes, anomalies)
+        else:
+            # Raster Image Forensics (PNG, JPEG, etc.)
+            exif_res = image_exif_check(doc_bytes)
+            is_suspicious, ela_bbox = error_level_analysis(doc_bytes)
+            if is_suspicious:
+                findings.append(Finding(
+                    finding_id=f"F-FOR-ELA-{len(findings)+1}",
+                    agent=AgentName.FORENSICS,
+                    check_id="ELA_COMPRESSION_ANOMALY",
+                    severity=Severity.HIGH,
+                    title="Compression variance detected across document image",
+                    explanation="Error Level Analysis (ELA) revealed abnormal compression gradients indicative of spliced or edited image content.",
+                    evidence=[Evidence(doc_id=doc.doc_id, page=1, bbox=ela_bbox or [0.1, 0.4, 0.9, 0.6])],
+                    confidence=0.88
+                ))
+            synthid_res = synthid_check(doc_bytes)
 
     return findings
 

@@ -103,7 +103,7 @@ async def create_claim(
             doc_type = DocType.PHOTO
 
         # Extract entities and bounding boxes with Document AI / layout parser (offloaded to thread)
-        if fname_lower.endswith(".pdf"):
+        if fname_lower.endswith((".pdf", ".png", ".jpg", ".jpeg")):
             try:
                 from backend.tools.docai import process_document_docai
                 docai_claim, docai_ents = await asyncio.to_thread(process_document_docai, contents, safe_filename, claim_id)
@@ -147,6 +147,23 @@ async def create_claim(
             detail=f"Invalid date format for admission_ts or discharge_ts: {e}"
         )
 
+    # Track which fields were explicitly provided via multipart form fields
+    form_provided = {
+        "claimant_name": claimant_name is not None,
+        "hospital_name": hospital_name is not None,
+        "city": city is not None,
+        "doctor_id": doctor_id is not None,
+        "diagnosis_code": diagnosis_code is not None,
+        "admission_date": admission_ts is not None,
+        "discharge_date": discharge_ts is not None,
+        "subtotal": subtotal is not None,
+        "tax": tax is not None,
+        "total_claimed": total_claimed is not None,
+        "line_items": line_items_json is not None,
+        "policy_id": policy_id is not None,
+        "insurer_id": insurer_id is not None
+    }
+
     # Auto-populate missing fields from Document AI if available
     if docai_claim:
         policy_id = policy_id or docai_claim.policy_id
@@ -185,6 +202,14 @@ async def create_claim(
         tax = tax if tax is not None else 0.0
         total_claimed = total_claimed if total_claimed is not None else 0.0
 
+    # Build genuine field sources
+    resolved_field_sources: Dict[str, str] = {}
+    if docai_claim and docai_claim.field_sources:
+        resolved_field_sources.update(docai_claim.field_sources)
+    for field_k, was_form in form_provided.items():
+        if was_form:
+            resolved_field_sources[field_k] = "form"
+
     claim = Claim(
         claim_id=claim_id,
         policy_id=policy_id,
@@ -212,13 +237,8 @@ async def create_claim(
         total_claimed=total_claimed,
         documents=documents,
         extracted_entities=extracted_entities,
-        field_sources={
-            "diagnosis_code": "gemini",
-            "doctor_id": "gemini",
-            "total_claimed": "docai",
-            "line_items": "docai",
-            "subtotal": "docai"
-        },
+        field_sources=resolved_field_sources,
+        metadata=docai_claim.metadata.copy() if (docai_claim and docai_claim.metadata) else {},
         created_at=datetime.utcnow()
     )
 

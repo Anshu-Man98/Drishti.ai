@@ -39,11 +39,6 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
         doc = claim.documents[0]
         try:
             doc_bytes = storage_service.read_file(doc.gcs_uri)
-            with pdfplumber.open(io.BytesIO(doc_bytes)) as pdf:
-                page_text = pdf.pages[0].extract_text() or ""
-                m = re.search(r"Bill\s*(?:No|Number)?[:\s]+([A-Za-z0-9\-]+)", page_text)
-                if m:
-                    bill_no = m.group(1).strip()
         except Exception as e:
             findings.append(Finding(
                 finding_id=f"F-ERR-CROSSREF-{len(findings)+1}",
@@ -57,6 +52,20 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
                 computed_chip="Read Error",
                 computed_details={"error": str(e), "gcs_uri": doc.gcs_uri}
             ))
+            doc_bytes = None
+
+        if doc_bytes:
+            if doc_bytes.startswith(b"%PDF"):
+                try:
+                    with pdfplumber.open(io.BytesIO(doc_bytes)) as pdf:
+                        page_text = pdf.pages[0].extract_text() or ""
+                        m = re.search(r"Bill\s*(?:No|Number)?[:\s]+([A-Za-z0-9\-]+)", page_text)
+                        if m:
+                            bill_no = m.group(1).strip()
+                except Exception:
+                    pass
+            else:
+                bill_no = (claim.metadata or {}).get("bill_no")
 
     # 1. Exact Duplicate Search
     exact_matches = bq_warehouse.find_exact_duplicates(

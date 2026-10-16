@@ -90,6 +90,9 @@ def extract_text_layers(
     visible_runs: List[Dict[str, Any]] = []
     hidden_runs: List[Dict[str, Any]] = []
 
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+        return {"visible": [], "hidden": [], "metadata": []}
+
     # 1. First pass with pypdf: track render mode 3 (Tr 3, invisible text) in content stream
     page_tr3_strings: Dict[int, List[str]] = {}
     page_late_rects: Dict[int, List[Tuple[float, float, float, float]]] = {}

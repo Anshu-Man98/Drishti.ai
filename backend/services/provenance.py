@@ -414,6 +414,15 @@ def verify_document(
             "diff": None
         }
 
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+        return {
+            "status": "not_applicable",
+            "detail": "Non-PDF document format; FinShield digital provenance not applicable.",
+            "payload": None,
+            "carrier": None,
+            "diff": None
+        }
+
     recovered_carrier: Optional[str] = None
     envelope: Optional[Dict[str, Any]] = None
 

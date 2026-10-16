@@ -59,7 +59,8 @@ def validate_arithmetic(
     doc_id: str = "doc_main",
     page: int = 1,
     subtotal_bbox: Optional[List[float]] = None,
-    total_bbox: Optional[List[float]] = None
+    total_bbox: Optional[List[float]] = None,
+    extraction_incomplete: bool = False
 ) -> Dict[str, Any]:
     """
     Validates line item products, line item sums, and invoice total amount.
@@ -73,6 +74,49 @@ def validate_arithmetic(
     stated_subtotal_paise = to_paise(subtotal)
     stated_tax_paise = to_paise(tax)
     stated_total_paise = to_paise(total)
+
+    if extraction_incomplete:
+        calc_sub_paise = sum(to_paise(item.get("amount", 0.0)) for item in line_items)
+        calc_sub_rupees = to_rupees(calc_sub_paise)
+        sub_rupees = subtotal if subtotal is not None else 0.0
+        diff_rupees = abs(calc_sub_rupees - sub_rupees)
+        findings.append(Finding(
+            finding_id="F-EXTRACTION-INCOMPLETE",
+            agent=AgentName.POLICY,
+            check_id="EXTRACTION_INCOMPLETE",
+            severity=Severity.HIGH,
+            title="Extraction Incomplete: Itemized charges do not reconcile with subtotal",
+            explanation=(
+                f"Extracted line items sum to ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "
+                f"₹{sub_rupees:,.2f}. The document's itemized breakdown could not be completely parsed."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=page,
+                bbox=subtotal_bbox,
+                quote=f"Extracted sum: ₹{calc_sub_rupees:,.2f}, Printed subtotal: ₹{sub_rupees:,.2f}"
+            )],
+            confidence=0.95,
+            computed_chip=f"Extraction incomplete (Δ ₹{diff_rupees:,.0f})",
+            computed_details={
+                "extracted_sum": calc_sub_rupees,
+                "printed_subtotal": sub_rupees,
+                "discrepancy": diff_rupees
+            }
+        ))
+        return {
+            "status": "incomplete",
+            "findings": findings,
+            "discrepancy_rupees": diff_rupees,
+            "computed": {
+                "calculated_subtotal_paise": calc_sub_paise,
+                "stated_subtotal_paise": stated_subtotal_paise,
+                "stated_tax_paise": stated_tax_paise,
+                "stated_total_paise": stated_total_paise,
+                "extraction_incomplete": True
+            }
+        }
+
 
     # 1. Validate qty * unit_price == amount for each line item
     calculated_subtotal_paise = 0
@@ -258,6 +302,8 @@ def check_policy_caps(
 
         for idx, item in enumerate(line_items):
             desc = item.get("description", "").lower()
+            if any(k in desc for k in ["icu", "iccu", "intensive care"]):
+                continue  # Evaluated under ICU cap
             if any(k in desc for k in ["room", "ward", "bed", "suite"]):
                 unit_price = float(item.get("unit_price", 0.0))
                 unit_price_paise = to_paise(unit_price)

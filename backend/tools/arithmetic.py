@@ -17,7 +17,8 @@ def validate_arithmetic(
     doc_id: str = "doc_main",
     page: int = 1,
     subtotal_bbox: Optional[List[float]] = None,
-    total_bbox: Optional[List[float]] = None
+    total_bbox: Optional[List[float]] = None,
+    extraction_incomplete: bool = False
 ) -> List[Finding]:
     """
     Validates line item products, line item sums, and total amount.
@@ -26,6 +27,29 @@ def validate_arithmetic(
     """
     findings: List[Finding] = []
     TOLERANCE = 1.0
+
+    if extraction_incomplete:
+        calc_sub = sum(float(item.get("amount", 0.0)) for item in line_items)
+        findings.append(Finding(
+            finding_id="F-EXTRACTION-INCOMPLETE",
+            agent=AgentName.POLICY,
+            check_id="EXTRACTION_INCOMPLETE",
+            severity=Severity.HIGH,
+            title="Document extraction incomplete: itemized charges do not reconcile with subtotal",
+            explanation=(
+                f"Line items sum to ₹{calc_sub:,.2f} but the printed subtotal is ₹{subtotal:,.2f}. "
+                f"Some line items or charges could not be completely parsed from the document scan."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=page,
+                bbox=subtotal_bbox,
+                quote=f"Extracted sum: ₹{calc_sub:,.2f}, Printed subtotal: ₹{subtotal:,.2f}"
+            )],
+            confidence=0.95
+        ))
+        return findings
+
 
     # 1. Validate qty * unit_price == amount for each line item
     calculated_subtotal = 0.0

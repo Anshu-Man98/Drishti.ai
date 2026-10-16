@@ -45,7 +45,8 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
             "total": claim.total_claimed,
             "doc_id": doc_id,
             "subtotal_bbox": sub_evidence.bbox if sub_evidence else None,
-            "total_bbox": tot_evidence.bbox if tot_evidence else None
+            "total_bbox": tot_evidence.bbox if tot_evidence else None,
+            "extraction_incomplete": bool(claim.metadata.get("extraction_incomplete", False)) if claim.metadata else False
         },
         claim_id=claim.claim_id,
         agent_name="policy"

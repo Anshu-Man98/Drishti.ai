@@ -365,7 +365,22 @@ def run_claims_fraud_pipeline(
         ]
 
         if ml_prob > 0.6:
-            feat_summaries = [f"{f.feature.replace('_', ' ')} (impact: {f.attribution:+.2f})" for f in top_ml_features[:3]]
+            def _clean_feat_display(name: str) -> str:
+                labels = {
+                    "doctor_distinct_cities_24h": "doctor multi-city presence",
+                    "claimant_prior_claims_90d": "claimant prior claims frequency",
+                    "days_policy_start_to_claim": "days policy start to claim",
+                    "amount_vs_diagnosis_median_ratio": "amount vs diagnosis median ratio",
+                    "room_rent_vs_cap_ratio": "room rent vs cap ratio",
+                    "shared_bank_account_count": "shared bank account count",
+                    "provider_claims_per_day": "provider claims per day",
+                    "line_item_count": "line item count",
+                    "length_of_stay": "length of stay",
+                    "claim_amount": "claim amount",
+                }
+                return labels.get(name, name.replace("_24h", "").replace("_90d", "").replace("_", " "))
+
+            feat_summaries = [f"{_clean_feat_display(f.feature)} (impact: {f.attribution:+.2f})" for f in top_ml_features[:3]]
             all_findings.append(Finding(
                 finding_id="F-ML-PREDICT-ELEVATED",
                 agent=AgentName.ML,

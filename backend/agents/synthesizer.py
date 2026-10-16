@@ -64,22 +64,20 @@ def synthesize_dossier(
         if ml_score is not None and top_ml_features:
             ml_pct = ml_score * 100
             top_exps = []
+            room_cap_finding = next(
+                (f for f in all_findings if f.check_id in ("POLICY_ROOM_RENT_CAP_EXCEEDED", "ROOM_RENT_CAP_EXCEEDED", "POLICY_ICU_CAP_EXCEEDED")),
+                None
+            )
             for feat_item in top_ml_features[:3]:
                 fname = feat_item.feature if hasattr(feat_item, "feature") else feat_item.get("feature", "")
                 attr = feat_item.attribution if hasattr(feat_item, "attribution") else feat_item.get("attribution", 0.0)
                 if fname == "amount_vs_diagnosis_median_ratio":
-                    ratio = getattr(claim, "total_claimed", 0) / 65000.0
                     if attr > 0:
-                        top_exps.append(f"claim amount is {ratio:.1f}× median diagnosis benchmark")
+                        top_exps.append(f"elevated amount vs diagnosis median ratio (impact: {attr:+.2f})")
                     else:
                         top_exps.append(f"claim amount aligned with diagnosis benchmark (impact: {attr:+.2f})")
                 elif fname == "room_rent_vs_cap_ratio":
-                    has_room_cap_breach = any(
-                        "room" in f.title.lower() or "room" in f.explanation.lower()
-                        for f in all_findings
-                        if f.agent == AgentName.POLICY
-                    )
-                    if attr > 0 and has_room_cap_breach:
+                    if room_cap_finding:
                         top_exps.append(f"room rent rate exceeds eligible policy ceiling (impact: {attr:+.2f})")
                     elif attr > 0:
                         top_exps.append(f"elevated room rent ratio (impact: {attr:+.2f})")
@@ -87,21 +85,22 @@ def synthesize_dossier(
                         top_exps.append(f"room rent rate is within eligible policy ceiling (reassuring factor: {attr:+.2f})")
                 elif fname == "doctor_distinct_cities_24h":
                     if attr > 0:
-                        top_exps.append("attending doctor has activity in multiple distinct cities within 24 hours")
+                        top_exps.append(f"attending doctor active across multiple distinct cities (impact: {attr:+.2f})")
                     else:
                         top_exps.append(f"doctor city presence normal (impact: {attr:+.2f})")
                 elif fname == "claimant_prior_claims_90d":
                     if attr > 0:
-                        top_exps.append("elevated claimant claim frequency over past 90 days")
+                        top_exps.append(f"elevated claimant prior claim frequency (impact: {attr:+.2f})")
                     else:
                         top_exps.append(f"claimant claim frequency normal (impact: {attr:+.2f})")
                 elif fname == "shared_bank_account_count":
                     if attr > 0:
-                        top_exps.append("settlement bank account is shared across multiple claimants")
+                        top_exps.append(f"settlement bank account is shared across multiple claimants (impact: {attr:+.2f})")
                     else:
                         top_exps.append(f"bank account unshared (impact: {attr:+.2f})")
                 else:
-                    top_exps.append(f"{fname.replace('_', ' ')} (impact: {attr:+.2f})")
+                    clean_name = fname.replace("_24h", "").replace("_90d", "").replace("_", " ")
+                    top_exps.append(f"{clean_name} (impact: {attr:+.2f})")
             
             summary += f"BigQuery ML predicts {ml_pct:.1f}% fraud probability, driven by: {'; '.join(top_exps)}. "
 
@@ -116,9 +115,19 @@ def synthesize_dossier(
                 "Immediate claim rejection and referral to Special Investigation Unit (SIU) recommended."
             )
         elif verdict == Verdict.REVIEW:
-            summary += (
-                "Policy ceiling or calculation variances require manual adjuster verification prior to settlement."
+            has_policy_finding = any(f.agent == AgentName.POLICY for f in all_findings)
+            has_math_finding = any(
+                f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH")
+                for f in all_findings
             )
+            if has_policy_finding and has_math_finding:
+                summary += "Policy ceiling limits and calculation variances require manual adjuster verification prior to settlement."
+            elif has_policy_finding:
+                summary += "Policy ceiling limits require manual adjuster verification prior to settlement."
+            elif has_math_finding:
+                summary += "Calculation variances require manual adjuster verification prior to settlement."
+            else:
+                summary += "Specialist review is required prior to settlement based on the flagged anomalies."
         else:
             summary += "Minor observations noted; overall claim within acceptable risk thresholds."
 

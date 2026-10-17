@@ -3,7 +3,7 @@
 scripts/run_live_duel.py
 
 Executes a live 5-round adversarial duel between Red-Team Fraudster and FinShield Defender
-using Vertex AI Gemini Pro and the real multi-agent claims scrutiny pipeline.
+using Vertex AI Gemini and the multi-agent claims scrutiny pipeline.
 """
 
 import os
@@ -67,8 +67,18 @@ def main():
         else:
             print("  Catching Check IDs: None")
 
+    if duel_res.learned_pattern:
+        print("\nLEARNED ADVERSARIAL PATTERN REGISTERED:")
+        print(f"  Pattern ID: {duel_res.learned_pattern.get('pattern_id')}")
+        print(f"  Title: {duel_res.learned_pattern.get('title')}")
+        print(f"  Signature: {duel_res.learned_pattern.get('signature')}")
+        print(f"  Typical Severity: {duel_res.learned_pattern.get('typical_severity')}")
+
     if duel_res.winning_side == "defender":
-        print("\nSUCCESS: FinShield Defender successfully neutralized all fraud attempts across all 5 rounds!")
+        if duel_res.learned_pattern:
+            print("\nSUCCESS: Evade -> Learn -> Catch cycle complete! FinShield Defender learned the fraudster's evasion tactic and neutralized it in subsequent rounds.")
+        else:
+            print("\nSUCCESS: FinShield Defender successfully neutralized all fraud attempts across all rounds!")
     else:
         print(f"\nFraudster evaded in round {duel_res.rounds[-1].round_number}. Pattern registered.")
 

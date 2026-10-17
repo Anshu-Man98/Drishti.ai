@@ -251,7 +251,7 @@ def test_duel_api_endpoints(clean_base_claim):
 
     # 1. Start duel via API
     res = client.post(
-        "/api/duel/start",
+        "/api/duel/start?wait=true",
         json={"claim_id": clean_base_claim.claim_id, "rounds": 1},
         headers={"Authorization": "Bearer test-token"}
     )
@@ -289,7 +289,7 @@ def test_duel_start_without_claim_id_picks_authentic_claim(clean_base_claim):
     db_service.save_claim(clean_base_claim)
 
     res = client.post(
-        "/api/duel/start",
+        "/api/duel/start?wait=true",
         json={"rounds": 1},
         headers={"Authorization": "Bearer test-token"}
     )
@@ -298,4 +298,46 @@ def test_duel_start_without_claim_id_picks_authentic_claim(clean_base_claim):
     assert "duel_id" in duel_data
     assert len(duel_data["rounds"]) == 1
     assert duel_data["rounds"][0]["baseline_amount"] == clean_base_claim.total_claimed
+
+
+def test_adversarial_evasion_learning_loop_e2e(clean_base_claim):
+    """
+    Validates the complete 'evade -> learn -> catch' adversarial cycle:
+      - Round 1: Fraudster attempts naive inflation -> Caught by baseline checks.
+      - Round 2: Fraudster executes tariff arbitrage / upcoding -> Evades detection (verdict == APPROVE, >= 1.2x).
+      - Feedback loop: Evasion tactic is extracted and registered into learned_patterns catalog.
+      - Round 3: Fraudster repeats/refines the tactic -> Caught by Defender's RAG agent matching the newly learned pattern.
+      - Outcome: Defender wins overall after learning and neutralizing the evasive strategy.
+    """
+    db_service.save_claim(clean_base_claim)
+    result: DuelResult = run_duel(clean_base_claim, max_rounds=3, duel_id="DUEL-LEARNING-E2E")
+
+    assert len(result.rounds) == 3
+    r1, r2, r3 = result.rounds[0], result.rounds[1], result.rounds[2]
+
+    # Round 1: Caught
+    assert r1.caught is True
+    assert r1.evaded is False
+    assert r1.verdict in ("REVIEW", "REJECT")
+
+    # Round 2: Evaded
+    assert r2.evaded is True
+    assert r2.caught is False
+    assert r2.verdict == "APPROVE"
+    assert r2.total_claimed >= clean_base_claim.total_claimed * 1.20
+
+    # Learning Feedback Loop: Pattern successfully registered
+    assert result.learned_pattern is not None
+    learned_pid = result.learned_pattern["pattern_id"]
+    assert learned_pid.startswith("PAT-LEARNED-")
+
+    # Round 3: Caught by the learned pattern
+    assert r3.caught is True
+    assert r3.evaded is False
+    assert r3.verdict in ("REVIEW", "REJECT")
+    assert any("matches_known_pattern" in cid or "learned" in cid for cid in r3.catching_check_ids)
+
+    # Defender wins after neutralizing the evasion tactic
+    assert result.winning_side == "defender"
+    assert result.status == "completed"
 

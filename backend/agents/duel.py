@@ -33,6 +33,7 @@ class FraudsterMutationOutput(BaseModel):
     tactic: str = Field(description="Adversarial tactic name/summary")
     rationale: str = Field(description="Why this mutation is expected to evade FinShield checks")
     target_multiplier: float = Field(default=1.25, description="Payout target multiplier over baseline")
+    diagnosis_code: Optional[str] = Field(default=None, description="Updated or upcoded diagnosis code if needed to circumvent tariff ceilings")
     line_item_mutations: List[Dict[str, Any]] = Field(default_factory=list, description="Updated or added line items")
     manipulation_type: str = Field(default="subtle_padding", description="Category of fraud manipulation")
 
@@ -97,7 +98,7 @@ def _generate_adversarial_mutation_gemini(
     round_num: int
 ) -> Optional[FraudsterMutationOutput]:
     """
-    Calls Gemini Pro to synthesize a targeted adversarial mutation based on prior catches.
+    Calls Gemini to synthesize a targeted adversarial mutation based on prior catches.
     """
     try:
         from google.genai import types
@@ -124,13 +125,20 @@ def _generate_adversarial_mutation_gemini(
         }
 
         prompt = (
-            f"You are the Red-Team Fraudster Simulator in round {round_num}.\n"
+            f"You are FinShield's Red-Team Fraudster Simulator in round {round_num}.\n"
             f"Base claim:\n{json.dumps(claim_summary, indent=2)}\n\n"
             f"Prior round defense catches:\n{json.dumps(prior_catches, indent=2)}\n\n"
-            "Invent an evasion tactic that increases the total claim by 22% to 35% above the baseline "
-            "without triggering the checks that previously caught you. Ensure line item sums and taxes "
-            "strictly balance to prevent arithmetic detection. "
-            "Return JSON matching keys: tactic, rationale, target_multiplier, manipulation_type, line_item_mutations "
+            "Objective: Mutate this claim to increase total payout by 22% to 35% above the baseline "
+            "while evading FinShield's multi-agent scrutiny pipeline.\n\n"
+            "Round Guidelines:\n"
+            "- If round 1: Try a direct inflation on the existing diagnosis (25-35% price increase across line items).\n"
+            "- If prior rounds caught you on benchmark checks (TOTAL_ABOVE_DIAGNOSIS_BENCHMARK, LINE_ITEM_PRICE_ABOVE_BENCHMARK, or UNBUNDLED_OR_PADDED_ANCILLARY):\n"
+            "  Circumvent the diagnosis benchmark ceiling by executing a tariff arbitrage / diagnosis upcoding tactic. "
+            "  Select an acute inpatient diagnosis code with higher benchmark allowances (e.g. I20.9 Angina / Acute Coronary Syndrome with telemetry & cardiac investigations where median is ₹132,000 and upper band is ₹185,000, or M54.5 Radiculopathy where upper band is ₹182,000). Set 'diagnosis_code' to that code. "
+            "  Target total amount between ₹91,000 and ₹95,000 (which achieves a 22% to 28% payout increase above baseline ₹74,550 while sitting comfortably below the ₹132,000 median for I20.9). "
+            "  Distribute line items cleanly across valid categories (Ward, Investigations, Pharmacy, Consultation) with realistic unit prices within category benchmarks (e.g. ward bed <= 3,500/day, consultation <= 2,000/visit, diagnostics <= 5,000/test), keep room rent strictly <= 5,000/day, keep ancillary share reasonable, and ensure line item sums strictly balance (qty * unit_price == amount) with subtotal and total matching.\n"
+            "- If round 3 or later: Re-use, adapt, or refine the evasion tactic to circumvent newly active pattern detections.\n\n"
+            "Return JSON matching keys: tactic, rationale, target_multiplier, diagnosis_code, manipulation_type, line_item_mutations "
             "(list of {description, qty, unit_price, amount, category})."
         )
 
@@ -171,6 +179,10 @@ def apply_mutation_to_claim(
     """
     mutated = deepcopy(base_claim)
     mutated.claim_id = f"{base_claim.claim_id}-D{round_num}"
+
+    # Apply diagnosis upcoding/mutation if proposed by fraudster
+    if mutation.diagnosis_code:
+        mutated.diagnosis_code = mutation.diagnosis_code
 
     # Build mutated line items
     new_line_items = []
@@ -234,9 +246,10 @@ def run_duel(
     Executes a multi-round adversarial duel:
       - Fraudster: ADK LlmAgent / adversarial mutator.
       - Defender: real run_claims_fraud_pipeline.
-      - Up to 5 rounds (or stops early if Fraudster evades detection with claim_amount >= baseline * 1.2).
+      - Up to 5 rounds.
       - On evasion, registers the tactic into BigQuery / Firestore learned_patterns,
         making it immediately retrievable by the RAG pattern agent.
+      - In subsequent rounds, the defender uses the newly learned pattern to catch the evasion tactic.
     """
     duel_id = duel_id or f"DUEL-{uuid.uuid4().hex[:8].upper()}"
     baseline_amount = float(base_claim.total_claimed)
@@ -307,36 +320,43 @@ def run_duel(
         logger.info("Duel %s Round %d: Tactic='%s', Total=₹%.2f (%.1fx), Verdict=%s, Risk=%.1f, Caught=%s",
                     duel_id, round_num, mutation.tactic, mutated_total, inflation_ratio, verdict_str, dossier.risk_score, caught)
 
-        # 5. Handle Evasion Event
+        # 5. Handle Evasion Event: register learned evasion pattern into BigQuery, Firestore, and RAG catalog
         if evaded:
-            winning_side = "fraudster"
-            status = "evaded"
-
-            # Register learned evasion pattern into BigQuery, Firestore, and RAG catalog
-            pattern_id = f"PAT-LEARNED-{uuid.uuid4().hex[:8].upper()}"
-            learned_card = {
-                "pattern_id": pattern_id,
-                "fraud_type": "learned_evasion",
-                "title": f"Learned Evasion: {mutation.tactic[:60]}",
-                "tactic": mutation.tactic,
-                "narrative": (
-                    f"Evasion tactic observed in adversarial duel {duel_id} (Round {round_num}). "
-                    f"Fraudster inflated claim by {int((inflation_ratio-1)*100)}% to ₹{mutated_total:.2f}. "
-                    f"Rationale: {mutation.rationale}"
-                ),
-                "signature": f"{mutation.tactic} total_claimed:{mutated_total:.0f} diagnosis_code:{candidate_claim.diagnosis_code}",
-                "feature_signatures": {
+            if not learned_pattern:
+                pattern_id = f"PAT-LEARNED-{uuid.uuid4().hex[:8].upper()}"
+                learned_card = {
+                    "pattern_id": pattern_id,
+                    "fraud_type": "learned_evasion",
+                    "title": f"Learned Evasion: {mutation.tactic[:60]}",
                     "tactic": mutation.tactic,
-                    "inflation_ratio": inflation_ratio,
-                    "manipulation_type": mutation.manipulation_type,
-                    "diagnosis_code": candidate_claim.diagnosis_code
-                },
-                "typical_severity": "HIGH",
-                "evaded_at": datetime.utcnow().isoformat()
-            }
-            learned_pattern = register_learned_pattern(learned_card)
-            logger.info("Learned Evasion Pattern Registered: %s (%s)", pattern_id, mutation.tactic)
-            break
+                    "narrative": (
+                        f"Evasion tactic observed in adversarial duel {duel_id} (Round {round_num}). "
+                        f"Fraudster inflated claim by {int((inflation_ratio-1)*100)}% to ₹{mutated_total:.2f}. "
+                        f"Rationale: {mutation.rationale}"
+                    ),
+                    "signature": f"{mutation.tactic} total_claimed:{mutated_total:.0f} diagnosis_code:{candidate_claim.diagnosis_code}",
+                    "feature_signatures": {
+                        "tactic": mutation.tactic,
+                        "inflation_ratio": inflation_ratio,
+                        "manipulation_type": mutation.manipulation_type,
+                        "diagnosis_code": candidate_claim.diagnosis_code
+                    },
+                    "typical_severity": "HIGH",
+                    "evaded_at": datetime.utcnow().isoformat()
+                }
+                learned_pattern = register_learned_pattern(learned_card)
+                logger.info("Learned Evasion Pattern Registered: %s (%s)", pattern_id, mutation.tactic)
+            # Do NOT break: proceed to next round so Defender pipeline demonstrates catching the evasion tactic
+
+    # Determine winner & status:
+    # If the fraudster successfully evaded in the final round, fraudster wins.
+    # Otherwise, if the defender caught the fraudster in the final round (demonstrating the catch loop), defender wins!
+    if rounds and rounds[-1].evaded:
+        winning_side = "fraudster"
+        status = "evaded"
+    else:
+        winning_side = "defender"
+        status = "completed" if learned_pattern else "caught"
 
     return DuelResult(
         duel_id=duel_id,

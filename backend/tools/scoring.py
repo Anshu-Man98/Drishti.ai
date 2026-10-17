@@ -32,12 +32,20 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     Hybrid formula:
       final_risk_score = round(0.6 * agent_score + 40 * ml_probability)
     """
-    # Guardrail A4: A finding whose only evidence is a retrieved pattern is capped at severity "low"
+    # Guardrail A4: A finding whose only evidence is a general retrieved pattern is capped at severity "low"
     # and cannot by itself move a verdict from approve to reject.
+    # Active learned evasion patterns from the adversarial arena are exempt from this cap.
     for f in findings:
-        is_rag_pattern = (f.agent == AgentName.RAG) or (
-            f.evidence and all(ev.layer == "retrieved" for ev in f.evidence)
+        is_learned = (
+            (f.computed_details and f.computed_details.get("is_learned_evasion")) or
+            (f.evidence and any("PAT-LEARNED-" in str(ev.doc_id) for ev in f.evidence)) or
+            "learned" in f.title.lower() or
+            f.check_id == "learned_evasion_match"
         )
+        is_rag_pattern = ((f.agent == AgentName.RAG) or (
+            f.evidence and all(ev.layer == "retrieved" for ev in f.evidence)
+        )) and not is_learned
+
         if is_rag_pattern:
             if f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL):
                 f.severity = Severity.LOW
@@ -122,6 +130,12 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         )
         for f in findings
     )
+    has_learned_pattern_match = any(
+        f.agent == AgentName.RAG and
+        f.check_id in ("matches_known_pattern", "learned_evasion_match") and
+        f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
+        for f in findings
+    )
 
     has_deception_fraud = (
         has_critical_injection or
@@ -180,6 +194,9 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         if has_failed_agent:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 30)
+        elif has_learned_pattern_match:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 65)
         elif has_high_inflation:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 45)
@@ -190,6 +207,8 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
             verdict = Verdict.APPROVE
     elif risk_score < 70:
         verdict = Verdict.REVIEW
+        if has_learned_pattern_match:
+            risk_score = max(risk_score, 65)
     else:
         # If the claim is purely a policy clause tariff cap overrun (e.g. room rent cap breach)
         # without deceptive fraud, route to adjuster REVIEW for line-item deduction.
@@ -204,6 +223,12 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         1 for f in findings if f.severity in (Severity.HIGH, Severity.CRITICAL)
     )
     if high_or_critical_count >= 2:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 65)
+
+    # Learned pattern guardrail: active learned evasion match cannot leave claim at APPROVE
+    if has_learned_pattern_match:
         if verdict == Verdict.APPROVE:
             verdict = Verdict.REVIEW
         risk_score = max(risk_score, 65)

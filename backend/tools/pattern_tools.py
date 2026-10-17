@@ -20,6 +20,11 @@ PATTERNS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "patter
 _RUNTIME_LEARNED_PATTERNS: List[Dict[str, Any]] = []
 
 
+def clear_learned_patterns_cache() -> None:
+    """Clears in-memory runtime learned pattern cache (for test isolation)."""
+    _RUNTIME_LEARNED_PATTERNS.clear()
+
+
 def register_learned_pattern(pattern: Dict[str, Any]) -> Dict[str, Any]:
     """
     Registers a new learned evasion tactic from F6 Dueling AI.
@@ -173,6 +178,11 @@ def build_claim_fingerprint(
         # Standard hash format
         fingerprint_parts.append(f"bank_account_hash:{bank_hash[:8]}")
 
+    # Check adversarial metadata if present
+    if hasattr(claim, "metadata") and isinstance(claim.metadata, dict):
+        if "adversarial_tactic" in claim.metadata:
+            fingerprint_parts.append(str(claim.metadata["adversarial_tactic"]))
+
     # 3. Findings check_ids from the ParallelAgent specialists
     if findings:
         for f in findings:
@@ -194,13 +204,34 @@ def build_claim_fingerprint(
     return " ".join(fingerprint_parts)
 
 
+def _clean_text_for_tokens(text: str) -> List[str]:
+    """Helper to tokenize and filter query and pattern strings."""
+    # Bind decimal subcodes in alphanumeric codes like K35.8 -> k35_8, S82.8 -> s82_8
+    text_bound = re.sub(r"\b([a-zA-Z]\d{2,3})\.(\d{1,2})\b", r"\1_\2", text)
+    tokens = re.findall(r"\w+", text_bound.lower())
+    stop_words = {
+        "the", "and", "or", "in", "on", "at", "to", "for", "of", "with", "is", "a", "an", "this", "that",
+        "diagnosis_code", "total_claimed", "length_of_stay", "max_room_rent_rate", "bank_account_hash",
+        "finding_check", "diagnosis", "total", "claimed", "code", "finding", "check", "charges", "charge",
+        "per", "day", "days", "length", "stay", "room", "rent", "rate", "max", "bank", "account", "hash"
+    }
+    result = []
+    for t in tokens:
+        if t in stop_words:
+            continue
+        if t.isdigit() and len(t) <= 1:
+            continue
+        result.append(t)
+    return result
+
+
 def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
     """
     Computes a relevance score between the claim fingerprint and a pattern card.
     Considers fraud type, observable signature, and title.
     """
-    q_tokens = set(re.findall(r"\w+", query.lower()))
-    if not q_tokens:
+    q_meaningful = set(_clean_text_for_tokens(query))
+    if not q_meaningful:
         return 0.0
 
     # Direct pattern ID match shortcut
@@ -214,20 +245,15 @@ def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
         f"{card.get('tactic', '')} "
         f"{card.get('signature', '')} "
         f"{card.get('narrative', '')}"
-    ).lower()
-    card_tokens = set(re.findall(r"\w+", target_str))
-
-    stop_words = {"the", "and", "or", "in", "on", "at", "to", "for", "of", "with", "is", "a", "an", "this", "that"}
-    q_meaningful = q_tokens - stop_words
-    if not q_meaningful:
-        q_meaningful = q_tokens
+    )
+    card_tokens = set(_clean_text_for_tokens(target_str))
 
     overlap = q_meaningful.intersection(card_tokens)
     if not overlap:
         return 0.0
 
     # Match ratio based on signature terms
-    sig_tokens = set(re.findall(r"\w+", card.get("signature", "").lower())) - stop_words
+    sig_tokens = set(_clean_text_for_tokens(card.get("signature", "")))
     sig_overlap = q_meaningful.intersection(sig_tokens)
 
     # Base recall across query
@@ -239,7 +265,10 @@ def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
     # Boost if fraud_type matched exactly
     type_boost = 0.3 if card.get("fraud_type", "").lower() in query.lower() else 0.0
 
-    final_score = min(0.98, base_score * 0.4 + sig_boost + type_boost)
+    # Boost if active learned evasion pattern matches key signature traits
+    learned_boost = 0.25 if (card.get("fraud_type") == "learned_evasion" and len(sig_overlap) >= 2) else 0.0
+
+    final_score = min(0.98, base_score * 0.4 + sig_boost + type_boost + learned_boost)
     return round(final_score, 3)
 
 

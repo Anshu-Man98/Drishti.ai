@@ -352,6 +352,7 @@ export interface DuelStatusResponse {
   winning_side?: string | null;
   error?: string | null;
   rounds: DuelRound[];
+  learned_pattern?: LearnedPattern | null;
 }
 
 

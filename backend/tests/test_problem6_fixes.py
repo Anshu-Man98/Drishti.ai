@@ -89,7 +89,7 @@ def test_duel_start_with_no_claim_id_autopick(sample_clean_claim, monkeypatch):
     monkeypatch.setattr("backend.agents.duel.run_claims_fraud_pipeline", lambda *args, **kwargs: fake_dossier)
 
     # 1. Test POST with empty dict {}
-    res_empty = client.post("/duel/start", json={"rounds": 1})
+    res_empty = client.post("/duel/start?wait=true", json={"rounds": 1})
     assert res_empty.status_code == 200, f"Expected 200, got {res_empty.status_code}: {res_empty.text}"
     data_empty = res_empty.json()
     assert "duel_id" in data_empty
@@ -97,7 +97,7 @@ def test_duel_start_with_no_claim_id_autopick(sample_clean_claim, monkeypatch):
     assert data_empty["base_claim_id"] == "CLM-G1-CLEAN-DEMO"
 
     # 2. Test POST with no body
-    res_no_body = client.post("/duel/start")
+    res_no_body = client.post("/duel/start?wait=true")
     assert res_no_body.status_code == 200, f"Expected 200, got {res_no_body.status_code}: {res_no_body.text}"
     data_no_body = res_no_body.json()
     assert "duel_id" in data_no_body

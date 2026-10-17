@@ -55,44 +55,9 @@ gcloud builds submit \
     .
 
 # ------------------------------------------------------------------------------
-# 3. Deploy to Cloud Run
-# Flags explained:
-#   --region: Deploys close to Indian health-data users and Vertex AI endpoints (asia-south1)
-#   --service-account: Dedicated runtime service account with least-privilege IAM
-#   --memory 2Gi: Accommodates PDF parsing, image decompression, and BQML feature vectors
-#   --cpu 2: Provides 2 vCPUs for responsive concurrent API and agent task handling
-#   --concurrency 20: Caps concurrent requests per container to avoid memory thrashing
-#   --timeout 300: 5-minute timeout for multi-agent adversarial duels and heavy OCR pipeline
-#   --min-instances 1: Keeps 1 instance warm to avoid cold starts for hackathon judges
-#   --max-instances 2: Keeps claim-lock/rate-limit state coherent and caps maximum cloud cost
-#   --cpu-boost: Allocates extra CPU during container startup
-#   --no-cpu-throttling: Essential: allows background tasks (duels, async analysis) to run after HTTP 200
-#   --allow-unauthenticated: Exposes public HTTPS URL for hackathon evaluation
-#   --port 8080: Standard container listening port
-#   --startup-probe: Verifies live GCP connectivity (/api/health) with generous timeout
-#   --liveness-probe: Fast health check on SPA root (/)
+# 3. Cloud Build executes Build -> Push -> Cloud Run Deploy atomically
 # ------------------------------------------------------------------------------
-echo "Deploying Cloud Run service '${SERVICE_NAME}'..."
-gcloud run deploy "${SERVICE_NAME}" \
-    --project="${PROJECT_ID}" \
-    --image="${IMAGE_URI}" \
-    --region="${REGION}" \
-    --platform="managed" \
-    --allow-unauthenticated \
-    --service-account="${SA_EMAIL}" \
-    --memory="2Gi" \
-    --cpu="2" \
-    --concurrency="20" \
-    --timeout="300" \
-    --min-instances="1" \
-    --max-instances="2" \
-    --cpu-boost \
-    --no-cpu-throttling \
-    --port="8080" \
-    --set-env-vars="ENVIRONMENT=production,GCP_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GCP_REGION=${REGION},GCS_BUCKET_NAME=finshield-claims-docs-${PROJECT_ID},BIGQUERY_DATASET=finshield,FIRESTORE_DATABASE=(default),DOCUMENTAI_PROCESSOR_ID=projects/848168056257/locations/us/processors/8cb7d125a43425e4,DOCUMENTAI_LOCATION=us,GEMINI_PRO_MODEL=gemini-3.5-flash,GEMINI_FLASH_MODEL=gemini-3.5-flash,REQUIRE_CLOUD_ON_STARTUP=true,RATE_LIMIT_ENABLED=true,ALLOW_DEV_TOKENS=true" \
-    --set-secrets="FINSHIELD_PROVENANCE_KEY=finshield-provenance-signing-key:latest" \
-    --startup-probe="timeoutSeconds=20,periodSeconds=20,failureThreshold=6,httpGet.path=/api/health,httpGet.port=8080" \
-    --liveness-probe="timeoutSeconds=5,periodSeconds=15,failureThreshold=3,httpGet.path=/,httpGet.port=8080"
+echo "Cloud Build pipeline completed successfully."
 
 # ------------------------------------------------------------------------------
 # 4. Output service URL and deployment metadata

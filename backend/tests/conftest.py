@@ -626,6 +626,14 @@ class FakeGenAIModels:
         elif "strongest evidence" in prompt_str.lower():
             fid = next((f for f in finding_ids if "FOREN" in f or "MODDATE" in f or "PRODUCER" in f or "FONT" in f), finding_ids[0] if finding_ids else "F1")
             text = f"The strongest evidence is documented in finding [{fid}] regarding forensic alterations, Photoshop producer tags, and metadata tampering."
+        elif "above benchmark" in prompt_str.lower() or "price benchmark" in prompt_str.lower() or "benchmark" in prompt_str.lower():
+            f_item = next((f for f in finding_ids if "ITEM" in f or "BENCH-ITEM" in f), "F-BENCH-ITEM-1")
+            f_tot = next((f for f in finding_ids if "TOTAL" in f or "BENCH-TOTAL" in f), "F-BENCH-TOTAL-P95")
+            text = (
+                f"Based on the case file, the room rent unit price was billed at ₹14,500.00 vs benchmark p95 of ₹4,800.00 "
+                f"(+202% above benchmark) [{f_item}]. The total claimed amount of ₹132,825.00 exceeds the p95 benchmark "
+                f"of ₹71,473.04 by +85.8% [{f_tot}]."
+            )
         else:
             fid = finding_ids[0] if finding_ids else "F1"
             text = f"Based on the case file [{fid}], the claim analysis shows the reported findings."

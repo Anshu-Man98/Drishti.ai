@@ -20,6 +20,14 @@
   --color-app-elevated: var(--bg-elevated);
   --color-app-subtle: var(--bg-subtle);
 
+  /* Text & Border Color mappings for Tailwind utilities (text-*, bg-*, fill-*, stroke-*, border-*) */
+  --color-app-primary: var(--text-primary);
+  --color-app-secondary: var(--text-secondary);
+  --color-app-muted: var(--text-muted);
+  --color-app-faint: var(--text-faint);
+  --color-app-default: var(--border-default);
+  --color-app-border: var(--border-default);
+
   /* Radii per design spec */
   --radius-card: 20px;
   --radius-panel: 14px;
@@ -216,6 +224,18 @@ body {
 .text-app-faint { color: var(--text-faint); }
 .text-amber-primary { color: var(--brand-primary); }
 .text-amber-bright { color: var(--brand-bright); }
+
+/* SVG fill and stroke tokens for diagram clarity */
+.fill-app-primary { fill: var(--text-primary); }
+.fill-app-secondary { fill: var(--text-secondary); }
+.fill-app-muted { fill: var(--text-muted); }
+.fill-app-faint { fill: var(--text-faint); }
+.fill-app-surface { fill: var(--bg-surface); }
+.fill-app-elevated { fill: var(--bg-elevated); }
+.fill-app-subtle { fill: var(--bg-subtle); }
+.stroke-app-default { stroke: var(--border-default); }
+.stroke-app-subtle { stroke: var(--border-subtle); }
+.stroke-app-strong { stroke: var(--border-strong); }
 
 /* The Nexa Top Light Beam (soft warm golden-amber light beam falling from top-center) */
 .light-beam-bg {

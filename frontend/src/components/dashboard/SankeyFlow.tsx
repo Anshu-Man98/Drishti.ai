@@ -163,31 +163,39 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
               width="150"
               height="180"
               rx="12"
-              className="fill-app-surface stroke-white/[0.08]"
+              fill="var(--bg-elevated)"
+              stroke="var(--border-default)"
               strokeWidth="1"
               filter="url(#subtle-shadow)"
             />
-            <rect width="150" height="32" rx="12" className="fill-amber-primary/14" />
-            <text x="14" y="21" className="text-[11px] font-semibold fill-amber-primary font-mono">
+            <rect
+              width="150"
+              height="32"
+              rx="12"
+              fill="var(--bg-subtle)"
+              stroke="var(--border-default)"
+              strokeWidth="1"
+            />
+            <text x="14" y="21" fill="var(--brand-primary)" className="text-[11px] font-bold font-mono">
               STAGE 1: INTAKE
             </text>
 
-            <text x="14" y="60" className="text-[12px] font-bold fill-app-primary font-mono">
+            <text x="14" y="60" fill="var(--text-primary)" className="text-[12px] font-bold font-mono">
               {totalClaims} Claims Ingested
             </text>
-            <text x="14" y="80" className="text-[11px] font-mono fill-app-muted tabular-nums">
+            <text x="14" y="80" fill="var(--brand-primary)" className="text-[11px] font-mono font-semibold tabular-nums">
               {formatIndianCurrency(totalAmount)}
             </text>
 
-            <line x1="14" y1="96" x2="136" y2="96" className="stroke-white/[0.06]" />
+            <line x1="14" y1="96" x2="136" y2="96" stroke="var(--border-default)" strokeWidth="1" />
 
-            <text x="14" y="118" className="text-[10px] font-medium fill-app-muted">
+            <text x="14" y="118" fill="var(--text-primary)" className="text-[11px] font-medium">
               Document AI Extraction
             </text>
-            <text x="14" y="136" className="text-[10px] font-medium fill-app-muted">
+            <text x="14" y="138" fill="var(--text-primary)" className="text-[11px] font-medium">
               Gemini Vision Cross-Check
             </text>
-            <text x="14" y="154" className="text-[10px] font-medium fill-app-muted">
+            <text x="14" y="158" fill="var(--text-primary)" className="text-[11px] font-medium">
               Prompt Shield Sanitized
             </text>
           </g>
@@ -198,43 +206,51 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
               width="160"
               height="200"
               rx="12"
-              className="fill-app-surface stroke-white/[0.08]"
+              fill="var(--bg-elevated)"
+              stroke="var(--border-default)"
               strokeWidth="1"
               filter="url(#subtle-shadow)"
             />
-            <rect width="160" height="32" rx="12" className="fill-amber-primary/14" />
-            <text x="14" y="21" className="text-[11px] font-semibold fill-amber-primary font-mono">
+            <rect
+              width="160"
+              height="32"
+              rx="12"
+              fill="var(--bg-subtle)"
+              stroke="var(--border-default)"
+              strokeWidth="1"
+            />
+            <text x="14" y="21" fill="var(--brand-primary)" className="text-[11px] font-bold font-mono">
               STAGE 2: MULTI-AGENT
             </text>
 
-            <text x="14" y="58" className="text-[11px] font-semibold fill-app-primary">
+            <text x="14" y="58" fill="var(--text-primary)" className="text-[12px] font-bold">
               Parallel Scrutiny
             </text>
 
             <g transform="translate(14, 72)">
-              <rect width="132" height="22" rx="6" className="fill-white/[0.04] stroke-white/[0.06]" />
-              <text x="8" y="15" className="text-[10px] font-mono fill-app-secondary">
+              <rect width="132" height="24" rx="6" fill="var(--bg-subtle)" stroke="var(--border-default)" strokeWidth="1" />
+              <text x="8" y="16" fill="var(--text-primary)" className="text-[10px] font-mono font-medium">
                 Forensics & PDF ELA
               </text>
             </g>
 
-            <g transform="translate(14, 100)">
-              <rect width="132" height="22" rx="6" className="fill-white/[0.04] stroke-white/[0.06]" />
-              <text x="8" y="15" className="text-[10px] font-mono fill-app-secondary">
+            <g transform="translate(14, 102)">
+              <rect width="132" height="24" rx="6" fill="var(--bg-subtle)" stroke="var(--border-default)" strokeWidth="1" />
+              <text x="8" y="16" fill="var(--text-primary)" className="text-[10px] font-mono font-medium">
                 Policy & Benchmark Caps
               </text>
             </g>
 
-            <g transform="translate(14, 128)">
-              <rect width="132" height="22" rx="6" className="fill-white/[0.04] stroke-white/[0.06]" />
-              <text x="8" y="15" className="text-[10px] font-mono fill-app-secondary">
+            <g transform="translate(14, 132)">
+              <rect width="132" height="24" rx="6" fill="var(--bg-subtle)" stroke="var(--border-default)" strokeWidth="1" />
+              <text x="8" y="16" fill="var(--text-primary)" className="text-[10px] font-mono font-medium">
                 Spacetime & Teleportation
               </text>
             </g>
 
-            <g transform="translate(14, 156)">
-              <rect width="132" height="22" rx="6" className="fill-white/[0.04] stroke-white/[0.06]" />
-              <text x="8" y="15" className="text-[10px] font-mono fill-app-secondary">
+            <g transform="translate(14, 162)">
+              <rect width="132" height="24" rx="6" fill="var(--bg-subtle)" stroke="var(--border-default)" strokeWidth="1" />
+              <text x="8" y="16" fill="var(--text-primary)" className="text-[10px] font-mono font-medium">
                 BQML Fraud Outliers
               </text>
             </g>
@@ -253,23 +269,20 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
               width="190"
               height="75"
               rx="8"
-              className={`transition-all ${
-                activeHover === 'approve'
-                  ? 'fill-emerald-500/15 stroke-emerald-500'
-                  : 'fill-white dark:fill-slate-900 stroke-emerald-500/30'
-              }`}
+              fill="var(--bg-elevated)"
+              stroke={activeHover === 'approve' ? 'var(--risk-approve)' : 'var(--risk-approve-border)'}
               strokeWidth={activeHover === 'approve' ? 1.5 : 1}
               filter="url(#subtle-shadow)"
             />
-            <circle cx="24" cy="24" r="8" className="fill-emerald-500/20" />
-            <circle cx="24" cy="24" r="3.5" className="fill-emerald-500" />
-            <text x="40" y="27" className="text-[11px] font-bold fill-emerald-700 dark:fill-emerald-400">
+            <circle cx="24" cy="24" r="8" fill="var(--risk-approve-bg)" />
+            <circle cx="24" cy="24" r="3.5" fill="var(--risk-approve)" />
+            <text x="40" y="27" fill="var(--risk-approve)" className="text-[11px] font-bold">
               Auto-Approve ({verdicts.approve})
             </text>
-            <text x="16" y="52" className="text-[11px] font-mono fill-slate-600 dark:fill-slate-300">
+            <text x="16" y="52" fill="var(--text-primary)" className="text-[11px] font-mono font-semibold">
               {approvePct}% of total claims
             </text>
-            <text x="16" y="67" className="text-[10px] fill-slate-600 dark:fill-slate-400">
+            <text x="16" y="67" fill="var(--text-muted)" className="text-[10px]">
               Zero anomalies, exact math
             </text>
           </g>
@@ -285,23 +298,20 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
               width="190"
               height="80"
               rx="8"
-              className={`transition-all ${
-                activeHover === 'review'
-                  ? 'fill-amber-500/15 stroke-amber-500'
-                  : 'fill-white dark:fill-slate-900 stroke-amber-500/30'
-              }`}
+              fill="var(--bg-elevated)"
+              stroke={activeHover === 'review' ? 'var(--risk-review)' : 'var(--risk-review-border)'}
               strokeWidth={activeHover === 'review' ? 1.5 : 1}
               filter="url(#subtle-shadow)"
             />
-            <circle cx="24" cy="24" r="8" className="fill-amber-500/20" />
-            <circle cx="24" cy="24" r="3.5" className="fill-amber-500" />
-            <text x="40" y="27" className="text-[11px] font-bold fill-amber-700 dark:fill-amber-400">
+            <circle cx="24" cy="24" r="8" fill="var(--risk-review-bg)" />
+            <circle cx="24" cy="24" r="3.5" fill="var(--risk-review)" />
+            <text x="40" y="27" fill="var(--risk-review)" className="text-[11px] font-bold">
               Flagged for Review ({verdicts.review})
             </text>
-            <text x="16" y="52" className="text-[11px] font-mono fill-slate-600 dark:fill-slate-300 tabular-nums">
+            <text x="16" y="52" fill="var(--text-primary)" className="text-[11px] font-mono font-semibold tabular-nums">
               {formatIndianCurrency(totalReview)} ({reviewPct}%)
             </text>
-            <text x="16" y="69" className="text-[10px] fill-slate-600 dark:fill-slate-400">
+            <text x="16" y="69" fill="var(--text-muted)" className="text-[10px]">
               Ambiguous caps, unreadable text
             </text>
           </g>
@@ -317,23 +327,20 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
               width="190"
               height="85"
               rx="8"
-              className={`transition-all ${
-                activeHover === 'reject'
-                  ? 'fill-rose-500/15 stroke-rose-500'
-                  : 'fill-white dark:fill-slate-900 stroke-rose-500/30'
-              }`}
+              fill="var(--bg-elevated)"
+              stroke={activeHover === 'reject' ? 'var(--risk-reject)' : 'var(--risk-reject-border)'}
               strokeWidth={activeHover === 'reject' ? 1.5 : 1}
               filter="url(#subtle-shadow)"
             />
-            <circle cx="24" cy="24" r="8" className="fill-rose-500/20" />
-            <circle cx="24" cy="24" r="3.5" className="fill-rose-500" />
-            <text x="40" y="27" className="text-[11px] font-bold fill-rose-700 dark:fill-rose-400">
+            <circle cx="24" cy="24" r="8" fill="var(--risk-reject-bg)" />
+            <circle cx="24" cy="24" r="3.5" fill="var(--risk-reject)" />
+            <text x="40" y="27" fill="var(--risk-reject)" className="text-[11px] font-bold">
               Rejected Fraud ({verdicts.reject})
             </text>
-            <text x="16" y="52" className="text-[11px] font-mono font-semibold fill-rose-600 dark:fill-rose-400 tabular-nums">
+            <text x="16" y="52" fill="var(--risk-reject)" className="text-[11px] font-mono font-semibold tabular-nums">
               {formatIndianCurrency(totalProtected)} Protected
             </text>
-            <text x="16" y="70" className="text-[10px] fill-slate-600 dark:fill-slate-400">
+            <text x="16" y="70" fill="var(--text-muted)" className="text-[10px]">
               Proven tampering, spacetime rings
             </text>
           </g>

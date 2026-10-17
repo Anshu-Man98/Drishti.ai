@@ -231,6 +231,12 @@ export interface AnalyticsSummary {
   agent_breakdown: Record<string, number>;
   agent_claims_breakdown?: Record<string, number>;
   recent_critical_claims: RecentCriticalClaim[];
+  time_series?: Array<{
+    date: string;
+    claims_count: number;
+    amount_claimed: number;
+    avg_risk: number;
+  }>;
   synthetic_count?: number;
   timestamp: string;
 }

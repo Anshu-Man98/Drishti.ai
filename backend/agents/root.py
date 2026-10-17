@@ -21,6 +21,7 @@ enforces the Numeric Grounding Guard, and writes the finalized Dossier to Cloud 
 """
 
 import logging
+import time
 import concurrent.futures
 from typing import List, Dict, Any, Callable, Optional, Union, Tuple
 from google.adk.agents import LlmAgent
@@ -100,20 +101,90 @@ def run_claims_fraud_pipeline(
     provenance_obj: Optional[Provenance] = None
     timeline: Optional[List[TimelineEvent]] = None
 
+    # Document AI extraction handling if documents are present but unextracted:
+    if claim.documents and not claim.line_items and not claim.extracted_entities:
+        t0_docai = time.perf_counter()
+        try:
+            doc = claim.documents[0]
+            from backend.app.services.storage import storage_service
+            doc_bytes = storage_service.read_file(doc.gcs_uri)
+            from backend.tools.docai import process_document_docai
+            docai_claim, docai_ents = process_document_docai(doc_bytes, doc.filename or "claim.pdf", claim_id=claim_id)
+            if docai_claim.line_items:
+                claim.line_items = docai_claim.line_items
+            if docai_claim.total_claimed:
+                claim.total_claimed = docai_claim.total_claimed
+            if docai_ents:
+                claim.extracted_entities = docai_ents
+            lat_ms = (time.perf_counter() - t0_docai) * 1000
+            logger.info(
+                "[Pipeline] Document AI extraction completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "docai", "latency_ms": round(lat_ms, 2)}
+            )
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0_docai) * 1000
+            logger.error(
+                "[Pipeline] Document AI extraction failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "docai", "latency_ms": round(lat_ms, 2)}
+            )
+            all_findings.append(Finding(
+                finding_id=f"F-ERR-DOCAI-{len(all_findings)+1}",
+                agent=AgentName.FORENSICS,
+                check_id="AGENT_FAILED:docai",
+                severity=Severity.HIGH,
+                title="Document AI extraction service unavailable",
+                explanation=f"Document AI extraction failed due to upstream outage: {e}. Dossier marked incomplete.",
+                evidence=[],
+                confidence=1.0,
+                computed_chip="DocAI: Error",
+                computed_details={"error": str(e), "agent": "forensics", "service": "Document AI"}
+            ))
+            db_service.set_agent_status(claim_id, "forensics", "error")
+
     # Helper runners for concurrent execution
     def run_injection_specialist() -> List[Finding]:
         if not settings.INJECTION_CHECK_ENABLED:
             db_service.set_agent_status(claim_id, "injection", "done")
             return []
         db_service.set_agent_status(claim_id, "injection", "running")
+        t0 = time.perf_counter()
         try:
             res = detect_hidden_text_injection(claim)
             status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
             db_service.set_agent_status(claim_id, "injection", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Injection specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "injection", "latency_ms": round(lat_ms, 2)}
+            )
             return res
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Injection specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "injection", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "injection", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-INJECTION-1",
+                    agent=AgentName.INJECTION,
+                    check_id="AGENT_FAILED:injection",
+                    severity=Severity.HIGH,
+                    title="Prompt injection specialist failed to complete analysis",
+                    explanation=f"Specialist 'injection' failed to complete analysis due to service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "injection"}
+                )
+            ]
 
     def run_provenance_specialist() -> Tuple[List[Finding], Optional[Provenance]]:
         if not settings.WATERMARK_ENABLED:
@@ -122,6 +193,7 @@ def run_claims_fraud_pipeline(
         db_service.set_agent_status(claim_id, "provenance", "running")
         prov_findings = []
         prov_item = None
+        t0 = time.perf_counter()
         try:
             from backend.services.provenance import verify_document
             from backend.app.services.storage import storage_service
@@ -254,54 +326,189 @@ def run_claims_fraud_pipeline(
                 )
             status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in prov_findings) else "done"
             db_service.set_agent_status(claim_id, "provenance", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Provenance specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "provenance", "latency_ms": round(lat_ms, 2)}
+            )
             return prov_findings, prov_item
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Provenance specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "provenance", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "provenance", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-PROVENANCE-1",
+                    agent=AgentName.PROVENANCE,
+                    check_id="AGENT_FAILED:provenance",
+                    severity=Severity.HIGH,
+                    title="Provenance specialist failed to complete analysis",
+                    explanation=f"Specialist 'provenance' failed to complete analysis due to service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "provenance"}
+                )
+            ], None
 
     def run_forensics_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "forensics", "running")
+        t0 = time.perf_counter()
         try:
             res = analyze_document_forensics(claim)
-            status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
+            has_prior_error = any(f.agent == AgentName.FORENSICS and f.check_id.startswith("AGENT_FAILED:") for f in all_findings)
+            status = "error" if (has_prior_error or any(f.check_id.startswith("AGENT_FAILED:") for f in res)) else "done"
             db_service.set_agent_status(claim_id, "forensics", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Forensics specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "forensics", "latency_ms": round(lat_ms, 2)}
+            )
             return res
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Forensics specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "forensics", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "forensics", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-FORENSICS-1",
+                    agent=AgentName.FORENSICS,
+                    check_id="AGENT_FAILED:forensics",
+                    severity=Severity.HIGH,
+                    title="Forensics specialist failed to complete analysis",
+                    explanation=f"Specialist 'forensics' failed to complete analysis due to upstream service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "forensics"}
+                )
+            ]
 
     def run_policy_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "policy", "running")
+        t0 = time.perf_counter()
         try:
             res = analyze_policy_and_arithmetic(claim)
             status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
             db_service.set_agent_status(claim_id, "policy", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Policy specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "policy", "latency_ms": round(lat_ms, 2)}
+            )
             return res
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Policy specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "policy", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "policy", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-POLICY-1",
+                    agent=AgentName.POLICY,
+                    check_id="AGENT_FAILED:policy",
+                    severity=Severity.HIGH,
+                    title="Policy & arithmetic specialist failed to complete analysis",
+                    explanation=f"Specialist 'policy' failed to complete analysis due to upstream service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "policy"}
+                )
+            ]
 
     def run_crossref_specialist() -> List[Finding]:
         db_service.set_agent_status(claim_id, "crossref", "running")
+        t0 = time.perf_counter()
         try:
             res = analyze_cross_references(claim)
             status = "error" if any(f.check_id.startswith("AGENT_FAILED:") for f in res) else "done"
             db_service.set_agent_status(claim_id, "crossref", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Crossref specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "crossref", "latency_ms": round(lat_ms, 2)}
+            )
             return res
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Crossref specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "crossref", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "crossref", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-CROSSREF-1",
+                    agent=AgentName.CROSSREF,
+                    check_id="AGENT_FAILED:crossref",
+                    severity=Severity.HIGH,
+                    title="Cross-reference specialist failed to complete analysis",
+                    explanation=f"Specialist 'crossref' failed to complete analysis due to upstream service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "crossref"}
+                )
+            ]
 
     def run_spacetime_specialist() -> Tuple[List[Finding], List[TimelineEvent]]:
         db_service.set_agent_status(claim_id, "spacetime", "running")
+        t0 = time.perf_counter()
         try:
             f, t = analyze_spacetime_feasibility(claim)
             status = "error" if any(x.check_id.startswith("AGENT_FAILED:") for x in f) else "done"
             db_service.set_agent_status(claim_id, "spacetime", status)
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[Pipeline] Spacetime specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "spacetime", "latency_ms": round(lat_ms, 2)}
+            )
             return f, t
-        except Exception:
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0) * 1000
+            logger.error(
+                "[Pipeline] Spacetime specialist failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "spacetime", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "spacetime", "error")
-            raise
+            return [
+                Finding(
+                    finding_id="F-ERR-SPACETIME-1",
+                    agent=AgentName.SPACETIME,
+                    check_id="AGENT_FAILED:spacetime",
+                    severity=Severity.HIGH,
+                    title="Spacetime feasibility specialist failed to complete analysis",
+                    explanation=f"Specialist 'spacetime' failed to complete analysis due to upstream service error: {e}. Dossier marked incomplete.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip="Agent Failed",
+                    computed_details={"error": str(e), "agent": "spacetime"}
+                )
+            ], []
 
     # 3. Execute Parallel Specialists Concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
@@ -312,12 +519,47 @@ def run_claims_fraud_pipeline(
         f_cross = executor.submit(run_crossref_specialist)
         f_space = executor.submit(run_spacetime_specialist)
 
-        inj_findings = f_inj.result()
-        prov_findings, provenance_obj = f_prov.result()
-        foren_findings = f_foren.result()
-        pol_findings = f_pol.result()
-        cross_findings = f_cross.result()
-        space_findings, timeline = f_space.result()
+        try:
+            inj_findings = f_inj.result()
+        except Exception as e:
+            logger.error("[Pipeline] Injection thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            inj_findings = [Finding(finding_id="F-ERR-INJ-THR", agent=AgentName.INJECTION, check_id="AGENT_FAILED:injection", severity=Severity.HIGH, title="Injection specialist execution error", explanation=str(e))]
+            db_service.set_agent_status(claim_id, "injection", "error")
+
+        try:
+            prov_findings, provenance_obj = f_prov.result()
+        except Exception as e:
+            logger.error("[Pipeline] Provenance thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            prov_findings, provenance_obj = [Finding(finding_id="F-ERR-PROV-THR", agent=AgentName.PROVENANCE, check_id="AGENT_FAILED:provenance", severity=Severity.HIGH, title="Provenance specialist execution error", explanation=str(e))], None
+            db_service.set_agent_status(claim_id, "provenance", "error")
+
+        try:
+            foren_findings = f_foren.result()
+        except Exception as e:
+            logger.error("[Pipeline] Forensics thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            foren_findings = [Finding(finding_id="F-ERR-FOREN-THR", agent=AgentName.FORENSICS, check_id="AGENT_FAILED:forensics", severity=Severity.HIGH, title="Forensics specialist execution error", explanation=str(e))]
+            db_service.set_agent_status(claim_id, "forensics", "error")
+
+        try:
+            pol_findings = f_pol.result()
+        except Exception as e:
+            logger.error("[Pipeline] Policy thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            pol_findings = [Finding(finding_id="F-ERR-POL-THR", agent=AgentName.POLICY, check_id="AGENT_FAILED:policy", severity=Severity.HIGH, title="Policy specialist execution error", explanation=str(e))]
+            db_service.set_agent_status(claim_id, "policy", "error")
+
+        try:
+            cross_findings = f_cross.result()
+        except Exception as e:
+            logger.error("[Pipeline] Crossref thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            cross_findings = [Finding(finding_id="F-ERR-CROSS-THR", agent=AgentName.CROSSREF, check_id="AGENT_FAILED:crossref", severity=Severity.HIGH, title="Crossref specialist execution error", explanation=str(e))]
+            db_service.set_agent_status(claim_id, "crossref", "error")
+
+        try:
+            space_findings, timeline = f_space.result()
+        except Exception as e:
+            logger.error("[Pipeline] Spacetime thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+            space_findings, timeline = [Finding(finding_id="F-ERR-SPACE-THR", agent=AgentName.SPACETIME, check_id="AGENT_FAILED:spacetime", severity=Severity.HIGH, title="Spacetime specialist execution error", explanation=str(e))], []
+            db_service.set_agent_status(claim_id, "spacetime", "error")
 
     all_findings.extend(inj_findings)
     all_findings.extend(prov_findings)
@@ -367,6 +609,7 @@ def run_claims_fraud_pipeline(
     from backend.tools.bq import extract_claim_features
     from backend.tools.registry import call_tool
 
+    t0_ml = time.perf_counter()
     claim_features = extract_claim_features(claim)
     try:
         ml_res = call_tool(
@@ -416,22 +659,34 @@ def run_claims_fraud_pipeline(
                 computed_details=ml_res.get("computed")
             ))
         db_service.set_agent_status(claim_id, "ml", "done")
+        lat_ms = (time.perf_counter() - t0_ml) * 1000
+        logger.info(
+            "[Pipeline] ML specialist completed for claim %s in %.2f ms",
+            claim_id, lat_ms,
+            extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
+        )
     except Exception as e:
-        logger.error(f"[Pipeline] BigQuery ML scoring failed for claim {claim_id}: {e}")
+        lat_ms = (time.perf_counter() - t0_ml) * 1000
+        logger.error(
+            "[Pipeline] BigQuery ML scoring failed for claim %s in %.2f ms: %s",
+            claim_id, lat_ms, e,
+            exc_info=True,
+            extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
+        )
         ml_prob = None
         baseline_ml_prob = None
         top_ml_features = []
         all_findings.append(Finding(
             finding_id="F-ML-UNAVAILABLE",
             agent=AgentName.ML,
-            check_id="BQML_SERVICE_FAILURE",
+            check_id="AGENT_FAILED:ml",
             severity=Severity.HIGH,
             title="BigQuery ML Fraud Model Service Unavailable",
             explanation=f"BigQuery ML scoring could not be computed: {e}. Dossier marked incomplete.",
             evidence=[],
             confidence=1.0,
             computed_chip="BQML: Error",
-            computed_details={"error": str(e)}
+            computed_details={"error": str(e), "agent": "ml", "check_id": "BQML_SERVICE_FAILURE"}
         ))
         db_service.set_agent_status(claim_id, "ml", "error")
 
@@ -451,6 +706,7 @@ def run_claims_fraud_pipeline(
 
     if settings.RAG_PATTERNS_ENABLED:
         db_service.set_agent_status(claim_id, "rag", "running")
+        t0_rag = time.perf_counter()
         try:
             from backend.tools.pattern_tools import build_claim_fingerprint, search_patterns
             fingerprint = build_claim_fingerprint(claim, all_findings)
@@ -506,9 +762,33 @@ def run_claims_fraud_pipeline(
                     }
                 ))
             db_service.set_agent_status(claim_id, "rag", "done")
+            lat_ms = (time.perf_counter() - t0_rag) * 1000
+            logger.info(
+                "[Pipeline] RAG specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "rag", "latency_ms": round(lat_ms, 2)}
+            )
         except Exception as e:
-            logger.warning("RAG pattern search failed: %s", e)
+            lat_ms = (time.perf_counter() - t0_rag) * 1000
+            logger.error(
+                "[Pipeline] RAG pattern search failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "rag", "latency_ms": round(lat_ms, 2)}
+            )
             db_service.set_agent_status(claim_id, "rag", "error")
+            all_findings.append(Finding(
+                finding_id="F-ERR-RAG-1",
+                agent=AgentName.RAG,
+                check_id="AGENT_FAILED:rag",
+                severity=Severity.HIGH,
+                title="Historical pattern matcher failed to complete analysis",
+                explanation=f"RAG pattern search failed due to service error: {e}. Dossier marked incomplete.",
+                evidence=[],
+                confidence=1.0,
+                computed_chip="RAG: Error",
+                computed_details={"error": str(e), "agent": "rag"}
+            ))
     else:
         db_service.set_agent_status(claim_id, "rag", "done")
 

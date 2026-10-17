@@ -22,8 +22,11 @@ class CrossRefOutput(BaseModel):
 
 import io
 import re
+import logging
 import pdfplumber
 from backend.app.services.storage import storage_service
+
+logger = logging.getLogger("finshield.agents.crossref")
 
 
 def analyze_cross_references(claim: Claim) -> List[Finding]:
@@ -62,8 +65,8 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
                         m = re.search(r"Bill\s*(?:No|Number)?[:\s]+([A-Za-z0-9\-]+)", page_text)
                         if m:
                             bill_no = m.group(1).strip()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to extract bill_no from PDF text for doc %s: %s", doc.doc_id, e)
             else:
                 bill_no = (claim.metadata or {}).get("bill_no")
 

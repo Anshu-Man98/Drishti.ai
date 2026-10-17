@@ -20,7 +20,7 @@ from backend.app.schemas import (
 )
 from backend.agents.chat import stream_chat_response
 from backend.app.config import settings, PDFIUM_LOCK
-from backend.app.exceptions import CloudServiceError
+from backend.app.exceptions import CloudServiceError, StorageError, ProvenanceSigningError
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
 from backend.app.dependencies import require_adjuster_role
@@ -72,7 +72,7 @@ async def create_claim(
                     amount=float(it.get("amount", 0))
                 ))
         except Exception as e:
-            print(f"Error parsing line items: {e}")
+            logger.warning("Error parsing line items for claim %s: %s", claim_id, e)
 
     # Validate and parse date formats safely if provided
     try:
@@ -484,7 +484,8 @@ def get_claim_document(claim_id: str, doc_id: str):
         media_type = "application/pdf" if doc.filename and doc.filename.endswith(".pdf") else "image/png"
         return Response(content=data, media_type=media_type)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read document: {e}")
+        logger.error("Failed to read document %s for claim %s: %s", doc_id, claim_id, e)
+        raise StorageError(f"Failed to read document: {e}", doc_id=doc_id)
 
 
 @router.get("/{claim_id}/pages/{page_num}")
@@ -507,7 +508,7 @@ def get_claim_page_image(claim_id: str, page_num: int = 1):
             content = storage_service.read_file(page_uri)
             return Response(content=content, media_type="image/png")
         except Exception as e:
-            print(f"Error on-the-fly rendering page image: {e}")
+            logger.warning("Error on-the-fly rendering page image for claim %s: %s", claim_id, e)
 
     raise HTTPException(status_code=404, detail="Page image not found")
 
@@ -632,7 +633,8 @@ async def issue_claim_approval(
     try:
         pdf_bytes, payload = await asyncio.to_thread(sign_and_mark, fields)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate signed document: {e}")
+        logger.error("Failed to sign document %s for claim %s: %s", doc_id, claim_id, e)
+        raise ProvenanceSigningError(f"Failed to generate signed document: {e}", doc_id=doc_id)
 
     filename = f"approval_{doc_id}.pdf"
     uri, sha256_hash = storage_service.upload_file(pdf_bytes, filename, claim_id)

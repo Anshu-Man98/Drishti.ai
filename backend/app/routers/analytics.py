@@ -1,9 +1,13 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
+import logging
 
+from backend.app.exceptions import AnalyticsError
 from backend.app.services.db import db_service
 from backend.app.schemas import Verdict
+
+logger = logging.getLogger("finshield.routers.analytics")
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -262,7 +266,5 @@ def get_analytics_summary(exclude_synthetic: bool = False):
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate analytics summary from Cloud Firestore: {e}"
-        )
+        logger.error("Failed to generate analytics summary from Cloud Firestore: %s", e)
+        raise AnalyticsError(f"Failed to generate analytics summary from Cloud Firestore: {e}")

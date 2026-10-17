@@ -10,6 +10,7 @@ Inspects:
 
 import os
 import io
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -20,6 +21,8 @@ from PIL import Image, ImageChops, ImageEnhance
 
 from backend.app.schemas import Finding, Evidence, AgentName, Severity
 from backend.app.config import settings
+
+logger = logging.getLogger("finshield.tools.forensics")
 
 SUSPICIOUS_PRODUCERS = [
     "photoshop", "canva", "gimp", "paint.net", "illustrator",
@@ -201,7 +204,7 @@ def font_consistency_check(
                         ))
 
     except Exception as e:
-        print(f"[font_consistency_check] Error: {e}")
+        logger.error("[font_consistency_check] Error on doc %s: %s", doc_id, e, exc_info=True)
 
     return anomalous_lines, findings
 

@@ -7,6 +7,7 @@ on superficial terms like hospital names or drug brands.
 
 import json
 import re
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -14,6 +15,8 @@ from backend.app.config import settings
 from backend.app.schemas import Claim, Finding, RetrievedContext
 
 from datetime import datetime
+
+logger = logging.getLogger("finshield.tools.patterns")
 
 PATTERNS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "patterns" / "fraud_patterns.json"
 
@@ -58,7 +61,7 @@ def register_learned_pattern(pattern: Dict[str, Any]) -> Dict[str, Any]:
         from backend.app.services.db import db_service
         db_service.save_learned_pattern(standardized_pattern)
     except Exception as e:
-        print(f"[PatternTools] Warning persisting learned pattern to DB: {e}")
+        logger.warning("Warning persisting learned pattern to DB: %s", e)
 
     # 3. Persist to BigQuery finshield.learned_patterns
     if settings.GCP_PROJECT and settings.BIGQUERY_DATASET:
@@ -74,7 +77,7 @@ def register_learned_pattern(pattern: Dict[str, Any]) -> Dict[str, Any]:
             }]
             errors = bq_client.insert_rows_json(table_id, rows_to_insert)
             if errors:
-                print(f"[PatternTools] BigQuery insert error for learned pattern: {errors}")
+                logger.error("BigQuery insert error for learned pattern: %s", errors)
         except Exception as e:
             # Non-blocking for offline/test environments
             pass
@@ -95,7 +98,7 @@ def _load_pattern_catalog() -> List[Dict[str, Any]]:
             with open(PATTERNS_PATH, "r", encoding="utf-8") as f:
                 cards = json.load(f)
         except Exception as e:
-            print(f"[PatternTools] Warning: could not load patterns: {e}")
+            logger.warning("Could not load patterns from %s: %s", PATTERNS_PATH, e)
     else:
         try:
             from data.build_pattern_cards import build_pattern_cards
@@ -103,7 +106,7 @@ def _load_pattern_catalog() -> List[Dict[str, Any]]:
             with open(PATTERNS_PATH, "w", encoding="utf-8") as f:
                 json.dump(cards, f, indent=2)
         except Exception as e:
-            print(f"[PatternTools] Warning: could not build patterns: {e}")
+            logger.warning("Could not build patterns: %s", e)
 
     # Merge persisted learned patterns from Cloud Firestore / DB
     try:

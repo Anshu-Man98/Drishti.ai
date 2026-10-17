@@ -10,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.routers import claims, provenance, duel, analytics, reference, graph
 from backend.app.config import settings
 from backend.app.dependencies import get_current_user
+from backend.app.logging_config import configure_logging
 
+configure_logging()
 logger = logging.getLogger("finshield.main")
 
 _CACHED_HEALTH: Dict[str, Any] = {}
@@ -161,7 +163,7 @@ app.add_middleware(
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from backend.app.exceptions import CloudServiceError
+from backend.app.exceptions import CloudServiceError, DrishtiError
 
 
 @app.exception_handler(CloudServiceError)
@@ -169,6 +171,15 @@ async def cloud_service_error_handler(request: Request, exc: CloudServiceError):
     logger.error("Cloud service error on %s: %s (%s)", request.url.path, exc.message, exc.service)
     return JSONResponse(
         status_code=503,
+        content=exc.to_dict()
+    )
+
+
+@app.exception_handler(DrishtiError)
+async def drishti_error_handler(request: Request, exc: DrishtiError):
+    logger.error("DrishtiError on %s %s: %s (code: %s)", request.method, request.url.path, exc.message, exc.code, exc_info=True)
+    return JSONResponse(
+        status_code=exc.status_code,
         content=exc.to_dict()
     )
 

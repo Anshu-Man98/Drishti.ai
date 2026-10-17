@@ -52,15 +52,15 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
         <div className="flex items-center gap-3 text-xs text-app-muted font-mono">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500" />
-            <span className="text-emerald-400">Approve ({approvePct}%)</span>
+            <span className="text-emerald-800 dark:text-emerald-400 font-medium">Approve ({approvePct}%)</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-xs bg-amber-primary" />
-            <span className="text-amber-primary">Review ({reviewPct}%)</span>
+            <span className="text-amber-800 dark:text-amber-primary font-medium">Review ({reviewPct}%)</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-xs bg-rose-500" />
-            <span className="text-rose-400">Reject ({rejectPct}%)</span>
+            <span className="text-rose-800 dark:text-rose-400 font-medium">Reject ({rejectPct}%)</span>
           </span>
           {pendingPct > 0 && (
             <span className="flex items-center gap-1.5">
@@ -269,7 +269,7 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
             <text x="16" y="52" className="text-[11px] font-mono fill-slate-600 dark:fill-slate-300">
               {approvePct}% of total claims
             </text>
-            <text x="16" y="67" className="text-[10px] fill-slate-400">
+            <text x="16" y="67" className="text-[10px] fill-slate-600 dark:fill-slate-400">
               Zero anomalies, exact math
             </text>
           </g>
@@ -301,7 +301,7 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
             <text x="16" y="52" className="text-[11px] font-mono fill-slate-600 dark:fill-slate-300 tabular-nums">
               {formatIndianCurrency(totalReview)} ({reviewPct}%)
             </text>
-            <text x="16" y="69" className="text-[10px] fill-slate-400">
+            <text x="16" y="69" className="text-[10px] fill-slate-600 dark:fill-slate-400">
               Ambiguous caps, unreadable text
             </text>
           </g>
@@ -333,7 +333,7 @@ export const SankeyFlow: React.FC<SankeyFlowProps> = ({
             <text x="16" y="52" className="text-[11px] font-mono font-semibold fill-rose-600 dark:fill-rose-400 tabular-nums">
               {formatIndianCurrency(totalProtected)} Protected
             </text>
-            <text x="16" y="70" className="text-[10px] fill-slate-400">
+            <text x="16" y="70" className="text-[10px] fill-slate-600 dark:fill-slate-400">
               Proven tampering, spacetime rings
             </text>
           </g>

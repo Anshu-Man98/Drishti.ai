@@ -165,21 +165,21 @@ export const SpacetimeMap: React.FC<SpacetimeMapProps> = ({
     <div className="bg-surface border border-amber-primary/20 rounded-[20px] shadow-2xs overflow-hidden space-y-0 backdrop-blur-md">
       {/* Top Banner Alert if Impossible Travel is detected */}
       {hasImpossibleLeg && (
-        <div className="bg-rose-500/10 border-b border-rose-500/20 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="bg-rose-50 dark:bg-rose-950/40 border-b border-rose-200 dark:border-rose-900/50 border-l-4 border-l-rose-600 dark:border-l-rose-500 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 border border-rose-300 dark:border-rose-500/30 flex items-center justify-center text-rose-700 dark:text-rose-400 shrink-0">
               <ShieldAlert className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h4 className="text-xs sm:text-sm font-bold text-rose-200">
+              <h4 className="text-xs sm:text-sm font-bold text-rose-950 dark:text-rose-100">
                 Critical Spacetime Trajectory Violation Detected
               </h4>
-              <p className="text-xs text-rose-300/80 leading-relaxed">
+              <p className="text-xs text-rose-900/85 dark:text-rose-200/90 leading-relaxed">
                 Attending physician logged admitting patients in distant locations within transit times that violate basic physics.
               </p>
             </div>
           </div>
-          <span className="text-[10px] sm:text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 self-start sm:self-auto">
+          <span className="text-[10px] sm:text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 self-start sm:self-auto">
             SPACETIME ANOMALY
           </span>
         </div>

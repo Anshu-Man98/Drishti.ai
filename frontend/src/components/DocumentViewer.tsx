@@ -551,28 +551,28 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       </div>
 
       {/* Legend Footer */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-app-default text-[11px] text-app-muted">
         <div className="flex items-center space-x-3">
           <span className="flex items-center space-x-1">
             <span className="w-2.5 h-2.5 rounded-sm bg-rose-500/40 border border-rose-500"></span>
-            <span>Critical</span>
+            <span className="text-app-primary">Critical</span>
           </span>
           <span className="flex items-center space-x-1">
             <span className="w-2.5 h-2.5 rounded-sm bg-orange-500/40 border border-orange-500"></span>
-            <span>High Risk</span>
+            <span className="text-app-primary">High Risk</span>
           </span>
           <span className="flex items-center space-x-1">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-500/40 border border-amber-500"></span>
-            <span>Medium</span>
+            <span className="text-app-primary">Medium</span>
           </span>
           {showAllFields && (
             <span className="flex items-center space-x-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-slate-700 border border-dashed border-slate-400"></span>
-              <span>Extracted Field</span>
+              <span className="w-2.5 h-2.5 rounded-sm bg-stone-300 dark:bg-slate-700 border border-dashed border-stone-500 dark:border-slate-400"></span>
+              <span className="text-app-primary">Extracted Field</span>
             </span>
           )}
         </div>
-        <span className="text-[10px] text-slate-500">
+        <span className="text-[10px] text-app-muted">
           Click any flag or card to focus citation
         </span>
       </div>

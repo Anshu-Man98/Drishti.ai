@@ -197,10 +197,10 @@ export const DuelArena: React.FC = () => {
 
         <GlowCard className="p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-text-muted">
-            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            <ShieldCheck className="w-3 h-3 text-emerald-700 dark:text-emerald-400" />
             <span>Defender Multi-Agent</span>
           </div>
-          <div className="text-xl font-bold font-mono text-emerald-400">
+          <div className="text-xl font-bold font-mono text-emerald-700 dark:text-emerald-400">
             8 Specialist Agents
           </div>
           <p className="text-[10px] text-text-faint">Continuous Active Defense</p>
@@ -208,10 +208,10 @@ export const DuelArena: React.FC = () => {
 
         <GlowCard className="p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-text-muted">
-            <Zap className="w-3 h-3 text-rose-400" />
+            <Zap className="w-3 h-3 text-rose-700 dark:text-rose-400" />
             <span>Adversarial Red-Team</span>
           </div>
-          <div className="text-xl font-bold font-mono text-rose-400 truncate">
+          <div className="text-xl font-bold font-mono text-rose-700 dark:text-rose-400 truncate">
             {configuredModel}
           </div>
           <p className="text-[10px] text-text-faint">Autonomous Invoice Mutator</p>
@@ -262,18 +262,18 @@ export const DuelArena: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                   {activeDuel.winning_side === 'defender' ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/20">
+                      <ShieldCheck className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
                       <span>DEFENDER VICTORY (All Evasions Caught)</span>
                     </span>
                   ) : activeDuel.status === 'running' ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-primary/10 text-amber-primary border border-amber-primary/20 animate-pulse">
-                      <RefreshCw className="w-4 h-4 text-amber-primary animate-spin" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 dark:bg-amber-primary/10 text-amber-800 dark:text-amber-primary border border-amber-300 dark:border-amber-primary/20 animate-pulse">
+                      <RefreshCw className="w-4 h-4 text-amber-800 dark:text-amber-primary animate-spin" />
                       <span>SIMULATING ROUNDS...</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 animate-pulse">
-                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-rose-50 dark:bg-rose-500/10 text-rose-800 dark:text-rose-400 border border-rose-300 dark:border-rose-500/20 animate-pulse">
+                      <ShieldAlert className="w-4 h-4 text-rose-800 dark:text-rose-400" />
                       <span>FRAUDSTER EVADED SHIELD (Defense Learned)</span>
                     </span>
                   )}

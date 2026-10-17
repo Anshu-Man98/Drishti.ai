@@ -577,22 +577,22 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
       </div>
 
       {/* Labelled Legend Pill */}
-      <div className="absolute top-4 left-4 flex items-center gap-3.5 px-3.5 py-2 rounded-xl bg-surface/90 backdrop-blur-md border border-white/10 shadow-xs text-xs font-medium">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#F5A524] shadow-xs shadow-amber-primary/50" />
-          <span className="text-text-primary">Bank Account</span>
+      <div className="absolute top-4 left-4 flex items-center gap-4 px-4 py-2.5 rounded-xl bg-app-surface/95 dark:bg-app-elevated/95 backdrop-blur-md border border-black/10 dark:border-white/15 shadow-sm text-xs font-semibold text-app-primary">
+        <div className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-[#F5A524] border border-amber-400/60 shadow-xs shadow-amber-primary/50" />
+          <span>Bank Account</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#B8741A]" />
-          <span className="text-text-primary">Doctor</span>
+        <div className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-[#B8741A] border border-amber-600/60" />
+          <span>Doctor</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#F3EFE6] border border-white/20" />
-          <span className="text-text-primary">Hospital</span>
+        <div className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-[#F3EFE6] dark:bg-[#F3EFE6] border border-stone-400/60 dark:border-white/60" />
+          <span>Hospital</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#8F8A7E]" />
-          <span className="text-text-primary">Claimant</span>
+        <div className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 rounded-full bg-[#8F8A7E] border border-stone-500/60" />
+          <span>Claimant</span>
         </div>
       </div>
     </div>

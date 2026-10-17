@@ -55,13 +55,13 @@ export const DuelRoundCard: React.FC<DuelRoundCardProps> = ({
         </div>
 
         {round.caught ? (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/20 shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-800 dark:text-emerald-400" />
             <span>CAUGHT BY DEFENDER</span>
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-300 border border-rose-500/20 shrink-0 animate-pulse">
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/20 shrink-0 animate-pulse">
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-800 dark:text-rose-400" />
             <span>EVADED SHIELD (+{inflationPct}%)</span>
           </span>
         )}
@@ -130,14 +130,14 @@ export const DuelRoundCard: React.FC<DuelRoundCardProps> = ({
                 {round.catching_check_ids.map((chk, i) => (
                   <span
                     key={i}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/20"
                   >
                     {chk}
                   </span>
                 ))}
               </div>
             ) : (
-              <span className="text-[11px] text-rose-400 font-medium">
+              <span className="text-[11px] text-rose-800 dark:text-rose-400 font-medium">
                 No deterministic checks triggered. Fraudster slipped through baseline limits.
               </span>
             )}

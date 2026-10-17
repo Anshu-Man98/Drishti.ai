@@ -23,22 +23,19 @@ export const ActivePipelineNodes: React.FC<ActivePipelineNodesProps> = ({
   ];
 
   return (
-    <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4">
-      <div className="flex items-center justify-between border-b border-white/8 pb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+    <div className="bg-app-surface border border-app-default rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4">
+      <div className="flex items-center justify-between border-b border-app-default pb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-app-muted flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-amber-primary" />
           <span>ADK Multi-Agent Specialized Inspection</span>
         </h3>
-        <span className="text-[10px] font-mono text-amber-primary/80">
+        <span className="text-[10px] font-mono text-amber-800 dark:text-amber-primary font-medium">
           Hybrid: 60% Multi-Agent + 40% BQML
         </span>
       </div>
 
       <div className="relative">
-        {/* Subtle glowing connector line behind the grid on large screens */}
-        <div className="hidden lg:block absolute top-1/2 left-4 right-4 h-0.5 bg-gradient-to-r from-amber-primary/10 via-amber-primary/30 to-amber-primary/10 -translate-y-1/2 pointer-events-none" />
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 relative z-10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 relative z-10">
           {AGENT_NODES.map((agent) => {
             const agentFindings =
               dossier?.findings?.filter(
@@ -59,13 +56,13 @@ export const ActivePipelineNodes: React.FC<ActivePipelineNodesProps> = ({
                     ? 'bg-amber-primary/10 border-amber-primary/50 shadow-sm shadow-amber-primary/20 ring-1 ring-amber-primary/40 animate-pulse'
                     : isDone
                     ? count > 0
-                      ? 'bg-amber-primary/8 border-amber-primary/30 hover:border-amber-primary/60'
-                      : 'bg-surface-elevated/70 border-white/8 hover:border-amber-primary/20'
-                    : 'bg-surface-elevated/30 border-white/5 opacity-50'
+                      ? 'bg-amber-primary/10 border-amber-primary/40 hover:border-amber-primary/60'
+                      : 'bg-app-surface-elevated border-app-default hover:border-amber-primary/30'
+                    : 'bg-app-surface-elevated/40 border-app-faint opacity-50'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-text-primary truncate">
+                  <span className="text-xs font-semibold text-app-primary truncate">
                     {agent.name}
                   </span>
                   {isRunning ? (
@@ -73,28 +70,28 @@ export const ActivePipelineNodes: React.FC<ActivePipelineNodesProps> = ({
                   ) : isDone ? (
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
-                        count > 0 ? 'bg-amber-primary shadow-xs shadow-amber-primary/60' : 'bg-emerald-400'
+                        count > 0 ? 'bg-amber-primary shadow-xs shadow-amber-primary/60' : 'bg-emerald-500'
                       }`}
                       title={count > 0 ? `${count} flags` : 'Clean'}
                     />
                   ) : (
-                    <span className="w-2 h-2 rounded-full bg-muted/40 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-app-faint shrink-0" />
                   )}
                 </div>
 
-                <p className="text-[10px] text-muted mt-1 truncate">
+                <p className="text-[10px] text-app-muted mt-1 truncate">
                   {agent.role}
                 </p>
 
                 <div className="mt-2 text-[10px] font-mono">
                   {isRunning ? (
-                    <span className="text-amber-primary">auditing...</span>
+                    <span className="text-amber-800 dark:text-amber-primary font-medium">auditing...</span>
                   ) : isDone ? (
                     <span
                       className={
                         count > 0
-                          ? 'text-amber-primary font-bold'
-                          : 'text-emerald-400 font-medium'
+                          ? 'text-amber-800 dark:text-amber-primary font-bold'
+                          : 'text-emerald-800 dark:text-emerald-400 font-semibold'
                       }
                     >
                       {count > 0
@@ -104,7 +101,7 @@ export const ActivePipelineNodes: React.FC<ActivePipelineNodesProps> = ({
                         : 'clean'}
                     </span>
                   ) : (
-                    <span className="text-muted/60">pending</span>
+                    <span className="text-app-faint">pending</span>
                   )}
                 </div>
               </div>

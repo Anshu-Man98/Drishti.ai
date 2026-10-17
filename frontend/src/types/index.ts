@@ -108,6 +108,7 @@ export interface Finding {
 export interface MlFeature {
   feature: string;
   attribution: number;
+  direction?: 'raises risk' | 'lowers risk';
 }
 
 export interface TimelineEvent {
@@ -146,6 +147,7 @@ export interface Dossier {
   claim_id: string;
   risk_score: number;
   ml_score?: number | null;
+  baseline_ml_score?: number | null;
   verdict: Verdict;
   status?: 'complete' | 'incomplete';
   summary: string;
@@ -192,4 +194,165 @@ export interface ProvenanceVerifyResponse {
   } | null;
   issued_doc_id?: string | null;
 }
+
+export interface FraudCategoryStat {
+  category: string;
+  count: number;
+  claims_count?: number;
+}
+
+export interface RecentCriticalClaim {
+  claim_id: string;
+  policy_id: string;
+  insurer_id: string;
+  claimant_name: string;
+  hospital_name: string;
+  city: string;
+  diagnosis_code: string;
+  total_claimed: number;
+  verdict: Verdict;
+  risk_score: number;
+  top_finding_title: string;
+  created_at: string;
+}
+
+export interface AnalyticsSummary {
+  total_claims: number;
+  total_amount_claimed: number;
+  total_amount_protected: number;
+  total_amount_review: number;
+  verdicts: {
+    approve: number;
+    review: number;
+    reject: number;
+    pending: number;
+  };
+  fraud_categories: FraudCategoryStat[];
+  agent_breakdown: Record<string, number>;
+  agent_claims_breakdown?: Record<string, number>;
+  recent_critical_claims: RecentCriticalClaim[];
+  synthetic_count?: number;
+  timestamp: string;
+}
+
+export interface NetworkNode {
+  id: string;
+  label: string;
+  type: 'claimant' | 'doctor' | 'hospital' | 'bank_account';
+  ring_id: string;
+  risk_score?: number;
+  metadata?: Record<string, any>;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+export interface NetworkEdge {
+  source: string;
+  target: string;
+  type: string;
+  label?: string;
+  claim_id?: string;
+  amount?: number;
+}
+
+export interface FraudRingSummary {
+  ring_id: string;
+  title: string;
+  type: string;
+  claim_count: number;
+  claimant_count: number;
+  total_amount: number;
+  primary_entity: string;
+  risk_level: 'critical' | 'high' | 'medium';
+  description: string;
+  sample_cities: string[];
+}
+
+export interface RingClaimRecord {
+  claim_id: string;
+  policy_id: string;
+  insurer_id: string;
+  claimant_id: string;
+  claimant_name: string;
+  claimant_phone: string;
+  bank_account_hash: string;
+  hospital_id: string;
+  hospital_name: string;
+  city: string;
+  doctor_id: string;
+  admission_ts: string;
+  discharge_ts: string;
+  diagnosis_code: string;
+  total_claimed: number;
+  is_fraud: number;
+  fraud_type: string;
+}
+
+export interface RingDetailResponse {
+  ring: FraudRingSummary;
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  claims: RingClaimRecord[];
+}
+
+export interface GraphRingsResponse {
+  rings: FraudRingSummary[];
+  selected_ring?: RingDetailResponse | null;
+}
+
+export interface DuelRound {
+  round_number: number;
+  tactic: string;
+  rationale: string;
+  claim_id: string;
+  baseline_amount: number;
+  total_claimed: number;
+  inflation_ratio: number;
+  verdict: string;
+  risk_score: number;
+  caught: boolean;
+  evaded: boolean;
+  catching_finding_ids: string[];
+  catching_check_ids: string[];
+  timestamp: string;
+}
+
+export interface LearnedPattern {
+  pattern_id: string;
+  title: string;
+  tactic: string;
+  signature?: string;
+  feature_signatures?: string;
+  typical_severity?: string;
+  narrative?: string;
+  fraud_type?: string;
+  evaded_at: string;
+}
+
+export interface DuelResult {
+  duel_id: string;
+  base_claim_id: string;
+  baseline_amount: number;
+  max_rounds: number;
+  rounds: DuelRound[];
+  status: string; // 'running' | 'completed' | 'failed' | 'evaded' | 'caught' | 'max_rounds_reached'
+  winning_side: string; // 'fraudster' | 'defender' | 'running'
+  learned_pattern?: LearnedPattern | null;
+}
+
+export interface DuelStatusResponse {
+  duel_id: string;
+  status: 'running' | 'completed' | 'failed' | string;
+  current_round: number;
+  max_rounds: number;
+  base_claim_id?: string | null;
+  baseline_amount?: number | null;
+  winning_side?: string | null;
+  error?: string | null;
+  rounds: DuelRound[];
+}
+
+
 

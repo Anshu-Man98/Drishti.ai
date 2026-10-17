@@ -130,6 +130,7 @@ class Finding(BaseModel):
 class MlFeature(BaseModel):
     feature: str
     attribution: float
+    direction: Optional[str] = None  # "raises risk" | "lowers risk"
 
 
 class TimelineEvent(BaseModel):
@@ -162,6 +163,7 @@ class Dossier(BaseModel):
     claim_id: str
     risk_score: int = Field(ge=0, le=100)
     ml_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    baseline_ml_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     verdict: Verdict
     status: str = Field(default="complete", description="'complete' | 'incomplete'")
     summary: str

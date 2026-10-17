@@ -68,8 +68,11 @@ class FakeDocRef:
         self._col = col
         self._subcollections: Dict[str, Any] = {}
 
-    def set(self, data: Dict[str, Any]):
-        self._col._docs[self.id] = dict(data)
+    def set(self, data: Dict[str, Any], merge: bool = False):
+        if merge and self.id in self._col._docs:
+            self._col._docs[self.id].update(dict(data))
+        else:
+            self._col._docs[self.id] = dict(data)
 
     def get(self):
         data = self._col._docs.get(self.id)
@@ -218,19 +221,85 @@ class FakeBQClient:
                 pred = 0
                 prob = 0.96
 
+            def _calc_attr(feat_val, baseline_val, scale, default_attr):
+                diff = feat_val - baseline_val
+                if abs(diff) < 1e-4:
+                    return default_attr
+                return round(scale * diff, 4)
+
             top_attrs = [
-                {"feature": "amount_vs_diagnosis_median_ratio", "attribution_weight": round(0.35 * (amt_ratio - 1.0), 4)},
-                {"feature": "room_rent_vs_cap_ratio", "attribution_weight": round(0.25 * (room_ratio - 1.0), 4)},
-                {"feature": "doctor_distinct_cities_24h", "attribution_weight": round(0.20 * (cities - 1), 4)},
-                {"feature": "claimant_prior_claims_90d", "attribution_weight": round(0.10 * prior, 4)},
-                {"feature": "shared_bank_account_count", "attribution_weight": round(0.10 * (shared_bank - 1), 4)},
+                {"feature": "amount_vs_diagnosis_median_ratio", "attribution": _calc_attr(amt_ratio, 1.0, 0.35, 0.05), "attribution_weight": _calc_attr(amt_ratio, 1.0, 0.35, 0.05)},
+                {"feature": "room_rent_vs_cap_ratio", "attribution": _calc_attr(room_ratio, 1.0, 0.25, 0.03), "attribution_weight": _calc_attr(room_ratio, 1.0, 0.25, 0.03)},
+                {"feature": "doctor_distinct_cities_24h", "attribution": _calc_attr(cities, 1, 0.20, 0.02), "attribution_weight": _calc_attr(cities, 1, 0.20, 0.02)},
+                {"feature": "claimant_prior_claims_90d", "attribution": _calc_attr(prior, 0, 0.10, 0.015), "attribution_weight": _calc_attr(prior, 0, 0.10, 0.015)},
+                {"feature": "shared_bank_account_count", "attribution": _calc_attr(shared_bank, 1, 0.10, 0.01), "attribution_weight": _calc_attr(shared_bank, 1, 0.10, 0.01)},
             ]
             row = FakeBQRow(
                 predicted_is_fraud=pred,
                 probability=prob,
+                baseline_prediction_value=1.2205 if pred == 0 else -0.2205,
                 top_feature_attributions=top_attrs
             )
             return FakeBQQueryJob([row])
+
+        elif "AVG(CAST(is_fraud AS FLOAT64))" in q:
+            return FakeBQQueryJob([FakeBQRow(rate=0.1216)])
+
+        elif "ARRAY_AGG(DISTINCT CITY" in q and "BANK_ACCOUNT_HASH" in q:
+            return FakeBQQueryJob([
+                FakeBQRow(
+                    bank_account_hash="bank_ring_shared_hash_9999",
+                    claimant_count=97,
+                    claim_count=181,
+                    total_amount=10292124.43,
+                    sample_cities=["Mumbai", "Delhi"]
+                ),
+                FakeBQRow(
+                    bank_account_hash="bank_ring_shared_hash_8888",
+                    claimant_count=16,
+                    claim_count=26,
+                    total_amount=1890033.89,
+                    sample_cities=["Pune", "Jaipur"]
+                )
+            ])
+
+        elif "ARRAY_AGG(DISTINCT CITY" in q and "DOCTOR_ID" in q:
+            return FakeBQQueryJob([
+                FakeBQRow(
+                    doctor_id="DOC-2103",
+                    hospital_count=3,
+                    city_count=3,
+                    claimant_count=3,
+                    claim_count=3,
+                    total_amount=126630.64,
+                    sample_cities=["Pune", "Hyderabad"]
+                )
+            ])
+
+        elif "BANK_ACCOUNT_HASH = @TARGET" in q or "DOCTOR_ID = @TARGET" in q:
+            return FakeBQQueryJob([
+                FakeBQRow(
+                    claim_id="CLM-100475",
+                    policy_id="POL-CARE-27841",
+                    insurer_id="INS-ICICI",
+                    claimant_id="CLMNT-5000",
+                    claimant_name="Aditya Kapoor",
+                    claimant_phone="+91-9822408848",
+                    bank_account_hash="bank_ring_shared_hash_9999",
+                    hospital_id="HOSP-104",
+                    hospital_name="Suraksha Hospital",
+                    city="Chennai",
+                    lat=13.07802,
+                    lng=80.24249,
+                    doctor_id="DOC-2064",
+                    admission_ts=datetime(2026, 8, 25, 13, 0),
+                    discharge_ts=datetime(2026, 8, 28, 19, 0),
+                    diagnosis_code="E11.9",
+                    total_claimed=28585.19,
+                    is_fraud=1,
+                    fraud_type="shared_bank_account_ring"
+                )
+            ])
 
         elif "COUNT(DISTINCT CLAIMANT_ID)" in q:
             bhash = params.get("bhash", "")

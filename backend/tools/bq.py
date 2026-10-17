@@ -7,7 +7,7 @@ Parameter-safe queries only.
 import os
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import datetime, timedelta
 
 from backend.app.schemas import Finding, Evidence, AgentName, Severity
@@ -59,6 +59,21 @@ class BigQueryWarehouse:
                 retryable=True
             )
         return self._client
+
+    def get_baseline_fraud_rate(self) -> float:
+        """Returns the training baseline prior fraud rate from claims warehouse (cached)."""
+        if hasattr(self, "_baseline_fraud_rate") and self._baseline_fraud_rate is not None:
+            return self._baseline_fraud_rate
+        try:
+            query = f"SELECT AVG(CAST(is_fraud AS FLOAT64)) as rate FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`"
+            results = list(self.client.query(query).result())
+            if results and results[0].rate is not None:
+                self._baseline_fraud_rate = round(float(results[0].rate), 4)
+                return self._baseline_fraud_rate
+        except Exception:
+            pass
+        self._baseline_fraud_rate = 0.1216
+        return self._baseline_fraud_rate
 
     def lookup_claimant_bank_hash(self, claimant_name: str) -> Optional[str]:
         """Looks up registered bank account hash for a claimant from the claims warehouse."""
@@ -545,11 +560,17 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
     }
 
 
-def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]]]:
+def ml_score(
+    claim_features: Dict[str, Any],
+    return_baseline: bool = False
+) -> Union[Tuple[float, List[Dict[str, Any]]], Tuple[float, List[Dict[str, Any]], float]]:
     """
     Runs BigQuery ML ML.PREDICT + ML.EXPLAIN_PREDICT (top_k_features=5).
     Cloud-only: Score comes strictly from BigQuery ML.
     If BigQuery ML fails or is unreachable, raises CloudServiceError.
+    Standardizes feature attributions to be with respect to fraud probability:
+      positive (>0) raises fraud risk, negative (<0) lowers fraud risk.
+    Filters out negligible features (|attr| < 0.001).
     """
     query = f"""
     SELECT
@@ -602,18 +623,35 @@ def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]
         # Compute fraud probability: if predicted label is 1, prob is fraud prob; if 0, 1.0 - prob
         fraud_prob = prob if pred == 1 else (1.0 - prob)
 
+        base_prior = bq_warehouse.get_baseline_fraud_rate()
+
         top_features = []
         raw_attrs = getattr(row, "top_feature_attributions", []) or []
         for attr in raw_attrs[:5]:
             feat = attr.get("feature") if isinstance(attr, dict) else getattr(attr, "feature", "")
             if isinstance(attr, dict):
-                raw_weight = attr.get("attribution", attr.get("attribution_weight", 0.0))
+                raw_weight = attr.get("attribution") if "attribution" in attr else attr.get("attribution_weight", 0.0)
             else:
                 raw_weight = getattr(attr, "attribution", getattr(attr, "attribution_weight", 0.0))
-            top_features.append({
-                "feature": feat,
-                "attribution": round(float(raw_weight), 4)
-            })
+            raw_val = float(raw_weight or 0.0)
+            # Standardize attribution with respect to fraud risk:
+            # TreeSHAP in BigQuery ML computes attributions relative to the predicted class.
+            # When pred == 1 (fraud): raw positive attribution raises fraud risk, raw negative lowers fraud risk.
+            # When pred == 0 (clean): raw positive attribution raises clean probability (lowers fraud risk),
+            #                        raw negative attribution lowers clean probability (raises fraud risk).
+            fraud_attr = raw_val if pred == 1 else -raw_val
+            if abs(fraud_attr) >= 0.001:
+                direction = "raises risk" if fraud_attr > 0 else "lowers risk"
+                top_features.append({
+                    "feature": feat,
+                    "attribution": round(fraud_attr, 4),
+                    "direction": direction
+                })
+
+        top_features.sort(key=lambda x: abs(x["attribution"]), reverse=True)
+
+        if return_baseline:
+            return round(fraud_prob, 4), top_features, base_prior
         return round(fraud_prob, 4), top_features
     except Exception as e:
         raise CloudServiceError(

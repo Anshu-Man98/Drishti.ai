@@ -853,18 +853,20 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
 def ml_score(claim_features: Dict[str, Any]) -> Dict[str, Any]:
     """Scores claim features using BigQuery ML boosted tree classifier."""
     from backend.tools.bq import ml_score as _raw_ml_score
-    prob, top_features = _raw_ml_score(claim_features)
+    prob, top_features, base_prob = _raw_ml_score(claim_features, return_baseline=True)
     pct = round(prob * 100, 1)
     chip = f"BQML: {pct}% fraud prob"
 
     computed = {
         "fraud_probability": round(prob, 4),
         "fraud_probability_pct": pct,
+        "baseline_probability": round(base_prob, 4),
         "top_feature_count": len(top_features)
     }
 
     return {
         "probability": prob,
+        "baseline_probability": base_prob,
         "top_features": top_features,
         "computed": computed,
         "chip": chip

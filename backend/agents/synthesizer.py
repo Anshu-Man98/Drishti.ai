@@ -24,7 +24,8 @@ def synthesize_dossier(
     top_ml_features: Optional[List[Any]] = None,
     timeline: Optional[List[TimelineEvent]] = None,
     retrieved_context: Optional[List[RetrievedContext]] = None,
-    provenance: Optional[Provenance] = None
+    provenance: Optional[Provenance] = None,
+    baseline_ml_score: Optional[float] = None
 ) -> Dossier:
     """
     Synthesizes all specialist agent findings and BigQuery ML probability into a final Dossier.
@@ -205,6 +206,7 @@ def synthesize_dossier(
         claim_id=claim.claim_id,
         risk_score=risk_score,
         ml_score=ml_score,
+        baseline_ml_score=baseline_ml_score,
         verdict=verdict,
         status=dossier_status,
         summary=summary,

@@ -376,9 +376,10 @@ def run_claims_fraud_pipeline(
             agent_name="ml"
         )
         ml_prob = ml_res["probability"]
+        baseline_ml_prob = ml_res.get("baseline_probability", 0.122)
         top_ml_features_dicts = ml_res["top_features"]
         top_ml_features = [
-            MlFeature(feature=it["feature"], attribution=it["attribution"])
+            MlFeature(feature=it["feature"], attribution=it["attribution"], direction=it.get("direction"))
             for it in top_ml_features_dicts
         ]
 
@@ -418,6 +419,7 @@ def run_claims_fraud_pipeline(
     except Exception as e:
         logger.error(f"[Pipeline] BigQuery ML scoring failed for claim {claim_id}: {e}")
         ml_prob = None
+        baseline_ml_prob = None
         top_ml_features = []
         all_findings.append(Finding(
             finding_id="F-ML-UNAVAILABLE",
@@ -501,6 +503,7 @@ def run_claims_fraud_pipeline(
         claim=claim,
         all_findings=all_findings,
         ml_score=ml_prob,
+        baseline_ml_score=baseline_ml_prob,
         top_ml_features=top_ml_features,
         timeline=timeline,
         retrieved_context=retrieved_contexts,

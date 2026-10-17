@@ -1,6 +1,8 @@
+import time
 import logging
+import threading
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
@@ -10,6 +12,9 @@ from backend.tools.bq import bq_warehouse
 logger = logging.getLogger("finshield.routers.graph")
 
 router = APIRouter(prefix="/graph", tags=["graph"])
+
+_RINGS_CACHE: Dict[str, Any] = {"timestamp": 0.0, "rings": []}
+_RINGS_CACHE_LOCK = threading.Lock()
 
 
 class NetworkNode(BaseModel):
@@ -56,7 +61,14 @@ class GraphRingsResponse(BaseModel):
 
 
 def _fetch_fraud_rings() -> List[FraudRingSummary]:
-    """Queries live BigQuery claims data for active fraud rings."""
+    """Queries live BigQuery claims data for active fraud rings with in-memory caching."""
+    now = time.time()
+    cache_ttl = getattr(settings, "CACHE_MAX_AGE_STATIC", 60.0)
+
+    with _RINGS_CACHE_LOCK:
+        if (now - _RINGS_CACHE["timestamp"] < cache_ttl) and _RINGS_CACHE["rings"]:
+            return list(_RINGS_CACHE["rings"])
+
     rings: List[FraudRingSummary] = []
 
     # 1. Shared Bank Account Collusion Rings
@@ -75,7 +87,7 @@ def _fetch_fraud_rings() -> List[FraudRingSummary]:
     LIMIT 10
     """
     try:
-        bank_results = list(bq_warehouse.client.query(bank_query).result())
+        bank_results = bq_warehouse.query_rows(bank_query, timeout=15.0)
         for idx, row in enumerate(bank_results):
             bhash = row.bank_account_hash
             parts = bhash.split('_')
@@ -116,7 +128,7 @@ def _fetch_fraud_rings() -> List[FraudRingSummary]:
     LIMIT 5
     """
     try:
-        doc_results = list(bq_warehouse.client.query(doc_query).result())
+        doc_results = bq_warehouse.query_rows(doc_query, timeout=15.0)
         for row in doc_results:
             did = row.doctor_id
             ring_id = f"RING-DOC-{did.replace('DOC-', '')}"
@@ -135,7 +147,13 @@ def _fetch_fraud_rings() -> List[FraudRingSummary]:
     except Exception as e:
         logger.error(f"Failed to query doctor rings: {e}")
 
+    if rings:
+        with _RINGS_CACHE_LOCK:
+            _RINGS_CACHE["timestamp"] = now
+            _RINGS_CACHE["rings"] = list(rings)
+
     return rings
+
 
 
 def _build_subgraph_for_ring(ring: FraudRingSummary, limit: int = 20) -> RingDetailResponse:
@@ -182,7 +200,7 @@ def _build_subgraph_for_ring(ring: FraudRingSummary, limit: int = 20) -> RingDet
         )
 
     try:
-        rows = list(bq_warehouse.client.query(query, job_config=job_config).result())
+        rows = bq_warehouse.query_rows(query, job_config=job_config, timeout=15.0)
     except Exception as e:
         logger.error(f"Failed to query claims for ring {ring.ring_id}: {e}")
         rows = []
@@ -333,6 +351,8 @@ def _build_subgraph_for_ring(ring: FraudRingSummary, limit: int = 20) -> RingDet
 
 @router.get("/rings", response_model=GraphRingsResponse)
 async def get_fraud_rings(
+    request: Request,
+    response: Response,
     ring_id: Optional[str] = Query(None, description="Optional ring ID to expand"),
     limit: int = Query(20, ge=5, le=100, description="Max claims to include in subgraph"),
     user: Dict[str, Any] = Depends(get_current_user),
@@ -340,10 +360,24 @@ async def get_fraud_rings(
     """
     Returns list of detected fraud rings in BigQuery, and builds the
     interactive network subgraph for the selected or top ring.
+    Cached for 60s with ETag and 304 Not Modified support.
     """
     rings = _fetch_fraud_rings()
     if not rings:
         return GraphRingsResponse(rings=[], selected_ring=None)
+
+    cache_ts = int(_RINGS_CACHE.get("timestamp", 0))
+    etag = f'W/"rings-{len(rings)}-{ring_id or "default"}-{cache_ts}"'
+
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip() == etag:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Cache-Control": f"public, max-age={settings.CACHE_MAX_AGE_STATIC}, stale-while-revalidate=300"
+            }
+        )
 
     # Find the target ring
     selected_summary: Optional[FraudRingSummary] = None
@@ -354,12 +388,28 @@ async def get_fraud_rings(
         selected_summary = rings[0]
 
     detail = _build_subgraph_for_ring(selected_summary, limit=limit)
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = f"public, max-age={settings.CACHE_MAX_AGE_STATIC}, stale-while-revalidate=300"
     return GraphRingsResponse(rings=rings, selected_ring=detail)
+
+
+@router.get("/network", response_model=GraphRingsResponse, include_in_schema=False)
+async def get_network_graph_alias(
+    request: Request,
+    response: Response,
+    ring_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=5, le=100),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Alias for /graph/rings matching the frontend route /network."""
+    return await get_fraud_rings(request, response, ring_id=ring_id, limit=limit, user=user)
 
 
 @router.get("/rings/{ring_id}", response_model=RingDetailResponse)
 async def get_single_ring(
     ring_id: str,
+    request: Request,
+    response: Response,
     limit: int = Query(20, ge=5, le=100),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -369,4 +419,21 @@ async def get_single_ring(
     if not target:
         raise HTTPException(status_code=404, detail=f"Fraud ring '{ring_id}' not found.")
 
-    return _build_subgraph_for_ring(target, limit=limit)
+    cache_ts = int(_RINGS_CACHE.get("timestamp", 0))
+    etag = f'W/"ring-{ring_id}-{limit}-{cache_ts}"'
+
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip() == etag:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Cache-Control": f"public, max-age={settings.CACHE_MAX_AGE_STATIC}, stale-while-revalidate=300"
+            }
+        )
+
+    detail = _build_subgraph_for_ring(target, limit=limit)
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = f"public, max-age={settings.CACHE_MAX_AGE_STATIC}, stale-while-revalidate=300"
+    return detail
+

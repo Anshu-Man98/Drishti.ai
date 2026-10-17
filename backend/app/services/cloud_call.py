@@ -46,6 +46,8 @@ NON_RETRYABLE_KEYWORDS = (
     "422",
     "corrupt",
     "invalid magic bytes",
+    "bytes billed",
+    "token budget",
 )
 
 

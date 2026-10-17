@@ -278,7 +278,8 @@ def synthid_check(doc_or_image_bytes: bytes) -> Dict[str, Any]:
 
 def gemini_visual_review(
     doc_bytes: bytes,
-    flagged_regions: Optional[List[Dict[str, Any]]] = None
+    flagged_regions: Optional[List[Dict[str, Any]]] = None,
+    claim_id: Optional[str] = None
 ) -> str:
     """
     Gemini visual inspection review of page, constrained to flagged tool regions
@@ -364,10 +365,16 @@ def gemini_visual_review(
             )
 
         response = cloud_call(_exec, service="Gemini", timeout=30.0, max_retries=2)
+        if response:
+            from backend.app.services.gemini_client import track_gemini_tokens
+            track_gemini_tokens(response, claim_id=claim_id, model=model_name)
         if response and response.text and response.text.strip():
             return response.text.strip()
         raise ValueError("Gemini returned empty response for visual review.")
     except Exception as e:
+        from backend.app.services.token_budget import TokenBudgetExceededError
+        if isinstance(e, TokenBudgetExceededError) or "token budget exceeded" in str(e).lower():
+            raise
         import logging
         logging.getLogger(__name__).error(f"[gemini_visual_review] Live Gemini call error: {e}")
         from backend.app.exceptions import CloudServiceError

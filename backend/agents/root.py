@@ -164,13 +164,29 @@ def run_claims_fraud_pipeline(
             return res
         except Exception as e:
             lat_ms = (time.perf_counter() - t0) * 1000
+            db_service.set_agent_status(claim_id, "injection", "error")
+            if "token budget exceeded" in str(e).lower():
+                logger.warning("[Pipeline] Injection specialist exceeded token budget on claim %s: %s", claim_id, e)
+                return [
+                    Finding(
+                        finding_id="F-ERR-TOKEN-BUDGET-INJ",
+                        agent=AgentName.INJECTION,
+                        check_id="TOKEN_BUDGET_EXCEEDED",
+                        severity=Severity.HIGH,
+                        title="LLM token budget exceeded",
+                        explanation=f"LLM token budget exceeded for claim {claim_id}: {e}. Dossier marked incomplete.",
+                        evidence=[],
+                        confidence=1.0,
+                        computed_chip="Token Budget Exceeded",
+                        computed_details={"error": str(e), "agent": "injection", "note": "LLM token budget exceeded"}
+                    )
+                ]
             logger.error(
                 "[Pipeline] Injection specialist failed for claim %s in %.2f ms: %s",
                 claim_id, lat_ms, e,
                 exc_info=True,
                 extra={"claim_id": claim_id, "specialist_id": "injection", "latency_ms": round(lat_ms, 2)}
             )
-            db_service.set_agent_status(claim_id, "injection", "error")
             return [
                 Finding(
                     finding_id="F-ERR-INJECTION-1",
@@ -237,7 +253,7 @@ def run_claims_fraud_pipeline(
                     issued_id = v_res.get("issued_doc_id") or doc.doc_id
                     carrier_name = (v_res.get("carrier") or "carrier").upper()
                     explanation = (
-                        f"Presented document {issued_id} was issued by FinShield with signed payload but altered on page{diff_str}. "
+                        f"Presented document {issued_id} was issued by Drishti with signed payload but altered on page{diff_str}. "
                         f"Cryptographic integrity failed: verified via Ed25519 digital signature over canonical semantic hash ({carrier_name} carrier)."
                     )
                     prov_findings.append(Finding(
@@ -374,13 +390,29 @@ def run_claims_fraud_pipeline(
             return res
         except Exception as e:
             lat_ms = (time.perf_counter() - t0) * 1000
+            db_service.set_agent_status(claim_id, "forensics", "error")
+            if "token budget exceeded" in str(e).lower():
+                logger.warning("[Pipeline] Forensics specialist exceeded token budget on claim %s: %s", claim_id, e)
+                return [
+                    Finding(
+                        finding_id="F-ERR-TOKEN-BUDGET-FOR",
+                        agent=AgentName.FORENSICS,
+                        check_id="TOKEN_BUDGET_EXCEEDED",
+                        severity=Severity.HIGH,
+                        title="LLM token budget exceeded",
+                        explanation=f"LLM token budget exceeded for claim {claim_id}: {e}. Dossier marked incomplete.",
+                        evidence=[],
+                        confidence=1.0,
+                        computed_chip="Token Budget Exceeded",
+                        computed_details={"error": str(e), "agent": "forensics", "note": "LLM token budget exceeded"}
+                    )
+                ]
             logger.error(
                 "[Pipeline] Forensics specialist failed for claim %s in %.2f ms: %s",
                 claim_id, lat_ms, e,
                 exc_info=True,
                 extra={"claim_id": claim_id, "specialist_id": "forensics", "latency_ms": round(lat_ms, 2)}
             )
-            db_service.set_agent_status(claim_id, "forensics", "error")
             return [
                 Finding(
                     finding_id="F-ERR-FORENSICS-1",

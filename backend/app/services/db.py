@@ -103,7 +103,8 @@ class DatabaseService:
         sort_by: Optional[str] = "created_at",
         sort_order: Optional[str] = "desc",
         search: Optional[str] = None,
-        exclude_synthetic: bool = False,
+        include_synthetic: bool = False,
+        exclude_synthetic: Optional[bool] = None,
     ) -> tuple[List[ClaimSummary], int]:
         try:
             docs = self._call_fs(lambda: list(self.client.collection("claims").stream()), timeout=20.0)
@@ -133,6 +134,7 @@ class DatabaseService:
                 d_data = dossiers_map.get(cid)
                 verdict_val = d_data.get("verdict") if d_data else None
                 risk_score = d_data.get("risk_score") if d_data else None
+                source_val = c.get("source") or ("demo" if any(t in cid.upper() for t in ("DEMO", "SYNTH")) else "duel" if "DUEL" in cid.upper() else "upload")
                 summaries.append(ClaimSummary(
                     claim_id=cid,
                     policy_id=c.get("policy_id") or "POL-UNKNOWN",
@@ -147,16 +149,21 @@ class DatabaseService:
                     doc_count=len(c.get("documents", [])),
                     created_at=c.get("created_at") or datetime.utcnow(),
                     verdict=verdict_val,
-                    risk_score=risk_score
+                    risk_score=risk_score,
+                    source=source_val
                 ))
 
-            # Exclude synthetic/demo claims if requested
-            if exclude_synthetic:
+            # Filter synthetic/demo/duel claims unless include_synthetic is True
+            if exclude_synthetic is not None:
+                should_include = not exclude_synthetic
+            else:
+                should_include = include_synthetic
+
+            if not should_include:
                 summaries = [
                     s for s in summaries
-                    if "-DEMO" not in s.claim_id
-                    and "-SYNTH" not in s.claim_id
-                    and not s.claim_id.startswith("SYNTH-")
+                    if s.source == "upload"
+                    and not any(tag in s.claim_id.upper() for tag in ("-DEMO", "DEMO-", "-SYNTH", "SYNTH-", "-DUEL", "DUEL-"))
                 ]
 
             # Filter by search string
@@ -211,8 +218,8 @@ class DatabaseService:
                 retryable=True
             )
 
-    def list_claims(self, limit: int = 50, offset: int = 0) -> List[ClaimSummary]:
-        paged, _ = self.list_claims_paged(limit=limit, offset=offset)
+    def list_claims(self, limit: int = 50, offset: int = 0, include_synthetic: bool = True) -> List[ClaimSummary]:
+        paged, _ = self.list_claims_paged(limit=limit, offset=offset, include_synthetic=include_synthetic)
         return paged
 
     def save_dossier(self, dossier: Dossier) -> None:

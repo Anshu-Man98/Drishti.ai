@@ -233,6 +233,7 @@ def apply_mutation_to_claim(
     mutated.metadata["duel_round"] = round_num
     mutated.metadata["adversarial_tactic"] = mutation.tactic
     mutated.metadata["adversarial_marker"] = "FINSHIELD-SYNTHETIC-DEMO"
+    mutated.source = "duel"
 
     return mutated
 

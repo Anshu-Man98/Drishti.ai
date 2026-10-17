@@ -17,6 +17,7 @@ os.environ["FIRESTORE_DATABASE"] = "(default)"
 os.environ["GCS_BUCKET_NAME"] = "finshield-claims-docs-drishti-demo"
 os.environ["DOCUMENTAI_PROCESSOR_ID"] = "projects/drishti-demo/locations/us/processors/test-processor"
 os.environ["FINSHIELD_PROVENANCE_KEY"] = "test-provenance-key-32-bytes-ok!"
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 # --- Client Boundary Fakes ---
 
@@ -764,6 +765,7 @@ if not settings.DOCUMENTAI_PROCESSOR_ID:
     settings.DOCUMENTAI_PROCESSOR_ID = "projects/drishti-demo/locations/us/processors/test-processor"
 if not settings.FINSHIELD_PROVENANCE_KEY:
     settings.FINSHIELD_PROVENANCE_KEY = "test-provenance-key-32-bytes-ok!"
+settings.RATE_LIMIT_ENABLED = False
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -781,15 +783,24 @@ def isolated_test_environment():
     """Ensures test database, storage, and Gemini client are isolated and reset before and after each test."""
     from backend.app.services.gemini_client import reset_gemini_client
     from backend.tools.pattern_tools import clear_learned_patterns_cache
+    from backend.app.services.rate_limiter import rate_limit_manager
+    from backend.app.services.metrics import metrics_service
+    from backend.app.services.token_budget import token_budget_tracker
     reset_gemini_client()
     fake_fs.clear()
     fake_storage.clear()
     clear_learned_patterns_cache()
+    rate_limit_manager.clear()
+    metrics_service.clear()
+    token_budget_tracker.clear()
     yield
     reset_gemini_client()
     fake_fs.clear()
     fake_storage.clear()
     clear_learned_patterns_cache()
+    rate_limit_manager.clear()
+    metrics_service.clear()
+    token_budget_tracker.clear()
 
 
 @pytest.fixture

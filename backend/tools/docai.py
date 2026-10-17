@@ -249,11 +249,13 @@ def render_pdf_to_page_images(pdf_bytes: bytes, claim_id: str) -> List[str]:
 
 def extract_with_gemini_vision(
     page_images_bytes: List[bytes],
-    doc_text: Optional[str] = None
+    doc_text: Optional[str] = None,
+    claim_id: Optional[str] = None
 ) -> Optional[GeminiExtractedBill]:
     """
     Executes structured visual extraction using Gemini multimodal vision.
     Enforces anti-injection guardrails: wraps OCR text as untrusted context and extracts only physically visible fields.
+    Tracks token consumption against the claim's LLM budget.
     """
     if not page_images_bytes:
         return None
@@ -296,6 +298,9 @@ def extract_with_gemini_vision(
             )
 
         response = cloud_call(_generate, service="Gemini", timeout=30.0, max_retries=2)
+        if response:
+            from backend.app.services.gemini_client import track_gemini_tokens
+            track_gemini_tokens(response, claim_id=claim_id, model=model)
         if response and response.text:
             return GeminiExtractedBill.model_validate_json(response.text)
     except Exception as e:
@@ -306,7 +311,8 @@ def extract_with_gemini_vision(
 def reextract_line_items_gemini(
     page_images_bytes: List[bytes],
     current_items_sum: float,
-    target_subtotal: float
+    target_subtotal: float,
+    claim_id: Optional[str] = None
 ) -> Optional[GeminiReExtractionResult]:
     """
     Targeted second pass with Gemini Vision when extracted line items do not sum to printed subtotal.
@@ -348,6 +354,9 @@ def reextract_line_items_gemini(
             )
 
         response = cloud_call(_generate_reextract, service="Gemini", timeout=30.0, max_retries=2)
+        if response:
+            from backend.app.services.gemini_client import track_gemini_tokens
+            track_gemini_tokens(response, claim_id=claim_id, model=model)
         if response and response.text:
             return GeminiReExtractionResult.model_validate_json(response.text)
     except Exception as e:
@@ -456,7 +465,8 @@ def process_document_docai(
     # 2. Invoke Gemini Multimodal Vision structured extraction
     gemini_extracted = extract_with_gemini_vision(
         page_images,
-        doc_text=sanitized_doc_text or (getattr(docai_doc, "text", "") if docai_doc else "")
+        doc_text=sanitized_doc_text or (getattr(docai_doc, "text", "") if docai_doc else ""),
+        claim_id=claim_id
     )
 
     # 3. Fuse Document AI entities and Gemini Vision results
@@ -936,7 +946,7 @@ def _map_docai_result_to_claim(
         diff = abs(calculated_subtotal - subtotal)
         if diff > 1.0 and page_images_bytes:
             # Attempt one targeted re-extraction pass with Gemini Vision
-            re_res = reextract_line_items_gemini(page_images_bytes, calculated_subtotal, subtotal)
+            re_res = reextract_line_items_gemini(page_images_bytes, calculated_subtotal, subtotal, claim_id=claim_id)
             if re_res and re_res.line_items:
                 re_items = [
                     LineItem(

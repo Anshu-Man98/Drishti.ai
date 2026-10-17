@@ -119,3 +119,49 @@ def probe_gemini_service() -> Dict[str, Any]:
             "model": model_name,
             "detail": str(e)
         }
+
+
+def track_gemini_tokens(
+    response: Any,
+    claim_id: Optional[str] = None,
+    model: str = "gemini-2.5-flash"
+) -> int:
+    """
+    Extracts usage_metadata from a Gemini response and records tokens via token_budget_tracker.
+    Enforces the per-claim hard cap (default: 30,000 tokens) raising TokenBudgetExceededError if exceeded.
+    Also records metrics globally into metrics_service.
+    """
+    if not response:
+        return 0
+
+    prompt_tokens = 0
+    candidate_tokens = 0
+    usage = getattr(response, "usage_metadata", None)
+    if usage:
+        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+        candidate_tokens = getattr(usage, "candidates_token_count", 0) or 0
+    else:
+        text = getattr(response, "text", "") or ""
+        candidate_tokens = max(1, len(text) // 4) if text else 10
+        prompt_tokens = 50
+
+    call_tokens = prompt_tokens + candidate_tokens
+
+    # Update operational metrics
+    try:
+        from backend.app.services.metrics import metrics_service
+        metrics_service.record_llm_tokens(call_tokens)
+    except Exception as e:
+        logger.debug("Metrics record llm tokens skipped: %s", e)
+
+    if claim_id:
+        from backend.app.services.token_budget import token_budget_tracker
+        return token_budget_tracker.record_usage(
+            claim_id=claim_id,
+            prompt_tokens=prompt_tokens,
+            candidate_tokens=candidate_tokens,
+            model=model
+        )
+
+    return call_tokens
+

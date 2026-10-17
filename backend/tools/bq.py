@@ -61,18 +61,52 @@ class BigQueryWarehouse:
         return self._client
 
     def query_rows(self, query: str, job_config: Optional[Any] = None, timeout: float = 30.0) -> List[Any]:
-        """Executes BigQuery SQL query through cloud_call with timeout and jittered retries."""
+        """
+        Executes BigQuery SQL query through cloud_call with timeout and jittered retries.
+        Enforces maximum_bytes_billed guardrail (default: 50 MB) and records scanned metrics.
+        Fails gracefully if bytes scanned exceeds guardrail limit.
+        """
         from backend.app.services.cloud_call import cloud_call
 
         def _exec():
-            job = self.client.query(query, job_config=job_config)
+            cfg = job_config
+            if cfg is None and _bq_available:
+                try:
+                    cfg = bigquery.QueryJobConfig()
+                except Exception:
+                    cfg = None
+            if cfg is not None and hasattr(cfg, "maximum_bytes_billed"):
+                if getattr(cfg, "maximum_bytes_billed", None) is None:
+                    cfg.maximum_bytes_billed = settings.BQ_MAX_BYTES_BILLED
+
+            job = self.client.query(query, job_config=cfg)
             try:
                 res = job.result(timeout=timeout)
             except TypeError:
                 res = job.result()
+
+            bytes_billed = getattr(job, "total_bytes_billed", None) or getattr(job, "total_bytes_processed", 0) or 0
+            if isinstance(bytes_billed, (int, float)) and bytes_billed > 0:
+                try:
+                    from backend.app.services.metrics import metrics_service
+                    metrics_service.record_bq_bytes(int(bytes_billed))
+                except Exception as e:
+                    logger.debug("Metrics recording bq bytes skipped: %s", e)
+
             return list(res)
 
-        return cloud_call(_exec, service="BigQuery", timeout=timeout + 5.0)
+        try:
+            return cloud_call(_exec, service="BigQuery", timeout=timeout + 5.0)
+        except Exception as e:
+            if "bytes billed" in str(e).lower() or "limit for bytes billed" in str(e).lower():
+                logger.error(
+                    "BigQuery query rejected by maximum_bytes_billed guardrail (%d bytes): %s",
+                    settings.BQ_MAX_BYTES_BILLED, e,
+                    extra={"maximum_bytes_billed": settings.BQ_MAX_BYTES_BILLED}
+                )
+                return []
+            raise
+
 
     def get_baseline_fraud_rate(self) -> float:
         """Returns the training baseline prior fraud rate from claims warehouse (cached)."""

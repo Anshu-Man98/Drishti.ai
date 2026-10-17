@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     ANALYSIS_BUDGET_SECONDS: float = float(os.getenv("ANALYSIS_BUDGET_SECONDS", "90.0"))
     CLOUD_CALL_TIMEOUT_SEC: float = float(os.getenv("CLOUD_CALL_TIMEOUT_SEC", "30.0"))
     CLOUD_CALL_MAX_RETRIES: int = int(os.getenv("CLOUD_CALL_MAX_RETRIES", "2"))
+
+    # Cost Protection & Quota Guards (Fix 7)
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes")
+    MAX_CLAIM_LLM_TOKENS: int = int(os.getenv("MAX_CLAIM_LLM_TOKENS", "30000"))
+    BQ_MAX_BYTES_BILLED: int = int(os.getenv("BQ_MAX_BYTES_BILLED", str(50 * 1024 * 1024)))  # 50 MB
+    RATE_LIMIT_CLAIMS_PER_MIN: int = int(os.getenv("RATE_LIMIT_CLAIMS_PER_MIN", "10"))
+    RATE_LIMIT_ANALYSES_PER_MIN: int = int(os.getenv("RATE_LIMIT_ANALYSES_PER_MIN", "20"))
+    RATE_LIMIT_CHATS_PER_MIN: int = int(os.getenv("RATE_LIMIT_CHATS_PER_MIN", "60"))
+    RATE_LIMIT_DUEL_PER_MIN: int = int(os.getenv("RATE_LIMIT_DUEL_PER_MIN", "30"))
+    CACHE_MAX_AGE_DOSSIER: int = int(os.getenv("CACHE_MAX_AGE_DOSSIER", "60"))
+    CACHE_MAX_AGE_STATIC: int = int(os.getenv("CACHE_MAX_AGE_STATIC", "300"))
     
     model_config = SettingsConfigDict(
         env_file=".env",

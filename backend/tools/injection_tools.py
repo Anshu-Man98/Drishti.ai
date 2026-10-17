@@ -379,7 +379,7 @@ def diff_layers(
     return candidates
 
 
-def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
+def classify_hidden_text(hidden_strings: List[str], claim_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Classifies hidden text using Gemini Flash.
     Input delivered inside an explicitly untrusted container:
@@ -411,7 +411,7 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
 
     try:
         from google.genai import types
-        from backend.app.services.gemini_client import get_gemini_client, get_model_name
+        from backend.app.services.gemini_client import get_gemini_client, get_model_name, track_gemini_tokens
         from backend.app.services.cloud_call import cloud_call
 
         client = get_gemini_client()
@@ -429,12 +429,17 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
             )
 
         response = cloud_call(_exec, service="Gemini", timeout=15.0, max_retries=2)
+        if response:
+            track_gemini_tokens(response, claim_id=claim_id, model=model_name)
         if response and response.text:
             import json
             parsed = json.loads(response.text)
             if "classification" in parsed:
                 return parsed
     except Exception as e:
+        from backend.app.services.token_budget import TokenBudgetExceededError
+        if isinstance(e, TokenBudgetExceededError) or "token budget exceeded" in str(e).lower():
+            raise
         logger.warning("Gemini classification failed: %s", e)
 
     # If Gemini fails after retry, surface explicit error finding: "classification_unavailable"
@@ -443,6 +448,7 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
         "rationale": "Automated AI classification for hidden text was unavailable after retry.",
         "quoted_excerpt": joined_text[:120]
     }
+
 
 
 def detect_hidden_text_injection(claim: Claim) -> List[Finding]:
@@ -498,7 +504,7 @@ def detect_hidden_text_injection(claim: Claim) -> List[Finding]:
 
         # Extract text snippets for model classification
         hidden_texts = [r["text"] for r in hidden_runs]
-        classification_result = classify_hidden_text(hidden_texts)
+        classification_result = classify_hidden_text(hidden_texts, claim_id=claim.claim_id)
         cls = classification_result.get("classification", "unknown")
 
         # Deterministic severity mapping

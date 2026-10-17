@@ -655,6 +655,7 @@ def run_apply() -> int:
             # Build full Claim schema dictionary
             doc_payload = {
                 "claim_id": claim_id,
+                "source": "demo",
                 "policy_id": claim["policy_id"],
                 "insurer_id": claim["insurer_id"],
                 "claimant": claim["claimant"],

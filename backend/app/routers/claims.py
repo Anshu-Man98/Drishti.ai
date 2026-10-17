@@ -1,6 +1,8 @@
 import asyncio
 import io
 import json
+import time
+import hashlib
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
@@ -8,7 +10,7 @@ import unicodedata
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends, Query, BackgroundTasks, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Request, Header, Depends, Query, BackgroundTasks, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
 import pypdf
@@ -24,6 +26,8 @@ from backend.app.exceptions import CloudServiceError, StorageError, ProvenanceSi
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
 from backend.app.services.claim_lock import claim_lock_manager
+from backend.app.services.rate_limiter import RateLimiter
+from backend.app.services.metrics import metrics_service
 from backend.app.dependencies import require_adjuster_role
 
 logger = logging.getLogger(__name__)
@@ -52,8 +56,10 @@ async def create_claim(
     tax: Optional[float] = Form(None),
     total_claimed: Optional[float] = Form(None),
     line_items_json: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[])
+    files: List[UploadFile] = File(default=[]),
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_CLAIMS_PER_MIN, "claims"))
 ):
+
     """
     Multipart upload creating a new Claim, saving documents to Storage, and saving metadata to Database.
     Extracts entities, bounding boxes, and metadata automatically via Document AI when PDF is provided.
@@ -354,6 +360,7 @@ async def create_claim(
         extracted_entities=extracted_entities,
         field_sources=resolved_field_sources,
         metadata=docai_claim.metadata.copy() if (docai_claim and docai_claim.metadata) else {},
+        source="upload",
         created_at=datetime.utcnow()
     )
 
@@ -396,6 +403,8 @@ def create_claim_direct(claim: Claim):
 
     if not claim.created_at:
         claim.created_at = datetime.utcnow()
+    if not getattr(claim, "source", None):
+        claim.source = "upload"
     db_service.save_claim(claim)
     return {"claim_id": claim.claim_id, "status": "created"}
 
@@ -409,7 +418,8 @@ def list_claims(
     sort_by: Optional[str] = Query(default="created_at"),
     sort_order: Optional[str] = Query(default="desc"),
     search: Optional[str] = Query(default=None),
-    exclude_synthetic: bool = Query(default=False),
+    include_synthetic: bool = Query(default=False),
+    exclude_synthetic: Optional[bool] = Query(default=None),
 ):
     claims, total_count = db_service.list_claims_paged(
         limit=limit,
@@ -418,6 +428,7 @@ def list_claims(
         sort_by=sort_by,
         sort_order=sort_order,
         search=search,
+        include_synthetic=include_synthetic,
         exclude_synthetic=exclude_synthetic,
     )
     response.headers["X-Total-Count"] = str(total_count)
@@ -436,11 +447,29 @@ def get_claim(claim_id: str):
 
 
 @router.get("/{claim_id}/dossier", response_model=Dossier)
-def get_dossier(claim_id: str):
+def get_dossier(claim_id: str, request: Request, response: Response):
     dossier = db_service.get_dossier(claim_id)
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found for this claim")
+
+    created_iso = dossier.created_at.isoformat() if hasattr(dossier, "created_at") and dossier.created_at else "0"
+    etag_raw = f"{claim_id}:{created_iso}:{dossier.risk_score}:{len(dossier.findings)}"
+    etag = f'W/"{hashlib.sha256(etag_raw.encode("utf-8")).hexdigest()[:16]}"'
+
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip() == etag:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Cache-Control": f"public, max-age={settings.CACHE_MAX_AGE_DOSSIER}, stale-while-revalidate=300"
+            }
+        )
+
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = f"public, max-age={settings.CACHE_MAX_AGE_DOSSIER}, stale-while-revalidate=300"
     return dossier
+
 
 
 from backend.agents.root import run_adk_pipeline, run_claims_fraud_pipeline
@@ -474,13 +503,16 @@ def get_claim_status(claim_id: str):
 def analyze_claim(
     claim_id: str,
     background_tasks: BackgroundTasks,
+    request: Request,
     force: bool = False,
     async_mode: bool = Query(default=False, alias="async"),
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_ANALYSES_PER_MIN, "analyze")),
 ):
     """
     Runs the multi-agent fraud pipeline via ADK Runner.
     Writes Dossier to DB/Firestore.
     Idempotent across concurrent calls via claim_lock_manager.
+    Returns 409 Conflict if X-Conflict-On-Concurrent header is present and analysis is already running.
     Supports ?async=true to immediately return 202 with status URL.
     """
     claim = db_service.get_claim(claim_id)
@@ -491,6 +523,27 @@ def analyze_claim(
         existing_dossier = db_service.get_dossier(claim_id)
         if existing_dossier and existing_dossier.findings:
             return existing_dossier
+
+    # Check if analysis is already running for this claim
+    if claim_lock_manager.is_running(claim_id):
+        if (
+            request.headers.get("x-conflict-on-concurrent", "").lower() in ("true", "1")
+            or request.query_params.get("conflict", "").lower() in ("true", "1")
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"error": "Analysis already in progress", "claim_id": claim_id}
+            )
+        if async_mode:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content={
+                    "claim_id": claim_id,
+                    "status": "running",
+                    "status_url": f"/api/claims/{claim_id}/status",
+                    "agent_status_url": f"/api/claims/{claim_id}/agent-status"
+                }
+            )
 
     is_leader, dossier = claim_lock_manager.acquire_or_wait(claim_id, async_mode=async_mode)
 
@@ -512,14 +565,17 @@ def analyze_claim(
             return completed_dossier
         raise HTTPException(status_code=500, detail="Concurrent analysis completed without producing a dossier")
 
+    t0 = time.time()
     if async_mode:
         def _bg_analyze():
             try:
                 res_dossier = run_adk_pipeline(claim)
                 claim_lock_manager.complete_analysis(claim_id, dossier=res_dossier)
+                metrics_service.record_analysis(time.time() - t0, success=True)
             except Exception as e:
                 logger.error("Background analysis failed for claim %s: %s", claim_id, e, exc_info=True)
                 claim_lock_manager.complete_analysis(claim_id, error=e)
+                metrics_service.record_analysis(time.time() - t0, success=False)
 
         background_tasks.add_task(_bg_analyze)
         return JSONResponse(
@@ -535,14 +591,16 @@ def analyze_claim(
     try:
         dossier = run_adk_pipeline(claim)
         claim_lock_manager.complete_analysis(claim_id, dossier=dossier)
+        metrics_service.record_analysis(time.time() - t0, success=True)
         return dossier
     except Exception as e:
         claim_lock_manager.complete_analysis(claim_id, error=e)
+        metrics_service.record_analysis(time.time() - t0, success=False)
         raise
 
 
 @router.get("/{claim_id}/documents/{doc_id}")
-def get_claim_document(claim_id: str, doc_id: str):
+def get_claim_document(claim_id: str, doc_id: str, request: Request):
     claim = db_service.get_claim(claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
@@ -554,33 +612,70 @@ def get_claim_document(claim_id: str, doc_id: str):
     try:
         data = storage_service.read_file(doc.gcs_uri)
         media_type = "application/pdf" if doc.filename and doc.filename.endswith(".pdf") else "image/png"
-        return Response(content=data, media_type=media_type)
+        etag = f'"{hashlib.sha256(data).hexdigest()[:16]}"'
+
+        if request.headers.get("if-none-match") == etag:
+            return Response(
+                status_code=304,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "public, max-age=31536000, immutable"
+                }
+            )
+
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=31536000, immutable"
+            }
+        )
     except Exception as e:
         logger.error("Failed to read document %s for claim %s: %s", doc_id, claim_id, e)
         raise StorageError(f"Failed to read document: {e}", doc_id=doc_id)
 
 
 @router.get("/{claim_id}/pages/{page_num}")
-def get_claim_page_image(claim_id: str, page_num: int = 1):
+def get_claim_page_image(claim_id: str, request: Request, page_num: int = 1):
     page_blob_name = f"uploads/{claim_id}/pages/page_{page_num}.png"
     page_uri = f"gs://{settings.GCS_BUCKET_NAME}/{page_blob_name}"
+    content = None
     try:
         content = storage_service.read_file(page_uri)
-        return Response(content=content, media_type="image/png")
     except Exception as e:
         logger.debug("Page image not in cache for claim %s page %s, attempting on-the-fly rendering: %s", claim_id, page_num, e)
 
     # Render on the fly from document if not already cached
-    claim = db_service.get_claim(claim_id)
-    if claim and claim.documents:
-        try:
-            doc_bytes = storage_service.read_file(claim.documents[0].gcs_uri)
-            from backend.tools.docai import render_pdf_to_page_images
-            render_pdf_to_page_images(doc_bytes, claim_id)
-            content = storage_service.read_file(page_uri)
-            return Response(content=content, media_type="image/png")
-        except Exception as e:
-            logger.warning("Error on-the-fly rendering page image for claim %s: %s", claim_id, e)
+    if not content:
+        claim = db_service.get_claim(claim_id)
+        if claim and claim.documents:
+            try:
+                doc_bytes = storage_service.read_file(claim.documents[0].gcs_uri)
+                from backend.tools.docai import render_pdf_to_page_images
+                render_pdf_to_page_images(doc_bytes, claim_id)
+                content = storage_service.read_file(page_uri)
+            except Exception as e:
+                logger.warning("Error on-the-fly rendering page image for claim %s: %s", claim_id, e)
+
+    if content:
+        etag = f'"{hashlib.sha256(content).hexdigest()[:16]}"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(
+                status_code=304,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "public, max-age=31536000, immutable"
+                }
+            )
+        return Response(
+            content=content,
+            media_type="image/png",
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=31536000, immutable"
+            }
+        )
 
     raise HTTPException(status_code=404, detail="Page image not found")
 
@@ -601,7 +696,8 @@ def get_claim_entities(claim_id: str):
 async def chat_with_claim_dossier(
     claim_id: str,
     request: ChatRequest,
-    accept: Optional[str] = Header(None)
+    accept: Optional[str] = Header(None),
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_CHATS_PER_MIN, "chat"))
 ):
     """
     Adjuster chat with the claim dossier via Server-Sent Events (SSE) or direct JSON.

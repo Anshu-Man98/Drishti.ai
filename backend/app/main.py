@@ -165,6 +165,14 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from backend.app.exceptions import CloudServiceError, DrishtiError
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 
 @app.exception_handler(CloudServiceError)
 async def cloud_service_error_handler(request: Request, exc: CloudServiceError):
@@ -214,6 +222,9 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
 
     deps = _CACHED_HEALTH
     all_ok = all(d.get("ok", False) for d in deps.values())
+    from backend.app.services.metrics import metrics_service
+    metrics_summary = metrics_service.get_metrics()
+
     status_str = "healthy" if all_ok else "unhealthy"
 
     content = {
@@ -228,6 +239,7 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
             "pro": settings.GEMINI_PRO_MODEL,
             "flash": settings.GEMINI_FLASH_MODEL
         },
+        "metrics": metrics_summary,
         "last_probe": _LAST_PROBE_TIME.isoformat() if _LAST_PROBE_TIME else None
     }
 
@@ -237,12 +249,21 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
     return content
 
 
+@api_router.get("/metrics")
+@app.get("/metrics")
+def get_metrics_endpoint():
+    """Operational telemetry: claims analyzed, error rate, p50/p95 latency, tokens, BQ bytes."""
+    from backend.app.services.metrics import metrics_service
+    return metrics_service.get_metrics()
+
+
 @app.get("/")
 def root():
     return {
         "message": "Welcome to Drishti.ai API",
         "docs_url": "/docs",
         "health_url": "/health",
+        "metrics_url": "/metrics",
         "version": settings.VERSION
     }
 

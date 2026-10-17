@@ -203,6 +203,17 @@ def synthesize_dossier(
         verdict = Verdict.REVIEW
         risk_score = max(risk_score, 45)
 
+    has_token_budget_finding = any(
+        (getattr(f, "check_id", None) or "") == "TOKEN_BUDGET_EXCEEDED"
+        or "token budget exceeded" in (getattr(f, "title", None) or "").lower()
+        for f in all_findings
+    )
+    if has_token_budget_finding and "LLM token budget exceeded" not in summary:
+        summary += " LLM token budget exceeded: analysis stopped to prevent cost runaway."
+
+    from backend.app.services.token_budget import token_budget_tracker
+    tokens_spent, cost_usd = token_budget_tracker.get_claim_usage(claim.claim_id)
+
     return Dossier(
         claim_id=claim.claim_id,
         risk_score=risk_score,
@@ -216,6 +227,8 @@ def synthesize_dossier(
         timeline=timeline,
         retrieved_context=retrieved_context,
         provenance=provenance,
+        llm_tokens_spent=tokens_spent,
+        cost_usd=cost_usd,
         created_at=datetime.utcnow()
     )
 

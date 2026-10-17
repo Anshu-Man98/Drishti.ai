@@ -33,7 +33,9 @@ export async function fetchClaims(params?: FetchClaimsParams): Promise<FetchClai
   if (params?.sortBy) query.set('sort_by', params.sortBy);
   if (params?.sortOrder) query.set('sort_order', params.sortOrder);
   if (params?.search) query.set('search', params.search);
-  if (params?.excludeSynthetic) query.set('exclude_synthetic', 'true');
+  if (params?.excludeSynthetic !== undefined) {
+    query.set('include_synthetic', String(!params.excludeSynthetic));
+  }
 
   const qs = query.toString();
   const url = `${API_BASE_URL}/claims${qs ? `?${qs}` : ''}`;
@@ -309,9 +311,8 @@ export async function fetchHealthStatus(): Promise<HealthStatus> {
 }
 
 export async function fetchAnalyticsSummary(excludeSynthetic: boolean = false): Promise<import('../types').AnalyticsSummary> {
-  const url = excludeSynthetic
-    ? `${API_BASE_URL}/analytics/summary?exclude_synthetic=true`
-    : `${API_BASE_URL}/analytics/summary`;
+  const includeSynthetic = !excludeSynthetic;
+  const url = `${API_BASE_URL}/analytics/summary?include_synthetic=${includeSynthetic}`;
   const resp = await fetch(url, {
     headers: getAuthHeaders(),
   });

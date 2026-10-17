@@ -425,7 +425,7 @@ def verify_document(
     if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
         return {
             "status": "not_applicable",
-            "detail": "Non-PDF document format; FinShield digital provenance not applicable.",
+            "detail": "Non-PDF document format; Drishti digital provenance not applicable.",
             "payload": None,
             "carrier": None,
             "diff": None
@@ -596,7 +596,7 @@ def verify_document(
             return {
                 "status": "verified",
                 "detail": (
-                    f"Verified genuine approval letter issued by FinShield. "
+                    f"Verified genuine approval letter issued by Drishti. "
                     f"Ed25519 digital signature valid and semantic content hash matches "
                     f"(Sanctioned: ₹{signed_amount_paise / 100:,.2f}). Carrier: {recovered_carrier}."
                 ),
@@ -686,7 +686,7 @@ def verify_document(
 
     return {
         "status": "not_applicable",
-        "detail": "Third-party document (e.g. hospital bill); no FinShield provenance mark expected.",
+        "detail": "Third-party document (e.g. hospital bill); no Drishti provenance mark expected.",
         "payload": None,
         "carrier": None,
         "diff": None

@@ -103,6 +103,7 @@ class Claim(BaseModel):
     extracted_entities: List[ExtractedEntity] = Field(default_factory=list)
     field_sources: Optional[dict[str, str]] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
+    source: str = "upload"  # "upload" | "demo" | "duel" | "qa"
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -173,6 +174,8 @@ class Dossier(BaseModel):
     timeline: Optional[List[TimelineEvent]] = None
     retrieved_context: Optional[List[RetrievedContext]] = None
     provenance: Optional[Provenance] = None
+    llm_tokens_spent: int = Field(default=0, description="Total prompt and candidate tokens consumed across all specialist agents")
+    cost_usd: float = Field(default=0.0, description="Estimated cloud AI and API cost in USD")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -191,6 +194,7 @@ class ClaimSummary(BaseModel):
     created_at: datetime
     verdict: Optional[Verdict] = None
     risk_score: Optional[int] = None
+    source: str = "upload"
 
 
 class ChatMessage(BaseModel):

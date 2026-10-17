@@ -7,6 +7,8 @@ import uuid
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from pydantic import BaseModel, Field
 
+from backend.app.config import settings
+from backend.app.services.rate_limiter import RateLimiter
 from backend.app.schemas import Claim
 from backend.app.services.db import db_service
 from backend.agents.duel import run_duel, DuelResult, create_fraudster_agent
@@ -14,6 +16,7 @@ from backend.app.dependencies import get_current_user
 
 logger = logging.getLogger("finshield.routers.duel")
 router = APIRouter(prefix="/duel", tags=["duel"])
+
 
 
 class StartDuelRequest(BaseModel):
@@ -70,6 +73,7 @@ async def start_duel(
     req: Optional[StartDuelRequest] = None,
     background_tasks: BackgroundTasks = None,
     wait: Optional[bool] = Query(None, description="Override synchronous execution mode"),
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_DUEL_PER_MIN, "duel")),
     user=Depends(get_current_user)
 ):
     """
@@ -205,3 +209,17 @@ async def get_learned_patterns_endpoint(user=Depends(get_current_user)):
     """Retrieves all evasion patterns learned from adversarial duels."""
     patterns = db_service.get_learned_patterns()
     return patterns
+
+
+@router.post("/round", response_model=DuelResult)
+async def run_single_round(
+    req: Optional[StartDuelRequest] = None,
+    background_tasks: BackgroundTasks = None,
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_DUEL_PER_MIN, "duel")),
+    user=Depends(get_current_user)
+):
+    """Executes a single-round adversarial duel step with rate limiting."""
+    req = req or StartDuelRequest(rounds=1)
+    req.rounds = 1
+    return await start_duel(req, background_tasks=background_tasks, wait=True, rate_limit=rate_limit, user=user)
+

@@ -62,7 +62,7 @@ def analyze_document_forensics(claim: Claim) -> List[Finding]:
             synthid_res = synthid_check(doc_bytes)
 
             if anomalies or meta_findings:
-                review_text = gemini_visual_review(doc_bytes, anomalies)
+                review_text = gemini_visual_review(doc_bytes, anomalies, claim_id=claim.claim_id)
         else:
             # Raster Image Forensics (PNG, JPEG, etc.)
             exif_res = image_exif_check(doc_bytes)

@@ -115,6 +115,14 @@ def is_incomplete_analysis_condition(f: Union[Finding, dict, Any]) -> bool:
     ):
         return True
 
+    # 6. LLM Token budget exceeded
+    if (
+        "token_budget_exceeded" in cid
+        or "token budget exceeded" in title
+        or "token budget exceeded" in exp
+    ):
+        return True
+
     return False
 
 

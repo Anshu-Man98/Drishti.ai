@@ -13,7 +13,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/summary", response_model=Dict[str, Any])
-def get_analytics_summary(exclude_synthetic: bool = False):
+def get_analytics_summary(include_synthetic: bool = False, exclude_synthetic: Optional[bool] = None):
     """
     Computes real-time executive analytics and fraud scrutiny KPIs across
     Cloud Firestore claims and dossiers. Adheres strictly to the fail-loud
@@ -21,7 +21,12 @@ def get_analytics_summary(exclude_synthetic: bool = False):
     """
     try:
         # Fetch live claims and dossiers from Cloud Firestore
-        claims = db_service.list_claims(limit=500)
+        if exclude_synthetic is not None:
+            should_include = not exclude_synthetic
+        else:
+            should_include = include_synthetic
+
+        claims = db_service.list_claims(limit=500, include_synthetic=should_include)
         
         # Stream dossiers
         dossiers_docs = list(db_service.client.collection("dossiers").stream())
@@ -29,15 +34,11 @@ def get_analytics_summary(exclude_synthetic: bool = False):
         for d in dossiers_docs:
             dossiers_map[d.id] = d.to_dict()
 
-        # If requested, filter out synthetic demo claims (e.g. CLM-*-DEMO, FINSHIELD-SYNTHETIC-DEMO)
-        if exclude_synthetic:
-            claims = [
-                c for c in claims
-                if not any(tag in (c.claim_id or "").upper() for tag in ("DEMO", "SYNTH"))
-            ]
+        if not should_include:
+            valid_cids = {c.claim_id for c in claims}
             dossiers_map = {
                 k: v for k, v in dossiers_map.items()
-                if not any(tag in k.upper() for tag in ("DEMO", "SYNTH"))
+                if k in valid_cids
             }
 
         total_claims = len(claims)

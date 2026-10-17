@@ -316,8 +316,10 @@ export const NetworkGraph: React.FC = () => {
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted">
                   Involved Claims ({filteredClaims.length})
                 </h4>
-                <span className="text-[10px] font-mono text-muted">
-                  Live BigQuery Records
+                <span className="text-[10px] font-mono text-muted" data-testid="claims-count-caption">
+                  {ringDetail && ringDetail.ring.claim_count > filteredClaims.length
+                    ? `showing ${filteredClaims.length} of ${ringDetail.ring.claim_count} claims`
+                    : 'Live BigQuery Records'}
                 </span>
               </div>
 
@@ -373,8 +375,10 @@ export const NetworkGraph: React.FC = () => {
                 Full tabulated records from BigQuery dataset `finshield.claims`.
               </p>
             </div>
-            <span className="text-xs font-mono text-muted">
-              Showing {ringDetail?.claims.length || 0} claims
+            <span className="text-xs font-mono text-muted" data-testid="table-claims-count-caption">
+              {ringDetail && ringDetail.ring.claim_count > (ringDetail.claims?.length || 0)
+                ? `Showing ${ringDetail.claims.length} of ${ringDetail.ring.claim_count} claims`
+                : `Showing ${ringDetail?.claims.length || 0} claims`}
             </span>
           </div>
 

@@ -210,9 +210,11 @@ export interface RecentCriticalClaim {
   city: string;
   diagnosis_code: string;
   total_claimed: number;
-  verdict: Verdict;
+  verdict: Verdict | string;
+  status?: string;
   risk_score: number;
   top_finding_title: string;
+  incomplete_reason?: string | null;
   created_at: string;
 }
 

@@ -16,6 +16,8 @@ export type BadgeVariant =
   | 'review'
   | 'reject'
   | 'pending'
+  | 'incomplete'
+  | 'unanalysed'
   | 'critical'
   | 'high'
   | 'medium'
@@ -122,6 +124,37 @@ export const Badge: React.FC<BadgeProps> = ({
         >
           {showIcon && <Clock className="w-3.5 h-3.5 shrink-0" />}
           <span>{label || 'Pending Audit'}</span>
+        </span>
+      );
+
+    case 'unanalysed':
+      return (
+        <span
+          className={clsx(
+            'inline-flex items-center rounded-full font-medium border',
+            'bg-stone-100 dark:bg-white/[0.04] text-stone-600 dark:text-app-muted border-stone-300 dark:border-white/[0.1]',
+            sizeClasses,
+            className
+          )}
+        >
+          {showIcon && <Clock className="w-3.5 h-3.5 shrink-0 text-stone-500 dark:text-app-muted" />}
+          <span>{label || 'Not analysed'}</span>
+        </span>
+      );
+
+    case 'incomplete':
+      return (
+        <span
+          title={label || 'Analysis incomplete — manual review required'}
+          className={clsx(
+            'inline-flex items-center rounded-full font-semibold border',
+            'bg-amber-500/15 dark:bg-amber-primary/20 text-amber-900 dark:text-amber-bright border-amber-400 dark:border-amber-primary/50 shadow-2xs',
+            sizeClasses,
+            className
+          )}
+        >
+          {showIcon && <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-700 dark:text-amber-bright" />}
+          <span>{label || 'Incomplete'}</span>
         </span>
       );
 

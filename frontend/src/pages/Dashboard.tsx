@@ -12,6 +12,7 @@ import {
   AlertOctagon,
   Copy,
   Check,
+  Clock,
 } from 'lucide-react';
 import { AnalyticsSummary, RecentCriticalClaim } from '../types';
 import { fetchAnalyticsSummary } from '../services/api';
@@ -199,19 +200,31 @@ export const Dashboard: React.FC = () => {
       header: 'Anomaly Type',
       className: 'max-w-[200px] truncate',
       render: (c: RecentCriticalClaim) => {
-        const isReject = c.verdict.toLowerCase() === 'reject';
-        const isReview = c.verdict.toLowerCase() === 'review';
+        const v = (c.verdict || '').toLowerCase();
+        const isNotAnalysed = !v || v === 'not_analysed' || v === 'pending';
+        const isReject = v === 'reject';
+        const isReview = v === 'review';
+
+        let icon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+        if (isNotAnalysed) {
+          icon = <Clock className="w-3.5 h-3.5 text-app-muted shrink-0" />;
+        } else if (isReject) {
+          icon = <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
+        } else if (isReview) {
+          icon = <AlertTriangle className="w-3.5 h-3.5 text-amber-primary shrink-0" />;
+        }
+
+        const displayAnomaly = isNotAnalysed
+          ? 'Not analysed'
+          : (c.top_finding_title && c.top_finding_title !== 'Audit Completed'
+              ? c.top_finding_title
+              : 'No anomalies');
+
         return (
-          <div className="flex items-center gap-1.5 truncate">
-            {isReject ? (
-              <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            ) : isReview ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-primary shrink-0" />
-            ) : (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            )}
+          <div className="flex items-center gap-1.5 truncate" title={displayAnomaly}>
+            {icon}
             <span className="truncate text-xs font-medium text-app-primary">
-              {c.top_finding_title || 'Normal Clinical Corridor'}
+              {displayAnomaly}
             </span>
           </div>
         );
@@ -235,21 +248,44 @@ export const Dashboard: React.FC = () => {
       key: 'verdict',
       header: 'Verdict',
       className: 'text-center whitespace-nowrap',
-      render: (c: RecentCriticalClaim) => (
-        <Badge
-          variant={
-            c.verdict.toLowerCase() === 'approve'
-              ? 'approve'
-              : c.verdict.toLowerCase() === 'review'
-              ? 'review'
-              : c.verdict.toLowerCase() === 'reject'
-              ? 'reject'
-              : 'pending'
-          }
-          score={c.risk_score}
-          size="sm"
-        />
-      ),
+      render: (c: RecentCriticalClaim) => {
+        const v = (c.verdict || '').toLowerCase();
+        if (!v || v === 'not_analysed' || v === 'pending') {
+          return <Badge variant="unanalysed" label="Not analysed" size="sm" />;
+        }
+        if (c.status === 'incomplete') {
+          return (
+            <div className="inline-flex items-center justify-center gap-1.5">
+              <Badge
+                variant={v === 'reject' ? 'reject' : 'review'}
+                score={c.risk_score}
+                size="sm"
+              />
+              <span
+                title={c.incomplete_reason || 'Doc unreadable — manual review required'}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-primary border border-amber-500/30 cursor-help"
+              >
+                Incomplete
+              </span>
+            </div>
+          );
+        }
+        return (
+          <Badge
+            variant={
+              v === 'approve'
+                ? 'approve'
+                : v === 'review'
+                ? 'review'
+                : v === 'reject'
+                ? 'reject'
+                : 'unanalysed'
+            }
+            score={c.risk_score}
+            size="sm"
+          />
+        );
+      },
     },
     {
       key: 'total_claimed',

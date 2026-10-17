@@ -14,7 +14,7 @@ Verdict:
   - reject: >= 70
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any, Union
 from backend.app.schemas import Finding, Severity, Verdict, AgentName
 
 SEVERITY_WEIGHTS = {
@@ -24,6 +24,65 @@ SEVERITY_WEIGHTS = {
     Severity.HIGH: 30,
     Severity.CRITICAL: 50
 }
+
+
+def is_incomplete_analysis_condition(f: Union[Finding, dict, Any]) -> bool:
+    """
+    Returns True if finding indicates document unreadability, extraction failure,
+    hidden-text classification failure, or pipeline agent failure/timeout.
+    If any such condition exists, dossier status is 'incomplete' and the final verdict
+    floor is REVIEW (never APPROVE), with risk score reflecting unanalysed risk (min 45).
+    """
+    if isinstance(f, dict):
+        cid = (f.get("check_id") or "").lower()
+        title = (f.get("title") or "").lower()
+        exp = (f.get("explanation") or "").lower()
+    else:
+        cid = (getattr(f, "check_id", None) or "").lower()
+        title = (getattr(f, "title", None) or "").lower()
+        exp = (getattr(f, "explanation", None) or "").lower()
+
+    # 1. Document unreadable / blurred / cropped / low-DPI / OCR confidence below threshold
+    if (
+        "unreadable" in cid or "unreadable" in title or "unreadable" in exp
+        or "blurred" in cid or "blurred" in title or "blur" in cid
+        or "cropped" in cid or "cropped" in title
+        or "low_dpi" in cid or "low-dpi" in title or "low dpi" in title
+        or ("ocr" in cid and "confidence" in cid)
+        or ("ocr" in title and "confidence" in title)
+        or "document_quality_failure" in cid
+        or "document_corrupt" in cid
+    ):
+        return True
+
+    # 2. Extraction incomplete / missing mandatory fields (total, hospital, diagnosis)
+    if (
+        "extraction_incomplete" in cid or "extraction incomplete" in title
+        or "missing_mandatory" in cid or "missing mandatory" in title
+        or "missing_field" in cid or "missing mandatory" in exp
+    ):
+        return True
+
+    # 3. Hidden-text classification could not run
+    if (
+        "hidden_text_classification_unavailable" in cid
+        or ("hidden_text" in cid and ("unavailable" in cid or "failed" in cid or "error" in cid))
+        or ("hidden text" in title and ("could not run" in title or "unavailable" in title or "failed" in title))
+    ):
+        return True
+
+    # 4. Agent failed or timed out during pipeline
+    if (
+        cid.startswith("agent_failed:")
+        or cid.startswith("agent_timeout:")
+        or cid == "bqml_service_failure"
+        or "agent failed" in title
+        or "agent timed out" in title
+        or "pipeline_agent_error" in cid
+    ):
+        return True
+
+    return False
 
 
 def score_findings(findings: List[Finding], ml_probability: Optional[float] = None) -> Tuple[int, Verdict]:
@@ -102,9 +161,10 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         for f in findings
     )
 
-    has_failed_agent = any(
-        f.check_id.startswith("AGENT_FAILED:") for f in findings
+    has_incomplete_condition = any(
+        is_incomplete_analysis_condition(f) for f in findings
     )
+    has_failed_agent = has_incomplete_condition
 
     has_critical_inflation = any(
         f.severity == Severity.CRITICAL and f.check_id in (
@@ -241,10 +301,14 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         verdict = Verdict.REVIEW
         risk_score = max(risk_score, 40)
 
-    # Incomplete dossier guardrail: never allow APPROVE if an agent failed
-    if has_failed_agent and verdict == Verdict.APPROVE:
-        verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 30)
+    # Incomplete analysis guardrail:
+    # If any unreadable document, extraction incomplete, hidden-text unavailable,
+    # or agent failure/timeout condition exists, the verdict CANNOT be APPROVE —
+    # the floor is REVIEW (with risk score reflecting unanalysed risk, minimum 45).
+    if has_incomplete_condition:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 45)
 
     return risk_score, verdict
 

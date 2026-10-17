@@ -137,17 +137,64 @@ def get_analytics_summary(exclude_synthetic: bool = False):
         )
 
         recent_critical_claims = []
+        sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        from backend.tools.scoring import is_incomplete_analysis_condition
+
         for sc in sorted_claims[:8]:
-            d_entry = dossiers_map.get(sc.claim_id, {})
-            # Prioritize real findings over internal info findings for top title
+            d_entry = dossiers_map.get(sc.claim_id)
+            if not d_entry:
+                recent_critical_claims.append({
+                    "claim_id": sc.claim_id,
+                    "policy_id": sc.policy_id,
+                    "insurer_id": sc.insurer_id,
+                    "claimant_name": sc.claimant_name,
+                    "hospital_name": sc.hospital_name,
+                    "city": sc.city,
+                    "diagnosis_code": sc.diagnosis_code,
+                    "total_claimed": sc.total_claimed,
+                    "verdict": "not_analysed",
+                    "status": "unanalysed",
+                    "risk_score": 0,
+                    "top_finding_title": "Not analysed",
+                    "incomplete_reason": None,
+                    "created_at": sc.created_at.isoformat() if hasattr(sc.created_at, "isoformat") else str(sc.created_at),
+                })
+                continue
+
+            findings_raw = d_entry.get("findings", [])
+            # Prioritize real findings over internal info findings and sort by severity
             real_findings = [
-                f for f in d_entry.get("findings", [])
+                f for f in findings_raw
                 if (f.get("severity") or "").lower() != "info"
                 and not any(noise in (f.get("check_id") or "").upper() for noise in ["UNGROUNDED", "INTERNAL"])
             ]
-            top_title = real_findings[0].get("title") if real_findings else (
-                d_entry.get("findings", [{}])[0].get("title") if d_entry.get("findings") else "Audit Completed"
-            )
+            real_findings.sort(key=lambda f: sev_rank.get((f.get("severity") or "info").lower(), 99))
+
+            if real_findings:
+                top_title = real_findings[0].get("title") or "Anomaly detected"
+            elif findings_raw:
+                top_title = findings_raw[0].get("title") or "No anomalies"
+            else:
+                top_title = "No anomalies"
+
+            # Check incomplete status and reason
+            dossier_status = d_entry.get("status") or "complete"
+            incomplete_finding = next((f for f in findings_raw if is_incomplete_analysis_condition(f)), None)
+            if incomplete_finding:
+                dossier_status = "incomplete"
+                incomplete_reason = incomplete_finding.get("title") or "Doc unreadable — manual review required"
+            else:
+                incomplete_reason = None
+
+            raw_verdict = d_entry.get("verdict") or sc.verdict
+            v_val = raw_verdict.value if isinstance(raw_verdict, Verdict) else (str(raw_verdict) if raw_verdict else "not_analysed")
+            score_val = sc.risk_score or 0
+
+            # Enforce floor for incomplete analysis
+            if dossier_status == "incomplete":
+                if v_val.lower() == "approve":
+                    v_val = "review"
+                score_val = max(45, score_val)
 
             recent_critical_claims.append({
                 "claim_id": sc.claim_id,
@@ -158,9 +205,11 @@ def get_analytics_summary(exclude_synthetic: bool = False):
                 "city": sc.city,
                 "diagnosis_code": sc.diagnosis_code,
                 "total_claimed": sc.total_claimed,
-                "verdict": sc.verdict.value if isinstance(sc.verdict, Verdict) else (sc.verdict or "pending"),
-                "risk_score": sc.risk_score or 0,
+                "verdict": v_val,
+                "status": dossier_status,
+                "risk_score": score_val,
                 "top_finding_title": top_title,
+                "incomplete_reason": incomplete_reason,
                 "created_at": sc.created_at.isoformat() if hasattr(sc.created_at, "isoformat") else str(sc.created_at),
             })
 

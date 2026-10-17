@@ -193,14 +193,15 @@ def synthesize_dossier(
                     confidence=1.0
                 ))
 
+    from backend.tools.scoring import is_incomplete_analysis_condition
     is_incomplete = any(
-        f.check_id.startswith("AGENT_FAILED:") or f.check_id == "BQML_SERVICE_FAILURE"
+        is_incomplete_analysis_condition(f)
         for f in all_findings
     )
     dossier_status = "incomplete" if is_incomplete else "complete"
     if is_incomplete and verdict == Verdict.APPROVE:
         verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 30)
+        risk_score = max(risk_score, 45)
 
     return Dossier(
         claim_id=claim.claim_id,

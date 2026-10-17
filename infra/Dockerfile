@@ -17,10 +17,9 @@ ARG VITE_GOOGLE_MAPS_API_KEY=""
 ARG VITE_GOOGLE_MAPS_MAP_ID=""
 
 ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY \
-    VITE_GOOGLE_MAPS_MAP_ID=$VITE_GOOGLE_MAPS_MAP_ID \
-    NODE_ENV=production
+    VITE_GOOGLE_MAPS_MAP_ID=$VITE_GOOGLE_MAPS_MAP_ID
 
-# Install dependencies using clean install
+# Install dependencies using clean install (includes devDependencies required for tsc and vite build)
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 

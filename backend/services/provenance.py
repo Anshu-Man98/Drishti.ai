@@ -647,26 +647,37 @@ def verify_document(
         if m_c:
             target_claim_id = m_c.group(1).strip()
 
-    is_sanction_document = any(k in text.upper() for k in ["SANCTION ORDER", "APPROVAL LETTER", "DISBURSEMENT AMOUNT", "FINSHIELD CLAIMS SANCTION"])
+    is_sanction_document = any(k in text.upper() for k in [
+        "SANCTION ORDER", "APPROVAL LETTER", "DISBURSEMENT AMOUNT",
+        "FINSHIELD CLAIMS SANCTION", "DRISHTI CLAIMS SANCTION"
+    ])
+
+    if not is_sanction_document:
+        return {
+            "status": "not_applicable",
+            "detail": "Third-party document not issued by this system; digital provenance not applicable.",
+            "payload": None,
+            "carrier": None,
+            "diff": None
+        }
 
     ledger_entry = None
     if target_claim_id:
         ledger_entry = db_service.get_issuance_for_claim(target_claim_id, doc_type="approval_letter")
 
-    if ledger_entry or is_sanction_document:
-        doc_ref = ledger_entry.get("doc_id") if ledger_entry else "approval_letter"
-        return {
-            "status": "unmarked",
-            "detail": (
-                f"Mandatory provenance mark missing: system ledger records issuance of {doc_ref} "
-                f"for claim {target_claim_id or 'unknown'}, but presented file carries no valid watermark carrier "
-                f"(probable watermark stripping)."
-            ),
-            "payload": None,
-            "carrier": None,
-            "diff": None,
-            "issued_doc_id": doc_ref
-        }
+    doc_ref = ledger_entry.get("doc_id") if ledger_entry else "approval_letter"
+    return {
+        "status": "unmarked",
+        "detail": (
+            f"Mandatory provenance mark missing: document claims to be an issued sanction order ({doc_ref}) "
+            f"for claim {target_claim_id or 'unknown'}, but carries no valid watermark carrier "
+            f"(probable watermark stripping or unauthorized issuance)."
+        ),
+        "payload": None,
+        "carrier": None,
+        "diff": None,
+        "issued_doc_id": doc_ref
+    }
 
     return {
         "status": "not_applicable",

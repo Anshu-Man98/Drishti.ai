@@ -172,7 +172,12 @@ def test_arbitrary_file_read_rejected():
 
 def test_upload_path_traversal_neutralized():
     """Uploading a file named '../../evil.pdf' must be sanitized to safe basename and stay in uploads/."""
-    dummy_pdf = b"%PDF-1.4\n1 0 obj\n<<\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF"
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 100, "Safe test PDF")
+    c.save()
+    dummy_pdf = buf.getvalue()
     files = [
         ("files", ("../../evil.pdf", io.BytesIO(dummy_pdf), "application/pdf"))
     ]

@@ -166,9 +166,13 @@ async def start_duel(
 @router.get("/{duel_id}/status", response_model=DuelStatusResponse)
 async def get_duel_status_endpoint(duel_id: str, user=Depends(get_current_user)):
     """Retrieves live round progress and lifecycle status of a duel."""
-    meta = db_service.get_duel_meta(duel_id) or {}
+    meta = db_service.get_duel_meta(duel_id)
     rounds = db_service.get_duel_rounds(duel_id)
 
+    if not meta and not rounds:
+        raise HTTPException(status_code=404, detail=f"Duel '{duel_id}' not found.")
+
+    meta = meta or {}
     status = meta.get("status", "completed" if rounds else "running")
     current_round = meta.get("current_round", max(1, len(rounds)))
 
@@ -189,7 +193,10 @@ async def get_duel_status_endpoint(duel_id: str, user=Depends(get_current_user))
 @router.get("/{duel_id}/rounds", response_model=List[Dict[str, Any]])
 async def get_duel_rounds_endpoint(duel_id: str, user=Depends(get_current_user)):
     """Retrieves all rounds for a given duel."""
+    meta = db_service.get_duel_meta(duel_id)
     rounds = db_service.get_duel_rounds(duel_id)
+    if not meta and not rounds:
+        raise HTTPException(status_code=404, detail=f"Duel '{duel_id}' not found.")
     return rounds
 
 

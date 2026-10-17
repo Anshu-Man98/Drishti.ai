@@ -121,7 +121,15 @@ def test_claims_crud_flow():
         "line_items_json": '[{"description": "ICU Room Charges (3 days)", "qty": 3, "unit_price": 15000, "amount": 45000}, {"description": "Angiography & Consumables", "qty": 1, "unit_price": 40000, "amount": 40000}]'
     }
 
-    create_resp = client.post("/claims", data=claim_payload)
+    import io
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 100, "Medical Invoice Document")
+    c.save()
+    test_files = [("files", ("invoice.pdf", io.BytesIO(buf.getvalue()), "application/pdf"))]
+
+    create_resp = client.post("/claims", data=claim_payload, files=test_files)
     assert create_resp.status_code == 200
     create_data = create_resp.json()
     claim_id = create_data["claim_id"]

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     
     VERSION: str = "1.0.0"
 
+    # Upload & Payload Limits
+    MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "15"))
+    MAX_TOTAL_UPLOAD_MB: int = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "50"))
+    MAX_UPLOAD_FILES: int = int(os.getenv("MAX_UPLOAD_FILES", "10"))
+
     # API Keys & Credentials
     GOOGLE_API_KEY: Optional[str] = os.getenv("GOOGLE_API_KEY", os.getenv("GEMINI_API_KEY"))
     DOCUMENTAI_PROCESSOR_ID: Optional[str] = os.getenv("DOCUMENTAI_PROCESSOR_ID")

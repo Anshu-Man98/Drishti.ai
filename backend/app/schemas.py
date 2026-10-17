@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional, Dict
-from pydantic import BaseModel, Field
+import unicodedata
+from pydantic import BaseModel, Field, field_validator
 
 
 class DocType(str, Enum):
@@ -201,6 +202,17 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        trimmed = v.strip()
+        if len(trimmed) < 1 or len(trimmed) > 2000:
+            raise ValueError("Message must be between 1 and 2000 characters after trimming.")
+        for c in trimmed:
+            if unicodedata.category(c).startswith("C") and c not in ("\n", "\r", "\t"):
+                raise ValueError("Message contains disallowed control characters.")
+        return trimmed
 
 
 class ChatResponse(BaseModel):

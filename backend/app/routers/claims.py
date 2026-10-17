@@ -1,21 +1,31 @@
 import asyncio
+import io
 import json
-import uuid
-from datetime import datetime
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import unicodedata
+import uuid
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from PIL import Image
+import pypdf
+import pypdfium2 as pdfium
 
 from backend.app.schemas import (
     Claim, Document, DocType, Claimant, Provider, LineItem, Dossier, ClaimSummary, Verdict,
     ChatMessage, ChatRequest, ChatResponse, Evidence, IssueApprovalRequest, IssueApprovalResponse
 )
 from backend.agents.chat import stream_chat_response
-from backend.app.config import settings
+from backend.app.config import settings, PDFIUM_LOCK
+from backend.app.exceptions import CloudServiceError
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
 from backend.app.dependencies import require_adjuster_role
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -64,32 +74,128 @@ async def create_claim(
         except Exception as e:
             print(f"Error parsing line items: {e}")
 
+    # Validate and parse date formats safely if provided
+    try:
+        if admission_ts:
+            datetime.fromisoformat(admission_ts.replace("Z", "+00:00"))
+        if discharge_ts:
+            datetime.fromisoformat(discharge_ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format for admission_ts or discharge_ts: {e}"
+        )
+
+    # Require at least one uploaded file
+    if not files or len(files) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Bad Request: At least one file must be uploaded."
+        )
+
+    if len(files) > settings.MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bad Request: Maximum {settings.MAX_UPLOAD_FILES} files allowed per upload."
+        )
+
     # Process and upload attached files
     documents: List[Document] = []
     extracted_entities = []
     docai_claim = None
-    MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+    max_file_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    max_total_bytes = settings.MAX_TOTAL_UPLOAD_MB * 1024 * 1024
+    total_bytes = 0
     ALLOWED_EXTS = {".pdf", ".png", ".jpg", ".jpeg"}
 
     for f in files:
-        contents = await f.read()
-        if len(contents) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=f"Payload Too Large: File '{f.filename}' exceeds 25 MB size limit."
-            )
-
         safe_filename = Path(f.filename).name if f.filename else f"doc_{uuid.uuid4().hex[:8]}.pdf"
         ext = Path(safe_filename).suffix.lower()
         if ext not in ALLOWED_EXTS:
             raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type '{ext}' for file '{safe_filename}'. Allowed types: {', '.join(sorted(ALLOWED_EXTS))}"
+                status_code=415,
+                detail=f"Unsupported Media Type: File '{safe_filename}' format '{ext}' is not supported. Allowed types: {', '.join(sorted(ALLOWED_EXTS))}"
             )
+
+        contents = await f.read()
+
+        # Reject empty files
+        if len(contents) == 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"The document could not be read: File '{safe_filename}' is empty."
+            )
+
+        # Enforce per-file size cap
+        if len(contents) > max_file_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Payload Too Large: File '{safe_filename}' exceeds {settings.MAX_UPLOAD_MB} MB limit."
+            )
+
+        total_bytes += len(contents)
+        if total_bytes > max_total_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Payload Too Large: Total upload size exceeds {settings.MAX_TOTAL_UPLOAD_MB} MB limit."
+            )
+
+        # Enforce content magic bytes
+        if ext == ".pdf":
+            if not contents.startswith(b"%PDF-"):
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"Unsupported Media Type: File '{safe_filename}' is not a valid PDF (invalid magic bytes)."
+                )
+            # Verify PDF readability / non-corruption
+            try:
+                reader = pypdf.PdfReader(io.BytesIO(contents))
+                if len(reader.pages) == 0:
+                    raise ValueError("PDF has 0 readable pages.")
+                with PDFIUM_LOCK:
+                    pdoc = pdfium.PdfDocument(contents)
+                    _ = len(pdoc)
+                    pdoc.close()
+            except Exception as e:
+                logger.error("Corrupt or unreadable PDF '%s' rejected for claim %s: %s", safe_filename, claim_id, e)
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"The document could not be read: File '{safe_filename}' is corrupt or unreadable."
+                )
+        elif ext == ".png":
+            if not contents.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"Unsupported Media Type: File '{safe_filename}' is not a valid PNG (invalid magic bytes)."
+                )
+            try:
+                img = Image.open(io.BytesIO(contents))
+                img.verify()
+            except Exception as e:
+                logger.error("Corrupt PNG '%s' rejected for claim %s: %s", safe_filename, claim_id, e)
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"The document could not be read: Image '{safe_filename}' is corrupt or unreadable."
+                )
+        elif ext in (".jpg", ".jpeg"):
+            if not contents.startswith(b"\xff\xd8\xff"):
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"Unsupported Media Type: File '{safe_filename}' is not a valid JPEG (invalid magic bytes)."
+                )
+            try:
+                img = Image.open(io.BytesIO(contents))
+                img.verify()
+            except Exception as e:
+                logger.error("Corrupt JPEG '%s' rejected for claim %s: %s", safe_filename, claim_id, e)
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"The document could not be read: Image '{safe_filename}' is corrupt or unreadable."
+                )
 
         uri, sha256_hash = storage_service.upload_file(contents, safe_filename, claim_id)
         doc_id = f"DOC-{uuid.uuid4().hex[:8].upper()}"
-        
+
         # Determine doc_type heuristically if not specified
         doc_type = DocType.BILL
         fname_lower = safe_filename.lower()
@@ -115,11 +221,19 @@ async def create_claim(
                         if i < len(docai_claim.line_items):
                             it.bbox = docai_claim.line_items[i].bbox
                             it.page = docai_claim.line_items[i].page
+            except CloudServiceError as cse:
+                # Log server-side with claim context, never leak raw provider text
+                logger.error("Document AI error for claim %s on '%s': %s", claim_id, safe_filename, cse.message)
+                msg_lower = str(cse.message).lower()
+                if any(w in msg_lower for w in ["field_violations", "invalid_argument", "400", "corrupt", "unreadable", "bad document"]):
+                    raise HTTPException(status_code=422, detail="The document could not be read")
+                raise
             except Exception as e:
-                from backend.app.exceptions import CloudServiceError
-                if isinstance(e, CloudServiceError):
-                    raise
-                raise CloudServiceError(service="Document AI", message=f"Document AI extraction failed: {e}", retryable=True) from e
+                logger.error("Extraction error for claim %s on '%s': %s", claim_id, safe_filename, e, exc_info=True)
+                msg_lower = str(e).lower()
+                if any(w in msg_lower for w in ["field_violations", "invalid_argument", "400", "corrupt", "unreadable", "pdfreaderror", "pdfiumerror"]):
+                    raise HTTPException(status_code=422, detail="The document could not be read")
+                raise CloudServiceError(service="Document AI", message="Document AI service is temporarily unavailable", retryable=True) from e
 
         documents.append(Document(
             doc_id=doc_id,
@@ -423,6 +537,18 @@ async def chat_with_claim_dossier(
     claim = db_service.get_claim(claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+
+    trimmed_msg = (request.message or "").strip()
+    if len(trimmed_msg) < 1 or len(trimmed_msg) > 2000:
+        raise HTTPException(
+            status_code=422,
+            detail="Unprocessable Entity: Chat message must be between 1 and 2000 characters after trimming."
+        )
+    if any(unicodedata.category(c).startswith("C") and c not in ("\n", "\r", "\t") for c in trimmed_msg):
+        raise HTTPException(
+            status_code=422,
+            detail="Unprocessable Entity: Chat message contains disallowed control characters."
+        )
 
     # If client specifically requests application/json and not text/event-stream (e.g. testing)
     if accept and "application/json" in accept and "text/event-stream" not in accept:

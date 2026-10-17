@@ -271,6 +271,18 @@ async def stream_chat_response(
         model_name = get_model_name("pro")
 
         safe_query = sanitize_chat_context(user_message)
+        
+        # Cap chat history passed to model to last 6 messages
+        history_section = ""
+        recent_history = db_service.get_chat_history(claim_id)
+        if recent_history:
+            capped = recent_history[-6:]
+            h_lines = []
+            for h in capped:
+                role_tag = "Adjuster" if h.role == "user" else "Assistant"
+                h_lines.append(f"{role_tag}: {sanitize_chat_context(h.content[:500])}")
+            history_section = "<prior_conversation_turns>\n" + "\n".join(h_lines) + "\n</prior_conversation_turns>\n\n"
+
         prompt = (
             "You are FinShield's audit assistant talking to an insurance adjuster. "
             "Answer only from the case file provided below. Cite finding IDs like [F1]. "
@@ -282,6 +294,7 @@ async def stream_chat_response(
             "<untrusted_case_file_context>\n"
             f"{context_text}\n"
             "</untrusted_case_file_context>\n\n"
+            f"{history_section}"
             "<untrusted_adjuster_query>\n"
             f"{safe_query}\n"
             "</untrusted_adjuster_query>\n\n"

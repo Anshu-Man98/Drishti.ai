@@ -32,6 +32,19 @@ class DiagnosisBenchmark:
     p90: float
     p95: float
 
+    @property
+    def widened_upper_band(self) -> float:
+        """
+        Computes the effective upper bound reflecting regional price variation (e.g. tier-1 metro tariffs)
+        and compensating for synthetic generator tightness:
+        - For robust benchmarks (n >= 30, exact/block): p95 * 1.25 (allowing 25% regional variance)
+        - For thin or high fallback benchmarks (n < 30 or chapter/global): max(p95 * 1.35, p50 * 1.60)
+        """
+        if self.sample_count >= 30 and self.fallback_level in ("exact", "block"):
+            return round(self.p95 * 1.25, 2)
+        else:
+            return round(max(self.p95 * 1.35, self.p50 * 1.60), 2)
+
 
 @dataclass
 class CategoryBenchmark:
@@ -47,6 +60,26 @@ class CategoryBenchmark:
     amount_p75: float
     amount_p90: float
     amount_p95: float
+
+    @property
+    def widened_unit_price_upper_band(self) -> float:
+        """
+        Effective upper band for unit price:
+        - For robust category benchmarks (n >= 30, exact): unit_price_p95 * 1.25
+        - For global fallback or thin sample (n < 30): max(unit_price_p95 * 1.35, unit_price_p50 * 2.0)
+        """
+        if self.sample_count >= 30 and self.fallback_level == "exact":
+            return round(self.unit_price_p95 * 1.25, 2)
+        else:
+            return round(max(self.unit_price_p95 * 1.35, self.unit_price_p50 * 2.0), 2)
+
+    @property
+    def widened_amount_upper_band(self) -> float:
+        """Effective upper band for cumulative category amount."""
+        if self.sample_count >= 30 and self.fallback_level == "exact":
+            return round(self.amount_p95 * 1.25, 2)
+        else:
+            return round(max(self.amount_p95 * 1.35, self.amount_p50 * 1.60), 2)
 
 
 class BenchmarkService:
@@ -237,15 +270,15 @@ class BenchmarkService:
             cat = "icu"
         elif any(k in desc_clean for k in ["room", "ward", "bed", "suite", "nursing home stay"]):
             cat = "room_rent"
-        elif any(k in desc_clean for k in ["pharmacy", "medicine", "medication", "drug", "injection", "antibiotic", "fluid", "saline", "tablet", "capsule", "iv ", "infusion"]):
-            cat = "pharmacy"
+        elif any(k in desc_clean for k in ["consult", "doctor", "visiting", "visit", "physician", "specialist"]):
+            cat = "consultation"
         elif any(k in desc_clean for k in ["surgery", "ot ", "ot charges", "operation", "procedure", "laparoscopic", "appendectomy", "cholecystectomy", "anesthesia", "surgeon"]):
             cat = "surgery_ot"
-        elif any(k in desc_clean for k in ["consult", "doctor", "visiting", "visit", "physician", "specialist", "physio", "physiotherapy", "physical therapy", "rehab", "rehabilitation", "dietitian", "nursing care", "nursing charges"]):
-            cat = "consultation"
-        elif any(k in desc_clean for k in ["mri", "ct ", "scan", "x-ray", "ultrasound", "usg", "radiology", "pathology", "lab", "test", "investigation", "ecg", "blood", "biopsy", "culture", "screening", "panel", "imaging", "sonography"]):
+        elif any(k in desc_clean for k in ["pharmacy", "medicine", "drug", "injection", "antibiotic", "fluid", "saline", "tablet", "capsule", "iv "]):
+            cat = "pharmacy"
+        elif any(k in desc_clean for k in ["mri", "ct ", "scan", "x-ray", "ultrasound", "usg", "radiology", "pathology", "lab", "test", "investigation", "ecg", "blood"]):
             cat = "diagnostics"
-        elif any(k in desc_clean for k in ["consumable", "disposable", "glove", "syringe", "cannula", "catheter", "ppe", "bandage", "dressing", "equip", "kit", "trocar", "pack", "hemostatic", "suture", "stapler"]):
+        elif any(k in desc_clean for k in ["consumable", "disposable", "glove", "syringe", "cannula", "catheter", "ppe", "bandage", "dressing", "monitoring", "equip", "kit"]):
             cat = "ancillary"
         else:
             # 2. Gemini classification fallback for unknown terms

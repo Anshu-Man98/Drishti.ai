@@ -3,47 +3,28 @@
 
 -- 1. Feature Engineering View: Claims enriched with BigQuery benchmark distributions
 CREATE OR REPLACE VIEW `finshield.claims_ml_features` AS
-WITH tagged_items AS (
+WITH item_aggregates AS (
   SELECT 
     l.claim_id,
-    c.diagnosis_code,
-    c.total_claimed,
-    l.unit_price,
-    l.amount,
-    CASE 
-      WHEN LOWER(l.description) LIKE '%icu%' OR LOWER(l.description) LIKE '%intensive care%' THEN 'icu'
-      WHEN LOWER(l.description) LIKE '%room%' OR LOWER(l.description) LIKE '%ward%' OR LOWER(l.description) LIKE '%bed%' THEN 'room_rent'
-      WHEN LOWER(l.description) LIKE '%surgery%' OR LOWER(l.description) LIKE '%ot%' OR LOWER(l.description) LIKE '%procedure%' OR LOWER(l.description) LIKE '%operation%' THEN 'surgery_ot'
-      WHEN LOWER(l.description) LIKE '%doctor%' OR LOWER(l.description) LIKE '%consult%' OR LOWER(l.description) LIKE '%visiting%' OR LOWER(l.description) LIKE '%physician%' THEN 'consultation'
-      WHEN LOWER(l.description) LIKE '%medicine%' OR LOWER(l.description) LIKE '%pharmacy%' OR LOWER(l.description) LIKE '%drug%' THEN 'pharmacy'
-      WHEN LOWER(l.description) LIKE '%mri%' OR LOWER(l.description) LIKE '%scan%' OR LOWER(l.description) LIKE '%x-ray%' OR LOWER(l.description) LIKE '%diagnostic%' OR LOWER(l.description) LIKE '%investigation%' OR LOWER(l.description) LIKE '%lab%' OR LOWER(l.description) LIKE '%pathology%' THEN 'diagnostics'
-      ELSE 'ancillary'
-    END as category
+    MAX(
+      SAFE_DIVIDE(
+        l.unit_price,
+        CASE 
+          WHEN LOWER(l.description) LIKE '%room%' THEN 4000.0
+          WHEN LOWER(l.description) LIKE '%consult%' THEN 2000.0
+          WHEN LOWER(l.description) LIKE '%pharmacy%' THEN 4926.43
+          WHEN LOWER(l.description) LIKE '%surgery%' THEN 19534.01
+          ELSE 2000.0
+        END
+      )
+    ) as max_line_item_price_ratio,
+    SAFE_DIVIDE(
+      SUM(CASE WHEN LOWER(l.description) LIKE '%consumable%' OR LOWER(l.description) LIKE '%ancillary%' OR LOWER(l.description) LIKE '%disposable%' THEN l.amount ELSE 0.0 END),
+      MAX(c.total_claimed)
+    ) as ancillary_share_of_total
   FROM `finshield.line_items` l
   JOIN `finshield.claims` c ON l.claim_id = c.claim_id
-),
-item_with_bench AS (
-  SELECT 
-    t.claim_id,
-    t.total_claimed,
-    t.unit_price,
-    t.amount,
-    t.category,
-    SAFE_DIVIDE(t.unit_price, COALESCE(cb.unit_price_p50, gb.unit_price_p50, 2000.0)) as price_ratio
-  FROM tagged_items t
-  LEFT JOIN `finshield.category_benchmarks` cb ON t.diagnosis_code = cb.diagnosis_code AND t.category = cb.category AND cb.fallback_level = 'exact'
-  LEFT JOIN `finshield.category_benchmarks` gb ON t.category = gb.category AND gb.fallback_level = 'global'
-),
-item_aggregates AS (
-  SELECT 
-    claim_id,
-    MAX(price_ratio) as max_line_item_price_ratio,
-    SAFE_DIVIDE(
-      SUM(CASE WHEN category = 'ancillary' THEN amount ELSE 0.0 END),
-      MAX(total_claimed)
-    ) as ancillary_share_of_total
-  FROM item_with_bench
-  GROUP BY claim_id
+  GROUP BY l.claim_id
 ),
 ranked_claims AS (
   SELECT 

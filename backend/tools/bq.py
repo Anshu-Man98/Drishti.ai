@@ -458,7 +458,7 @@ def extract_claim_features(claim: Any) -> Dict[str, Any]:
         ratio = rate / max(1.0, bench_unit)
         if ratio > max_price_ratio:
             max_price_ratio = ratio
-        if cat in ("ancillary", "diagnostics") or any(k in desc.lower() for k in ["consumable", "disposable", "monitoring", "supplies"]):
+        if cat == "ancillary" or any(k in desc.lower() for k in ["consumable", "disposable", "ancillary"]):
             ancillary_sum += amt
 
     ancillary_share = round(ancillary_sum / max(1.0, claim_amount), 4)
@@ -606,10 +606,13 @@ def ml_score(claim_features: Dict[str, Any]) -> Tuple[float, List[Dict[str, Any]
         raw_attrs = getattr(row, "top_feature_attributions", []) or []
         for attr in raw_attrs[:5]:
             feat = attr.get("feature") if isinstance(attr, dict) else getattr(attr, "feature", "")
-            weight = attr.get("attribution_weight", 0.0) if isinstance(attr, dict) else getattr(attr, "attribution", getattr(attr, "attribution_weight", 0.0))
+            if isinstance(attr, dict):
+                raw_weight = attr.get("attribution", attr.get("attribution_weight", 0.0))
+            else:
+                raw_weight = getattr(attr, "attribution", getattr(attr, "attribution_weight", 0.0))
             top_features.append({
                 "feature": feat,
-                "attribution": round(float(weight), 4)
+                "attribution": round(float(raw_weight), 4)
             })
         return round(fraud_prob, 4), top_features
     except Exception as e:

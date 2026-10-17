@@ -172,7 +172,7 @@ def run_evaluation():
         field_acc_sample = f"{correct_fields}/{total_fields_checked}"
         status_str = "PASS" if passed else "FAIL"
 
-        print(f"{eval_id:<9} {fraud_type:<22} {diag_code:<6} ₹{gt_total:>9,.2f} {exp_verdict:<8} {act_verdict:<8} {risk:<5} {field_acc_sample:<7} {status_str}")
+        print(f"{eval_id:<9} {fraud_type:<22} {diag_code:<6} ₹{gt_total:>9,.2f} {exp_verdict:<8} {act_verdict:<8} {risk:<5} {field_acc_sample:<7} {status_str}", flush=True)
 
         results.append({
             "id": eval_id,

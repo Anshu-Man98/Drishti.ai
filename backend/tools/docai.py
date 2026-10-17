@@ -819,28 +819,11 @@ def _map_docai_result_to_claim(
     gem_tax = gemini_result.tax if gemini_result else None
     gem_tot = gemini_result.total_claimed if gemini_result else None
 
-    # Check if DocAI totals are internally mathematically consistent (subtotal + tax == total)
-    docai_consistent = False
-    if docai_subtotal is not None and docai_total is not None:
-        expected_tot = docai_subtotal + (docai_tax or 0.0)
-        docai_consistent = abs(expected_tot - docai_total) <= 1.0
-
-    # Check if Gemini totals are internally mathematically consistent
-    gemini_consistent = False
-    if gem_sub is not None and gem_tot is not None:
-        expected_gem_tot = gem_sub + (gem_tax or 0.0)
-        gemini_consistent = abs(expected_gem_tot - gem_tot) <= 1.0
-
-    # Subtotal
+    # Subtotal: Trust DocAI invoice parser when confidence >= 0.8; fallback to visual model if missing
     subtotal = None
     if docai_subtotal is not None and docai_subtotal_conf >= 0.8:
-        # If Gemini disagrees by more than 1.0 and DocAI is mathematically contradictory while Gemini is consistent, prefer Gemini
-        if gem_sub is not None and abs(docai_subtotal - gem_sub) > 1.0 and not docai_consistent and gemini_consistent:
-            subtotal = gem_sub
-            field_sources["subtotal"] = "gemini"
-        else:
-            subtotal = docai_subtotal
-            field_sources["subtotal"] = "docai"
+        subtotal = docai_subtotal
+        field_sources["subtotal"] = "docai"
     elif gem_sub is not None:
         subtotal = gem_sub
         field_sources["subtotal"] = "gemini"
@@ -853,24 +836,11 @@ def _map_docai_result_to_claim(
             source="gemini"
         ))
 
-    # Tax
+    # Tax: Trust DocAI invoice parser when confidence >= 0.8; fallback to visual model
     tax = None
     if docai_tax is not None and docai_tax_conf >= 0.8:
-        # If Gemini disagrees by more than 1.0 and DocAI tax makes totals inconsistent while Gemini is consistent, prefer Gemini
-        if gem_tax is not None and abs(docai_tax - gem_tax) > 1.0 and not docai_consistent and gemini_consistent:
-            tax = gem_tax
-            field_sources["tax"] = "gemini"
-            extracted_entities.append(ExtractedEntity(
-                field_name="total_tax_amount",
-                text=f"₹{tax:,.2f}",
-                bbox=docai_tax_bbox or [0.7, 0.75, 0.95, 0.8],
-                page=1,
-                confidence=0.95,
-                source="gemini"
-            ))
-        else:
-            tax = docai_tax
-            field_sources["tax"] = "docai"
+        tax = docai_tax
+        field_sources["tax"] = "docai"
     elif gem_tax is not None:
         tax = gem_tax
         field_sources["tax"] = "gemini"
@@ -885,7 +855,9 @@ def _map_docai_result_to_claim(
     else:
         tax = 0.0
 
-    # Total Claimed
+    # Total Claimed: Trust DocAI invoice parser when confidence >= 0.8.
+    # CRITICAL: Never overwrite DocAI's extracted total with a calculated/consistent total,
+    # as mathematical discrepancy between subtotal+tax and total is a key invoice fraud vector.
     total_claimed = None
     if docai_total is not None and docai_total_conf >= 0.8:
         total_claimed = docai_total

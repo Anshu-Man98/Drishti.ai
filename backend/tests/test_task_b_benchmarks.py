@@ -100,13 +100,14 @@ def test_check_price_benchmarks_all_three_findings():
     claim = {
         "claim_id": "CLM-INFLATED-TEST",
         "diagnosis_code": "K35.8",
-        "total_claimed": 98000.0,  # Far above K35.8 p95 (59,644)
+        "total_claimed": 106000.0,  # Far above K35.8 p95 (59,644)
         "line_items": [
             {"description": "Semi-Private Room Rent", "qty": 3, "unit_price": 4000.0, "amount": 12000.0},
             {"description": "Laparoscopic Appendectomy Surgery & OT", "qty": 1, "unit_price": 55000.0, "amount": 55000.0}, # > p95 38,627
             {"description": "Consultation", "qty": 3, "unit_price": 2000.0, "amount": 6000.0},
             {"description": "Surgical Consumables & Disposable Trocar Pack", "qty": 1, "unit_price": 13000.0, "amount": 13000.0},
             {"description": "High-Definition Laparoscopy Tower Usage", "qty": 1, "unit_price": 12000.0, "amount": 12000.0},
+            {"description": "Specialized Laparoscopic Clip Applier & Stapler Kit", "qty": 1, "unit_price": 8000.0, "amount": 8000.0},
         ]
     }
     res = check_price_benchmarks(claim)

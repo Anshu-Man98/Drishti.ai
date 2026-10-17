@@ -126,26 +126,19 @@ export const Dashboard: React.FC = () => {
     }));
   }, [data?.time_series, chartMetric]);
 
-  // Sparkline Trends for Fraud Types
+  // Anomaly Vector Share & Trends (Honest Data Policy: no synthetic wave points)
   const sparklineCategories = useMemo(() => {
     if (!data?.fraud_categories) return [];
     const totalCount = data.fraud_categories.reduce((sum, c) => sum + c.count, 0) || 1;
     return data.fraud_categories.slice(0, 4).map((cat) => {
-      // Derive 5-point sparkline sequence from actual counts
-      const baseline = cat.count;
-      const history = [
-        Math.max(1, Math.round(baseline * 0.4)),
-        Math.max(1, Math.round(baseline * 0.7)),
-        Math.max(1, Math.round(baseline * 0.5)),
-        Math.max(1, Math.round(baseline * 0.9)),
-        baseline,
-      ];
+      // Empty data array: sparse daily history (< 4 days) renders clean 'trend n/a' instead of inventing fake waves
       return {
         label: cat.category.split('&')[0].trim(),
         fullLabel: cat.category,
-        data: history,
-        valueText: `${Math.round((cat.count / totalCount) * 100)}%`,
+        data: [] as number[],
+        valueText: `${Math.round((cat.count / totalCount) * 100)}% of findings`,
         claimsCount: cat.claims_count,
+        findingsCount: cat.count,
       };
     });
   }, [data?.fraud_categories]);
@@ -482,54 +475,136 @@ export const Dashboard: React.FC = () => {
               4. Bottom Bento Row: Glowing Area Chart (Left) + Sparkline Trends (Right)
              ========================================================================= */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
-            {/* Bottom-Left: Claims Trend GlowAreaChart (Nexa Attack Trend Chart) */}
+            {/* Bottom-Left: Claims Trend GlowAreaChart or Designed Sparse State */}
             <GlowCard className="lg:col-span-7 p-5 sm:p-6">
-              <GlowAreaChart
-                title="Claims Volume & Loss Trajectory"
-                data={trendChartData}
-                valuePrefix={chartMetric === 'amount' ? '₹ ' : ''}
-                height={200}
-                selector={
-                  <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08]">
-                    <button
-                      type="button"
-                      onClick={() => setChartMetric('amount')}
-                      className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
-                        chartMetric === 'amount'
-                          ? 'bg-amber-primary/20 text-amber-primary font-bold'
-                          : 'text-app-muted hover:text-app-primary'
-                      }`}
-                    >
-                      Billed (₹)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartMetric('volume')}
-                      className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
-                        chartMetric === 'volume'
-                          ? 'bg-amber-primary/20 text-amber-primary font-bold'
-                          : 'text-app-muted hover:text-app-primary'
-                      }`}
-                    >
-                      Count
-                    </button>
+              {trendChartData.length >= 5 ? (
+                <GlowAreaChart
+                  title="Claims Volume & Loss Trajectory"
+                  data={trendChartData}
+                  valuePrefix={chartMetric === 'amount' ? '₹ ' : ''}
+                  height={200}
+                  selector={
+                    <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08]">
+                      <button
+                        type="button"
+                        onClick={() => setChartMetric('amount')}
+                        className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                          chartMetric === 'amount'
+                            ? 'bg-amber-primary/20 text-amber-primary font-bold'
+                            : 'text-app-muted hover:text-app-primary'
+                        }`}
+                      >
+                        Billed (₹)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartMetric('volume')}
+                        className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                          chartMetric === 'volume'
+                            ? 'bg-amber-primary/20 text-amber-primary font-bold'
+                            : 'text-app-muted hover:text-app-primary'
+                        }`}
+                      >
+                        Count
+                      </button>
+                    </div>
+                  }
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-app-default">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold tracking-wide text-app-primary">
+                          Claims Volume & Loss Trajectory
+                        </h3>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-primary/10 text-amber-primary border border-amber-primary/25">
+                          {trendChartData.length} Days on Record
+                        </span>
+                      </div>
+                      <p className="text-xs text-app-muted mt-1">
+                        Not enough history yet: {trendChartData.length} days of data. Continuous trajectory curve requires ≥ 5 days of chronological records.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setChartMetric('amount')}
+                        className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                          chartMetric === 'amount'
+                            ? 'bg-amber-primary/20 text-amber-primary font-bold'
+                            : 'text-app-muted hover:text-app-primary'
+                        }`}
+                      >
+                        Billed (₹)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartMetric('volume')}
+                        className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                          chartMetric === 'volume'
+                            ? 'bg-amber-primary/20 text-amber-primary font-bold'
+                            : 'text-app-muted hover:text-app-primary'
+                        }`}
+                      >
+                        Count
+                      </button>
+                    </div>
                   </div>
-                }
-              />
+
+                  {/* Clean Comparative Bars / Table */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {trendChartData.map((d, i) => {
+                      const maxVal = Math.max(...trendChartData.map((pt) => pt.value)) || 1;
+                      const pct = Math.round((d.value / maxVal) * 100);
+                      return (
+                        <div
+                          key={d.label}
+                          className="p-3.5 rounded-xl bg-app-surface-elevated border border-app-default space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-mono text-app-muted font-medium">Day {i + 1} · {d.label}</span>
+                            <span className="font-mono text-[11px] text-amber-primary font-bold">
+                              {d.formattedValue}
+                            </span>
+                          </div>
+                          {/* Relative Proportion Bar */}
+                          <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-amber-deep via-amber-primary to-amber-bright transition-all duration-500 shadow-[0_0_8px_rgba(245,165,36,0.4)]"
+                              style={{ width: `${Math.max(12, pct)}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] font-mono text-app-muted">
+                            <span>Relative share: {pct}%</span>
+                            <span>Recorded pipeline data</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </GlowCard>
 
             {/* Bottom-Right: Fraud Type Velocity Sparklines (Nexa Malware Trends) */}
             <GlowCard className="lg:col-span-5 p-5 sm:p-6 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between pb-2 border-b border-app-default">
                 <div>
-                  <h3 className="text-sm font-semibold tracking-wide text-app-primary">
-                    Anomaly Vector Trends
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold tracking-wide text-app-primary">
+                      Anomaly Vector Trends
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.04] text-app-muted border border-white/[0.08]">
+                      Last 30 Days
+                    </span>
+                  </div>
                   <p className="text-xs text-app-muted mt-0.5">
-                    Recent trend & share across active claims.
+                    Finding distribution across active claims. Historical velocity requires ≥ 4 days.
                   </p>
                 </div>
-                <Scale className="w-4 h-4 text-amber-primary/70" />
+                <Scale className="w-4 h-4 text-amber-primary/70 shrink-0" />
               </div>
 
               <div className="divide-y divide-white/[0.06]">

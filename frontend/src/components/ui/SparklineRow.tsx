@@ -35,7 +35,7 @@ export const SparklineRow: React.FC<SparklineRowProps> = ({
   const padding = 2;
 
   let pathD = '';
-  if (data && data.length > 1) {
+  if (data && data.length >= 4) {
     const min = Math.min(...data);
     const max = Math.max(...data);
     const range = max - min === 0 ? 1 : max - min;
@@ -54,7 +54,7 @@ export const SparklineRow: React.FC<SparklineRowProps> = ({
   return (
     <div
       className={clsx(
-        'flex items-center justify-between py-2.5 px-1 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.02] transition-colors',
+        'flex items-center justify-between py-2.5 px-1 border-b border-app-default/60 last:border-b-0 hover:bg-white/[0.02] transition-colors',
         className
       )}
     >
@@ -67,8 +67,8 @@ export const SparklineRow: React.FC<SparklineRowProps> = ({
         </div>
       </div>
 
-      {/* Middle: Glowing Amber Sparkline */}
-      <div className="flex-1 max-w-[120px] mx-3">
+      {/* Middle: Glowing Amber Sparkline or Honest Trend Note */}
+      <div className="flex-1 max-w-[120px] mx-2 flex items-center justify-center">
         {pathD ? (
           <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-6 overflow-visible">
             <defs>
@@ -100,12 +100,16 @@ export const SparklineRow: React.FC<SparklineRowProps> = ({
             />
           </svg>
         ) : (
-          <div className="w-full h-[1px] bg-white/[0.1]" />
+          <div className="flex items-center gap-1.5 text-[10px] font-mono text-app-muted/60 select-none">
+            <span className="w-3.5 h-[1px] bg-app-muted/40" />
+            <span>trend n/a</span>
+            <span className="w-3.5 h-[1px] bg-app-muted/40" />
+          </div>
         )}
       </div>
 
       {/* Right: Percentage Value */}
-      <div className="text-xs font-mono font-medium text-app-primary text-right tabular-nums min-w-[50px]">
+      <div className="text-xs font-mono font-medium text-app-primary text-right tabular-nums min-w-[95px] whitespace-nowrap">
         {valueText}
       </div>
     </div>

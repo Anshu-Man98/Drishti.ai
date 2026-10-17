@@ -8,10 +8,26 @@ interface ScoringModalProps {
 }
 
 export const ScoringModal: React.FC<ScoringModalProps> = ({ isOpen, onClose }) => {
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="scoring-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <GlowCard className="w-full max-w-xl p-6 relative border-amber-primary/30 max-h-[90vh] overflow-y-auto">
         {/* Close Button */}
         <button
@@ -28,7 +44,7 @@ export const ScoringModal: React.FC<ScoringModalProps> = ({ isOpen, onClose }) =
             <Scale className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-app-primary tracking-tight">How FinShield Scoring Works</h2>
+            <h2 id="scoring-modal-title" className="text-base font-semibold text-app-primary tracking-tight">How FinShield Scoring Works</h2>
             <p className="text-xs text-app-muted font-mono">Calibrated Multi-Agent & BigQuery ML Pipeline</p>
           </div>
         </div>

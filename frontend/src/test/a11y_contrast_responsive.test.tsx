@@ -1,9 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { TopBar } from '../components/layout/TopBar';
 import { ThemeProvider } from '../context/ThemeContext';
+import { ToggleSwitch } from '../components/ui/ToggleSwitch';
+import { ScoringModal } from '../components/common/ScoringModal';
+import { SpacetimeMap } from '../components/SpacetimeMap';
+
+vi.mock('@vis.gl/react-google-maps', () => ({
+  APIProvider: ({ children }: any) => <div data-testid="api-provider">{children}</div>,
+  Map: ({ children }: any) => <div data-testid="google-map">{children}</div>,
+  AdvancedMarker: ({ children }: any) => <div>{children}</div>,
+  Pin: () => <div />,
+  useMap: () => null,
+}));
 
 /**
  * Standard relative luminance according to WCAG 2.1 formula
@@ -151,4 +162,78 @@ describe('Stage 7: Contrast, Accessibility & Responsive Polish', () => {
       expect(breadcrumbNav).toBeInTheDocument();
     });
   });
+
+  describe('HTML Validity & Accessible Modals/Controls', () => {
+    it('verifies ToggleSwitch has role="switch" and accessible label', () => {
+      render(<ToggleSwitch checked={false} onChange={() => {}} label="Include demo and duel claims" />);
+
+      const toggle = screen.getByRole('switch', { name: /Include demo and duel claims/i });
+      expect(toggle).toBeInTheDocument();
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('verifies ScoringModal renders accessible dialog with title and closes on Escape', () => {
+      const onClose = vi.fn();
+      render(<ScoringModal isOpen={true} onClose={onClose} />);
+
+      const dialog = screen.getByRole('dialog', { name: /How FinShield Scoring Works/i });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+
+      // Test Escape key closes modal
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('verifies SpacetimeMap contains NO nested buttons and supports keyboard navigation', () => {
+      const onOpenDoc = vi.fn();
+      const mockTimeline = [
+        {
+          actor: 'PAT-101',
+          lat: 19.076,
+          lng: 72.8777,
+          place: 'Mumbai Hospital',
+          ts: '2026-10-14T08:00:00Z',
+          description: 'Emergency admission',
+          doc_id: 'CLM-001',
+        },
+        {
+          actor: 'PAT-101',
+          lat: 28.6139,
+          lng: 77.209,
+          place: 'Delhi Clinic',
+          ts: '2026-10-14T08:45:00Z',
+          description: 'Outpatient consultation',
+          doc_id: 'CLM-002',
+        },
+      ];
+
+      const { container } = render(
+        <SpacetimeMap
+          timeline={mockTimeline}
+          claimId="CLM-2024-TEST"
+          onOpenDocument={onOpenDoc}
+        />
+      );
+
+      // Verify ZERO nested buttons: button inside button is invalid HTML
+      const nestedButtons = container.querySelectorAll('button button');
+      expect(nestedButtons.length).toBe(0);
+
+      // Verify event log cards have role="button" with tabIndex={0}
+      const eventCards = container.querySelectorAll('[role="button"]');
+      expect(eventCards.length).toBeGreaterThan(0);
+      eventCards.forEach((card) => {
+        expect(card).toHaveAttribute('tabIndex', '0');
+      });
+
+      // Verify Inspect Linked Claim button is an independent, non-nested button
+      const inspectButtons = screen.getAllByRole('button', { name: /Inspect Linked Claim/i });
+      expect(inspectButtons.length).toBe(2);
+      inspectButtons.forEach((btn) => {
+        expect(btn.closest('button')).toBe(btn); // Not nested inside another button
+      });
+    });
+  });
 });
+

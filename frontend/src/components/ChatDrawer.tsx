@@ -225,11 +225,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close Case Assistant"
             className="p-1.5 rounded-lg text-muted hover:text-text-primary hover:bg-white/10 transition-colors cursor-pointer"
             title="Close Case Assistant"
           >
-          <X className="w-5 h-5" />
-        </button>
+            <X className="w-5 h-5" />
+          </button>
       </div>
 
       {/* Suggested Questions Quick Bar */}

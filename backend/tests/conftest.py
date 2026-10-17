@@ -364,6 +364,14 @@ class FakeBQClient:
                 FakeBQRow(diagnosis_code="K35.8", fallback_level="exact", sample_count=301, p50=52955.82, p75=56849.74, p90=58537.87, p95=59644.85),
                 FakeBQRow(diagnosis_code="K35", fallback_level="block", sample_count=301, p50=52955.82, p75=56849.74, p90=58537.87, p95=59644.85),
                 FakeBQRow(diagnosis_code="K", fallback_level="chapter", sample_count=657, p50=57867.39, p75=63296.69, p90=68054.96, p95=70226.87),
+                FakeBQRow(diagnosis_code="A09", fallback_level="exact", sample_count=325, p50=25266.62, p75=27491.47, p90=30360.59, p95=32243.53),
+                FakeBQRow(diagnosis_code="A09", fallback_level="block", sample_count=325, p50=25266.62, p75=27491.47, p90=30360.59, p95=32243.53),
+                FakeBQRow(diagnosis_code="A", fallback_level="chapter", sample_count=325, p50=25266.62, p75=27491.47, p90=30360.59, p95=32243.53),
+                FakeBQRow(diagnosis_code="E11.9", fallback_level="exact", sample_count=331, p50=36679.49, p75=41369.34, p90=44895.69, p95=46366.15),
+                FakeBQRow(diagnosis_code="E11", fallback_level="block", sample_count=331, p50=36679.49, p75=41369.34, p90=44895.69, p95=46366.15),
+                FakeBQRow(diagnosis_code="E", fallback_level="chapter", sample_count=331, p50=36679.49, p75=41369.34, p90=44895.69, p95=46366.15),
+                FakeBQRow(diagnosis_code="K80.2", fallback_level="exact", sample_count=356, p50=62907.62, p75=66914.88, p90=70226.87, p95=71473.04),
+                FakeBQRow(diagnosis_code="K80", fallback_level="block", sample_count=356, p50=62907.62, p75=66914.88, p90=70226.87, p95=71473.04),
                 FakeBQRow(diagnosis_code="GLOBAL", fallback_level="global", sample_count=2637, p50=49916.56, p75=67704.70, p90=119472.78, p95=134867.98),
             ]
             return FakeBQQueryJob(rows)
@@ -382,6 +390,46 @@ class FakeBQClient:
                 FakeBQRow(diagnosis_code="K35.8", category="pharmacy", fallback_level="exact", sample_count=301,
                           unit_price_p50=5154.93, unit_price_p75=6765.50, unit_price_p90=7474.77, unit_price_p95=7812.79,
                           amount_p50=5154.93, amount_p75=6765.50, amount_p90=7474.77, amount_p95=7812.79),
+                # A09
+                FakeBQRow(diagnosis_code="A09", category="consultation", fallback_level="exact", sample_count=325,
+                          unit_price_p50=2000.0, unit_price_p75=2500.0, unit_price_p90=2500.0, unit_price_p95=2500.0,
+                          amount_p50=4000.0, amount_p75=6000.0, amount_p90=6000.0, amount_p95=7500.0),
+                FakeBQRow(diagnosis_code="A09", category="pharmacy", fallback_level="exact", sample_count=325,
+                          unit_price_p50=4667.78, unit_price_p75=6000.0, unit_price_p90=7300.0, unit_price_p95=7658.47,
+                          amount_p50=4667.78, amount_p75=6000.0, amount_p90=7300.0, amount_p95=7658.47),
+                FakeBQRow(diagnosis_code="A09", category="room_rent", fallback_level="exact", sample_count=325,
+                          unit_price_p50=4000.0, unit_price_p75=4800.0, unit_price_p90=4800.0, unit_price_p95=4800.0,
+                          amount_p50=8000.0, amount_p75=9600.0, amount_p90=12000.0, amount_p95=14400.0),
+                FakeBQRow(diagnosis_code="A09", category="surgery_ot", fallback_level="exact", sample_count=325,
+                          unit_price_p50=6664.52, unit_price_p75=10000.0, unit_price_p90=12000.0, unit_price_p95=14091.50,
+                          amount_p50=6664.52, amount_p75=10000.0, amount_p90=12000.0, amount_p95=14091.50),
+                # E11.9
+                FakeBQRow(diagnosis_code="E11.9", category="consultation", fallback_level="exact", sample_count=331,
+                          unit_price_p50=2000.0, unit_price_p75=2500.0, unit_price_p90=2500.0, unit_price_p95=2500.0,
+                          amount_p50=6000.0, amount_p75=8000.0, amount_p90=10000.0, amount_p95=12500.0),
+                FakeBQRow(diagnosis_code="E11.9", category="pharmacy", fallback_level="exact", sample_count=331,
+                          unit_price_p50=4979.61, unit_price_p75=6500.0, unit_price_p90=7400.0, unit_price_p95=7666.14,
+                          amount_p50=4979.61, amount_p75=6500.0, amount_p90=7400.0, amount_p95=7666.14),
+                FakeBQRow(diagnosis_code="E11.9", category="room_rent", fallback_level="exact", sample_count=331,
+                          unit_price_p50=4000.0, unit_price_p75=4800.0, unit_price_p90=4800.0, unit_price_p95=4800.0,
+                          amount_p50=12000.0, amount_p75=16000.0, amount_p90=18000.0, amount_p95=24000.0),
+                FakeBQRow(diagnosis_code="E11.9", category="surgery_ot", fallback_level="exact", sample_count=331,
+                          unit_price_p50=8725.42, unit_price_p75=12000.0, unit_price_p90=16000.0, unit_price_p95=19910.44,
+                          amount_p50=8725.42, amount_p75=12000.0, amount_p90=16000.0, amount_p95=19910.44),
+                # K80.2
+                FakeBQRow(diagnosis_code="K80.2", category="consultation", fallback_level="exact", sample_count=356,
+                          unit_price_p50=2000.0, unit_price_p75=2500.0, unit_price_p90=2500.0, unit_price_p95=2500.0,
+                          amount_p50=6000.0, amount_p75=7500.0, amount_p90=10000.0, amount_p95=10000.0),
+                FakeBQRow(diagnosis_code="K80.2", category="pharmacy", fallback_level="exact", sample_count=356,
+                          unit_price_p50=4847.40, unit_price_p75=6200.0, unit_price_p90=7300.0, unit_price_p95=7703.04,
+                          amount_p50=4847.40, amount_p75=6200.0, amount_p90=7300.0, amount_p95=7703.04),
+                FakeBQRow(diagnosis_code="K80.2", category="room_rent", fallback_level="exact", sample_count=356,
+                          unit_price_p50=4000.0, unit_price_p75=4800.0, unit_price_p90=4800.0, unit_price_p95=4800.0,
+                          amount_p50=12000.0, amount_p75=16000.0, amount_p90=16000.0, amount_p95=19200.0),
+                FakeBQRow(diagnosis_code="K80.2", category="surgery_ot", fallback_level="exact", sample_count=356,
+                          unit_price_p50=36665.78, unit_price_p75=42000.0, unit_price_p90=46000.0, unit_price_p95=49066.05,
+                          amount_p50=36665.78, amount_p75=42000.0, amount_p90=46000.0, amount_p95=49066.05),
+                # Global
                 FakeBQRow(diagnosis_code="GLOBAL", category="ancillary", fallback_level="global", sample_count=2637,
                           unit_price_p50=2000.0, unit_price_p75=3200.0, unit_price_p90=4500.0, unit_price_p95=5500.0,
                           amount_p50=3500.0, amount_p75=5500.0, amount_p90=8000.0, amount_p95=10000.0),
@@ -499,7 +547,7 @@ class FakeGenAIModels:
                     "manipulation_type": "tariff_arbitrage",
                     "line_item_mutations": [
                         {"description": "Specialist Consultation", "qty": 2.0, "unit_price": 2000.0, "amount": 4000.0, "category": "consultation"},
-                        {"description": "General Ward Bed", "qty": 3.0, "unit_price": 3000.0, "amount": 9000.0, "category": "room_rent"},
+                        {"description": "General Ward Bed", "qty": 2.0, "unit_price": 4500.0, "amount": 9000.0, "category": "room_rent"},
                         {"description": "Lower Limb Digital X-Ray & CT Scan", "qty": 1.0, "unit_price": 5000.0, "amount": 5000.0, "category": "investigations"},
                         {"description": "Surgical Immobilization & Orthopedic Consumables", "qty": 1.0, "unit_price": 6000.0, "amount": 6000.0, "category": "pharmacy"}
                     ]
@@ -513,7 +561,7 @@ class FakeGenAIModels:
                     "manipulation_type": "tariff_arbitrage",
                     "line_item_mutations": [
                         {"description": "Specialist Consultation", "qty": 2.0, "unit_price": 2000.0, "amount": 4000.0, "category": "consultation"},
-                        {"description": "General Ward Bed", "qty": 3.0, "unit_price": 3000.0, "amount": 9000.0, "category": "room_rent"},
+                        {"description": "General Ward Bed", "qty": 2.0, "unit_price": 4500.0, "amount": 9000.0, "category": "room_rent"},
                         {"description": "Lower Limb Digital X-Ray & CT Scan", "qty": 1.0, "unit_price": 5000.0, "amount": 5000.0, "category": "investigations"},
                         {"description": "Surgical Immobilization & Orthopedic Consumables", "qty": 1.0, "unit_price": 6000.0, "amount": 6000.0, "category": "pharmacy"}
                     ]

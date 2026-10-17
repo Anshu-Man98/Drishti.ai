@@ -1,0 +1,114 @@
+{
+  "clean_base_bill": {
+    "file": "clean_base_bill.pdf",
+    "expected_verdict": "approve",
+    "expected_risk_max": 29,
+    "required_findings": [],
+    "forbidden_findings": [
+      "DUPLICATE_LINE_ITEM",
+      "ROOM_DAYS_EXCEED_STAY",
+      "TAX_RATE_MISMATCH",
+      "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK"
+    ]
+  },
+  "clean_expensive_bill": {
+    "file": "clean_expensive_bill.pdf",
+    "expected_verdict": "approve",
+    "expected_risk_max": 29,
+    "required_findings": [],
+    "forbidden_findings": [
+      "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+      "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+      "TAX_RATE_MISMATCH"
+    ]
+  },
+  "clean_rotated_noisy_photo": {
+    "file": "clean_rotated_noisy_photo.png",
+    "expected_verdict": "approve",
+    "expected_risk_max": 29,
+    "required_findings": [],
+    "forbidden_findings": [
+      "document_unreadable_manual_review"
+    ]
+  },
+  "duplicate_line_item": {
+    "file": "duplicate_line_item.pdf",
+    "expected_verdict": "review",
+    "required_findings": [
+      "DUPLICATE_LINE_ITEM"
+    ]
+  },
+  "room_days_exceed_stay": {
+    "file": "room_days_exceed_stay.pdf",
+    "expected_verdict": "review",
+    "required_findings": [
+      "ROOM_DAYS_EXCEED_STAY"
+    ]
+  },
+  "future_date_bill": {
+    "file": "future_date_bill.pdf",
+    "expected_verdict": "reject",
+    "required_findings": [
+      "FUTURE_OR_IMPLAUSIBLE_DATE"
+    ]
+  },
+  "tax_rate_mismatch": {
+    "file": "tax_rate_mismatch.pdf",
+    "expected_verdict": "review",
+    "required_findings": [
+      "TAX_RATE_MISMATCH"
+    ]
+  },
+  "price_inflated_bill": {
+    "file": "price_inflated_bill.pdf",
+    "expected_verdict": "review",
+    "expected_risk_min": 45,
+    "required_findings": [
+      "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+      "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK"
+    ]
+  },
+  "reversed_dates_bill": {
+    "file": "reversed_dates_bill.pdf",
+    "expected_verdict": "reject",
+    "expected_risk_min": 85,
+    "required_findings": [
+      "REVERSED_HOSPITALIZATION_DATES"
+    ]
+  },
+  "subtle_arithmetic_mismatch": {
+    "file": "subtle_arithmetic_mismatch.pdf",
+    "expected_verdict": "review",
+    "required_findings": [
+      "SUBTOTAL_SUM_MISMATCH"
+    ]
+  },
+  "canva_clean_amounts": {
+    "file": "canva_clean_amounts.pdf",
+    "expected_verdict": "review",
+    "expected_risk_max": 65,
+    "required_findings": [
+      "SUSPICIOUS_PRODUCER_METADATA"
+    ]
+  },
+  "missing_total_bill": {
+    "file": "missing_total_bill.pdf",
+    "expected_verdict": "review",
+    "expected_status": "incomplete",
+    "forbidden_findings": [
+      "TOTAL_PAYABLE_MISMATCH"
+    ]
+  },
+  "restaurant_invoice": {
+    "file": "restaurant_invoice.pdf",
+    "expected_verdict": "review",
+    "expected_status": "incomplete",
+    "required_findings": [
+      "NOT_A_MEDICAL_BILL"
+    ],
+    "forbidden_findings": [
+      "SUBTOTAL_SUM_MISMATCH",
+      "TOTAL_PAYABLE_MISMATCH"
+    ]
+  }
+}

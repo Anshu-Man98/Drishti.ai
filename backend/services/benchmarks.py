@@ -232,6 +232,7 @@ class BenchmarkService:
             "surgery_ot": (19534.0, 39929.0, 80255.0, 96789.0, 19534.0, 39929.0, 80255.0, 96789.0),
             "consultation": (2000.0, 2500.0, 2500.0, 2500.0, 6000.0, 8000.0, 10500.0, 12500.0),
             "pharmacy": (4926.0, 6431.0, 7380.0, 7707.0, 4926.0, 6431.0, 7380.0, 7707.0),
+            "iv_fluids": (350.0, 500.0, 650.0, 750.0, 1400.0, 2000.0, 2500.0, 3000.0),
             "diagnostics": (3500.0, 4800.0, 6000.0, 7500.0, 4000.0, 6500.0, 8500.0, 10500.0),
             "ancillary": (2000.0, 3200.0, 4500.0, 5500.0, 3500.0, 5500.0, 8000.0, 10000.0),
         }
@@ -274,8 +275,10 @@ class BenchmarkService:
             cat = "consultation"
         elif any(k in desc_clean for k in ["surgery", "ot ", "ot charges", "operation", "procedure", "laparoscopic", "appendectomy", "cholecystectomy", "anesthesia", "surgeon"]):
             cat = "surgery_ot"
-        elif any(k in desc_clean for k in ["pharmacy", "medicine", "drug", "injection", "antibiotic", "fluid", "saline", "tablet", "capsule", "iv "]):
+        elif any(k in desc_clean for k in ["pharmacy", "medicine", "drug", "injection", "antibiotic", "tablet", "capsule", "syrup"]):
             cat = "pharmacy"
+        elif any(k in desc_clean for k in ["iv fluid", "fluids", "saline", "electrolyte", "dextrose", "ringer lactate", "iv drip", "iv infusion"]):
+            cat = "iv_fluids"
         elif any(k in desc_clean for k in ["mri", "ct ", "scan", "x-ray", "ultrasound", "usg", "radiology", "pathology", "lab", "test", "investigation", "ecg", "blood"]):
             cat = "diagnostics"
         elif any(k in desc_clean for k in ["consumable", "disposable", "glove", "syringe", "cannula", "catheter", "ppe", "bandage", "dressing", "monitoring", "equip", "kit"]):

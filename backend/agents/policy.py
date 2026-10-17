@@ -10,7 +10,16 @@ from google.adk.agents import LlmAgent
 
 from backend.app.schemas import Finding, Claim
 from backend.app.config import settings
-from backend.tools.registry import call_tool, validate_arithmetic, check_dates, check_policy_caps, check_price_benchmarks
+from backend.tools.registry import (
+    call_tool,
+    validate_arithmetic,
+    detect_duplicate_line_items,
+    check_room_days_vs_stay,
+    validate_tax_rates,
+    check_dates,
+    check_policy_caps,
+    check_price_benchmarks
+)
 from backend.tools.policy_tools import search_policy
 
 POLICY_SYSTEM_PROMPT = """You are a claims auditor. You NEVER compute numbers yourself — always call the tools. For every
@@ -52,6 +61,46 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
         agent_name="policy"
     )
     findings.extend(math_result.get("findings", []))
+
+    # 2. Check for Duplicate Line Items (same description, qty, rate without date distinction)
+    dup_result = call_tool(
+        "detect_duplicate_line_items",
+        {
+            "line_items": line_items_dict,
+            "doc_id": doc_id
+        },
+        claim_id=claim.claim_id,
+        agent_name="policy"
+    )
+    findings.extend(dup_result.get("findings", []))
+
+    # 3. Check Room Days vs Length of Stay
+    stay_result = call_tool(
+        "check_room_days_vs_stay",
+        {
+            "admission_ts": claim.admission_ts,
+            "discharge_ts": claim.discharge_ts,
+            "line_items": line_items_dict,
+            "doc_id": doc_id
+        },
+        claim_id=claim.claim_id,
+        agent_name="policy"
+    )
+    findings.extend(stay_result.get("findings", []))
+
+    # 4. Validate GST Tax Rates against healthcare rules
+    tax_result = call_tool(
+        "validate_tax_rates",
+        {
+            "subtotal": claim.subtotal or 0.0,
+            "tax": claim.tax or 0.0,
+            "line_items": line_items_dict,
+            "doc_id": doc_id
+        },
+        claim_id=claim.claim_id,
+        agent_name="policy"
+    )
+    findings.extend(tax_result.get("findings", []))
 
     # 2. Check Dates
     date_result = call_tool(
@@ -102,6 +151,9 @@ def create_policy_agent() -> LlmAgent:
         model=settings.GEMINI_FLASH_MODEL,
         tools=[
             validate_arithmetic,
+            detect_duplicate_line_items,
+            check_room_days_vs_stay,
+            validate_tax_rates,
             check_dates,
             check_policy_caps,
             check_price_benchmarks,

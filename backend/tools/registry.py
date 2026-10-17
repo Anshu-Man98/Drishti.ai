@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -263,6 +264,315 @@ def validate_arithmetic(
     }
 
 
+def normalize_item_description(desc: str) -> str:
+    """Normalizes item description by removing parentheticals, punctuation, multiple spaces and plurals."""
+    t = (desc or "").lower()
+    t = re.sub(r'\(.*?\)', '', t)
+    t = re.sub(r'[^\w\s]', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    tokens = []
+    for tok in t.split():
+        if tok.endswith('ies') and len(tok) > 4:
+            tokens.append(tok[:-3] + 'y')
+        elif tok.endswith('s') and len(tok) > 3 and not tok.endswith('ss'):
+            tokens.append(tok[:-1])
+        else:
+            tokens.append(tok)
+    return " ".join(tokens)
+
+
+def detect_duplicate_line_items(
+    line_items: List[Dict[str, Any]],
+    doc_id: str = "doc_main"
+) -> Dict[str, Any]:
+    """
+    Identifies duplicate line items (same description, quantity, and unit rate listed multiple times).
+    Normalizes descriptions for whitespace, punctuation, case, and plurals.
+    Exempts legitimately repeated different-date services only if distinct service dates are present.
+    """
+    findings: List[Finding] = []
+    computed: Dict[str, Any] = {}
+    chips: List[str] = []
+
+    groups: Dict[Tuple[str, float, int], List[Dict[str, Any]]] = {}
+
+    for it in line_items:
+        desc = it.get("description", "")
+        norm_desc = normalize_item_description(desc)
+        if not norm_desc:
+            continue
+        qty = float(it.get("qty", 1.0) or 1.0)
+        rate = float(it.get("unit_price", 0.0) or 0.0)
+        rate_paise = to_paise(rate)
+        if rate_paise > 0 or it.get("amount", 0.0) > 0:
+            key = (norm_desc, qty, rate_paise)
+            groups.setdefault(key, []).append(it)
+
+    dup_idx = 1
+    total_duplicate_paise = 0
+
+    for (norm_desc, qty, rate_paise), items in groups.items():
+        if len(items) <= 1:
+            continue
+
+        # Check date exemption: if items have distinct non-empty service dates, exempt them
+        dates = [it.get("date") or it.get("service_date") or it.get("date_of_service") for it in items]
+        has_dates = all(d is not None and str(d).strip() != "" for d in dates)
+        if has_dates and len(set(str(d).strip() for d in dates)) == len(items):
+            continue
+
+        duplicate_count = len(items) - 1
+        item_unit_rupees = to_rupees(rate_paise)
+        duplicate_amount_paise = int(round(duplicate_count * qty * rate_paise))
+        duplicate_amount_rupees = to_rupees(duplicate_amount_paise)
+        total_duplicate_paise += duplicate_amount_paise
+
+        sample_desc = items[0].get("description", norm_desc)
+        chip = f"Duplicate: {sample_desc} ({len(items)}x ₹{item_unit_rupees:,.0f})"
+        chips.append(chip)
+
+        if duplicate_amount_rupees >= 5000.0:
+            sev = Severity.HIGH
+        elif duplicate_amount_rupees >= 1000.0:
+            sev = Severity.MEDIUM
+        else:
+            sev = Severity.LOW
+
+        computed[f"duplicate_{dup_idx}_desc"] = sample_desc
+        computed[f"duplicate_{dup_idx}_count"] = len(items)
+        computed[f"duplicate_{dup_idx}_amount"] = duplicate_amount_rupees
+
+        findings.append(Finding(
+            finding_id=f"F-DUP-ITEM-{dup_idx}",
+            agent=AgentName.POLICY,
+            check_id="DUPLICATE_LINE_ITEM",
+            severity=sev,
+            title=f"Duplicate Line Item Billed: {sample_desc}",
+            explanation=(
+                f"Line item '{sample_desc}' (qty {qty:g} @ ₹{item_unit_rupees:,.2f}) appears {len(items)} times "
+                f"on the invoice with no distinct service dates, resulting in duplicate billing of ₹{duplicate_amount_rupees:,.2f}."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=items[1].get("page", 1),
+                bbox=items[1].get("bbox"),
+                quote=f"Duplicate entry ({len(items)} instances): '{sample_desc}' qty={qty:g} rate=₹{item_unit_rupees:,.2f}"
+            )],
+            confidence=0.95,
+            computed_chip=chip,
+            computed_details={
+                "description": sample_desc,
+                "normalized_description": norm_desc,
+                "instances": len(items),
+                "excess_instances": duplicate_count,
+                "unit_price": item_unit_rupees,
+                "excess_paise": duplicate_amount_paise,
+                "excess_rupees": duplicate_amount_rupees
+            }
+        ))
+        dup_idx += 1
+
+    computed["total_duplicate_paise"] = total_duplicate_paise
+    computed["total_duplicate_rupees"] = to_rupees(total_duplicate_paise)
+
+    return {
+        "valid": len(findings) == 0,
+        "findings": findings,
+        "computed": computed,
+        "chip": chips[0] if chips else "No duplicates"
+    }
+
+
+def check_room_days_vs_stay(
+    admission_ts: Union[datetime, str, None],
+    discharge_ts: Union[datetime, str, None],
+    line_items: List[Dict[str, Any]],
+    doc_id: str = "doc_main"
+) -> Dict[str, Any]:
+    """
+    Compares total room/bed days billed against the length of stay calculated from admission and discharge.
+    Documented Rule: Length of stay in whole days = max(1, (discharge_date - admission_date).days).
+    Same-day admission and discharge counts as 1 day. Missing dates emit a needs-review note without false fraud findings.
+    """
+    adm_dt = normalize_to_utc(admission_ts)
+    dis_dt = normalize_to_utc(discharge_ts)
+
+    if not adm_dt or not dis_dt:
+        return {
+            "valid": True,
+            "findings": [],
+            "computed": {
+                "needs_review": "Missing admission or discharge dates to verify stay duration"
+            },
+            "chip": "Stay duration unverified (dates missing)"
+        }
+
+    # Documented rule: calendar day difference (nights), minimum 1 day for same-day
+    allowed_stay_days = max(1, (dis_dt.date() - adm_dt.date()).days)
+
+    room_keywords = ["room", "bed", "ward", "icu", "nursing", "twin sharing", "single private", "deluxe", "general ward", "stay charge"]
+    room_items = []
+    total_billed_room_days = 0.0
+    room_charges_paise = 0
+
+    for it in line_items:
+        desc = (it.get("description", "") or "").lower()
+        if any(k in desc for k in room_keywords):
+            qty = float(it.get("qty", 1.0) or 1.0)
+            rate = float(it.get("unit_price", 0.0) or 0.0)
+            amt = float(it.get("amount", 0.0) or 0.0)
+            total_billed_room_days += qty
+            room_charges_paise += to_paise(amt if amt > 0 else qty * rate)
+            room_items.append(it)
+
+    computed = {
+        "admission_date": adm_dt.strftime("%d-%b-%Y"),
+        "discharge_date": dis_dt.strftime("%d-%b-%Y"),
+        "allowed_stay_days": allowed_stay_days,
+        "billed_room_days": total_billed_room_days,
+        "room_charges_paise": room_charges_paise,
+        "room_charges_rupees": to_rupees(room_charges_paise)
+    }
+
+    findings: List[Finding] = []
+    chip = f"Room stay: {total_billed_room_days:g}d / {allowed_stay_days}d"
+
+    if total_billed_room_days > allowed_stay_days:
+        excess_days = total_billed_room_days - allowed_stay_days
+        avg_rate_paise = room_charges_paise // max(1, int(round(total_billed_room_days)))
+        excess_amount_paise = int(round(excess_days * avg_rate_paise))
+        excess_amount_rupees = to_rupees(excess_amount_paise)
+
+        computed["excess_room_days"] = excess_days
+        computed["excess_room_amount_paise"] = excess_amount_paise
+        computed["excess_room_amount_rupees"] = excess_amount_rupees
+
+        if excess_days >= 3 or excess_amount_rupees >= 10000.0:
+            sev = Severity.HIGH
+        else:
+            sev = Severity.MEDIUM
+
+        chip = f"Billed {total_billed_room_days:g}d vs Stay {allowed_stay_days}d (+{excess_days:g}d)"
+
+        findings.append(Finding(
+            finding_id="F-ROOM-EXCEED-STAY",
+            agent=AgentName.POLICY,
+            check_id="ROOM_DAYS_EXCEED_STAY",
+            severity=sev,
+            title="Billed Room/Bed Days Exceed Length of Hospitalization",
+            explanation=(
+                f"Invoice bills {total_billed_room_days:g} days of room/bed accommodation for a hospitalization stay "
+                f"of {allowed_stay_days} day(s) (admission: {adm_dt.strftime('%d-%b-%Y')}, discharge: {dis_dt.strftime('%d-%b-%Y')}). "
+                f"Excess room days billed: {excess_days:g} day(s) totaling ₹{excess_amount_rupees:,.2f}."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=room_items[0].get("page", 1) if room_items else 1,
+                bbox=room_items[0].get("bbox") if room_items else None,
+                quote=f"Billed room days: {total_billed_room_days:g} vs hospital stay: {allowed_stay_days} days"
+            )],
+            confidence=0.98,
+            computed_chip=chip,
+            computed_details=computed
+        ))
+
+    return {
+        "valid": len(findings) == 0,
+        "findings": findings,
+        "computed": computed,
+        "chip": chip
+    }
+
+
+def validate_tax_rates(
+    subtotal: float,
+    tax: float,
+    line_items: Optional[List[Dict[str, Any]]] = None,
+    doc_id: str = "doc_main"
+) -> Dict[str, Any]:
+    """
+    Validates printed GST rate against documented healthcare GST category rules.
+    Standard Indian inpatient composite hospital bill rate is 5.0% (or 0.0% exempt).
+    Flags divergent rates (such as 18.0% commercial rate levied on hospital stay).
+    Never flags a bill whose tax matches the configured 5% or 0% rates.
+    """
+    sub_paise = to_paise(subtotal)
+    tax_paise = to_paise(tax)
+
+    computed = {
+        "stated_subtotal": subtotal,
+        "stated_tax": tax,
+        "subtotal_paise": sub_paise,
+        "tax_paise": tax_paise,
+        "configured_expected_rates": [0.05, 0.00]
+    }
+
+    if sub_paise <= 0 or tax_paise <= 0:
+        return {
+            "valid": True,
+            "findings": [],
+            "computed": computed,
+            "chip": "GST: Exempt / Zero"
+        }
+
+    effective_rate = tax_paise / float(sub_paise)
+    computed["effective_tax_rate"] = round(effective_rate, 4)
+    computed["effective_tax_pct"] = round(effective_rate * 100.0, 2)
+
+    matches_5pct = abs(effective_rate - 0.05) <= 0.005
+    matches_0pct = abs(effective_rate - 0.00) <= 0.005
+
+    if matches_5pct or matches_0pct:
+        matched_str = "5.0%" if matches_5pct else "0.0%"
+        return {
+            "valid": True,
+            "findings": [],
+            "computed": computed,
+            "chip": f"GST: {matched_str} (Compliant)"
+        }
+
+    expected_tax_5pct_paise = int(round(sub_paise * 0.05))
+    discrepancy_paise = abs(tax_paise - expected_tax_5pct_paise)
+    discrepancy_rupees = to_rupees(discrepancy_paise)
+
+    computed["tax_discrepancy_paise"] = discrepancy_paise
+    computed["tax_discrepancy_rupees"] = discrepancy_rupees
+
+    chip = f"GST mismatch: {effective_rate*100:.1f}% vs 5.0% (Δ ₹{discrepancy_rupees:,.0f})"
+    sev = Severity.MEDIUM if discrepancy_rupees >= 1000.0 else Severity.LOW
+
+    findings = [
+        Finding(
+            finding_id="F-TAX-MISMATCH",
+            agent=AgentName.POLICY,
+            check_id="TAX_RATE_MISMATCH",
+            severity=sev,
+            title="Printed GST Rate Inconsistent with Healthcare Category Rules",
+            explanation=(
+                f"Printed tax of ₹{tax:,.2f} on subtotal ₹{subtotal:,.2f} represents an effective tax rate of "
+                f"{effective_rate*100:.1f}%. Under Indian GST rules, healthcare inpatient composite hospital supplies "
+                f"are standard-rated at 5.0% (Notification 11/2022-CT(R)) or exempt (0.0%). "
+                f"An applied rate of {effective_rate*100:.1f}% indicates excessive tax levy or misclassified commercial tariff."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=1,
+                quote=f"Subtotal: ₹{subtotal:,.2f}, Tax: ₹{tax:,.2f} (Effective rate: {effective_rate*100:.1f}%)"
+            )],
+            confidence=0.95,
+            computed_chip=chip,
+            computed_details=computed
+        )
+    ]
+
+    return {
+        "valid": False,
+        "findings": findings,
+        "computed": computed,
+        "chip": chip
+    }
+
+
 def check_policy_caps(
     policy_id: Optional[str],
     claim: Union[Claim, Dict[str, Any]],
@@ -418,89 +728,11 @@ def check_price_benchmarks(
     computed["benchmark_widened_upper_band"] = upper_band
     computed["benchmark_sample_count"] = diag_bench.sample_count
 
-    # 1. TOTAL_ABOVE_DIAGNOSIS_BENCHMARK
-    # No finding at or below the widened upper band reflecting regional variation
-    if total_paise > upper_band_paise:
-        ratio_band = total_paise / max(1, upper_band_paise)
-        diff_paise = total_paise - upper_band_paise
-
-        # Smooth severity based on excess over the widened upper band
-        if ratio_band > 1.35:
-            sev = Severity.HIGH
-        elif ratio_band > 1.15:
-            sev = Severity.MEDIUM
-        else:
-            sev = Severity.LOW
-
-        # Weak or thin benchmark (n < 30 or chapter/global fallback) may never produce a "HIGH" finding
-        if diag_bench.sample_count < 30 or diag_bench.fallback_level in ("chapter", "global"):
-            if sev == Severity.HIGH:
-                sev = Severity.MEDIUM
-
-        ratio_p95 = total_paise / max(1, p95_total_paise)
-        pct_diff = (ratio_p95 - 1.0) * 100.0
-        pct_int = round(pct_diff)
-        pct_str = f"+{pct_diff:.1f}%" if pct_diff < 1.0 else f"+{pct_int}%"
-        pct_text = f"{pct_diff:.1f}%" if pct_diff < 1.0 else f"{pct_int}%"
-
-        chip_txt = f"Total vs p95: {ratio_p95:.2f}x"
-        chips.append(chip_txt)
-
-        computed["benchmark_ratio_p95"] = round(ratio_p95, 3)
-        computed["benchmark_ratio_p95_2dec"] = round(ratio_p95, 2)
-        computed["benchmark_pct_above_p95"] = round(pct_diff, 1)
-        computed["benchmark_pct_above_p95_int"] = pct_int
-        computed["benchmark_excess_rupees"] = to_rupees(diff_paise)
-        computed["benchmark_excess_paise"] = diff_paise
-
-        findings.append(Finding(
-            finding_id="F-BENCH-TOTAL-P95",
-            agent=AgentName.POLICY,
-            check_id="TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
-            severity=sev,
-            title=f"Total claim amount exceeds diagnosis benchmark ({pct_str} above p95)",
-            explanation=(
-                f"Total claimed amount of ₹{total_rupees:,.2f} is {pct_text} above the 95th percentile benchmark "
-                f"(₹{diag_bench.p95:,.2f}) and exceeds the effective regional upper band of ₹{upper_band:,.2f} "
-                f"for diagnosis {diag_bench.diagnosis_code} "
-                f"(benchmark fallback level: '{diag_bench.fallback_level}', sample size n={diag_bench.sample_count}, "
-                f"distribution: p50=₹{diag_bench.p50:,.2f}, p75=₹{diag_bench.p75:,.2f}, p90=₹{diag_bench.p90:,.2f}, p95=₹{diag_bench.p95:,.2f})."
-            ),
-            evidence=[Evidence(
-                doc_id=doc_id,
-                page=1,
-                quote=f"Total claimed: ₹{total_rupees:,.2f} vs diagnosis {diag_bench.diagnosis_code} benchmark p95=₹{diag_bench.p95:,.2f} (regional upper band: ₹{upper_band:,.2f}, level: {diag_bench.fallback_level}, n={diag_bench.sample_count})"
-            )],
-            confidence=0.95,
-            computed_chip=chip_txt,
-            computed_details={
-                "total_claimed": total_rupees,
-                "benchmark_p95": diag_bench.p95,
-                "benchmark_p50": diag_bench.p50,
-                "benchmark_p75": diag_bench.p75,
-                "benchmark_p90": diag_bench.p90,
-                "diagnosis_p50": diag_bench.p50,
-                "diagnosis_p75": diag_bench.p75,
-                "diagnosis_p90": diag_bench.p90,
-                "diagnosis_p95": diag_bench.p95,
-                "widened_upper_band": upper_band,
-                "diagnosis_widened_upper_band": upper_band,
-                "ratio_vs_p95": round(ratio_p95, 3),
-                "ratio_vs_p95_2dec": round(ratio_p95, 2),
-                "ratio_vs_band": round(ratio_band, 3),
-                "pct_above_p95": round(pct_diff, 1),
-                "pct_above_p95_int": pct_int,
-                "excess_paise": diff_paise,
-                "excess_rupees": to_rupees(diff_paise),
-                "fallback_level": diag_bench.fallback_level,
-                "sample_count": diag_bench.sample_count
-            }
-        ))
-
-    # 2. LINE_ITEM_PRICE_ABOVE_BENCHMARK
+    # 1. LINE_ITEM_PRICE_ABOVE_BENCHMARK
     line_items = claim.get("line_items", []) or []
     ancillary_items = []
     ancillary_paise = 0
+    line_item_findings: List[Finding] = []
 
     for idx, it in enumerate(line_items):
         desc = it.get("description", "")
@@ -545,7 +777,8 @@ def check_price_benchmarks(
             ancillary_paise += to_paise(amt)
 
         # Line item benchmark check: no finding at or below widened upper band
-        if unit_paise > unit_upper_paise and unit_price > 0:
+        is_above_unit_band = (unit_paise > unit_upper_paise) or (unit_paise >= unit_upper_paise and unit_paise > cat_p95_unit_paise)
+        if is_above_unit_band and unit_price > 0:
             ratio_band = unit_paise / max(1, unit_upper_paise)
             ratio_p95 = unit_paise / max(1, cat_p95_unit_paise)
             pct_diff = (ratio_p95 - 1.0) * 100.0
@@ -553,17 +786,17 @@ def check_price_benchmarks(
             pct_str = f"+{pct_diff:.1f}%" if pct_diff < 1.0 else f"+{pct_int}%"
             pct_text = f"{pct_diff:.1f}%" if pct_diff < 1.0 else f"{pct_int}%"
 
-            line_excess_paise = int(round((unit_paise - unit_upper_paise) * qty))
+            line_excess_paise = int(round(max(0, unit_paise - cat_p95_unit_paise) * qty))
             line_excess_rupees = to_rupees(line_excess_paise)
             excess_share = (line_excess_rupees / total_rupees) if total_rupees > 0 else 0.0
 
             # Severity depends on both the ratio and how much money the excess is worth relative to the claim:
             # One marginally high item must not move the verdict
             if cat == "room_rent":
-                sev = Severity.LOW  # Room rent caps are primarily audited by check_policy_caps
-            elif ratio_band >= 1.40 and line_excess_rupees >= 8000.0 and excess_share >= 0.10:
+                sev = Severity.MEDIUM if (line_excess_rupees >= 3000.0 or ratio_band >= 1.25) else Severity.LOW
+            elif ratio_band >= 1.40 and line_excess_rupees >= 4000.0 and excess_share >= 0.08:
                 sev = Severity.HIGH
-            elif ratio_band >= 1.20 and line_excess_rupees >= 4000.0 and excess_share >= 0.05:
+            elif (ratio_band >= 1.20 and line_excess_rupees >= 1200.0) or ratio_p95 >= 1.35:
                 sev = Severity.MEDIUM
             else:
                 sev = Severity.LOW
@@ -584,7 +817,7 @@ def check_price_benchmarks(
             computed[f"line_{idx+1}_excess_rupees"] = line_excess_rupees
             computed[f"line_{idx+1}_excess_share_pct"] = round(excess_share * 100, 1)
 
-            findings.append(Finding(
+            item_finding = Finding(
                 finding_id=f"F-BENCH-ITEM-{idx+1}",
                 agent=AgentName.POLICY,
                 check_id="LINE_ITEM_PRICE_ABOVE_BENCHMARK",
@@ -613,19 +846,94 @@ def check_price_benchmarks(
                     "benchmark_unit_p90": cat_bench.unit_price_p90,
                     "benchmark_unit_p95": cat_bench.unit_price_p95,
                     "widened_unit_upper_band": unit_upper_band,
-                    "ratio_vs_p95": round(ratio_p95, 3),
-                    "ratio_vs_p95_1dec": round(ratio_p95, 1),
-                    "ratio_vs_band": round(ratio_band, 3),
-                    "pct_above_p95": pct_int,
-                    "pct_above_p95_diff": round(pct_diff, 1),
-                    "fallback_level": cat_bench.fallback_level,
-                    "sample_count": cat_bench.sample_count,
-                    "line_excess_rupees": line_excess_rupees,
+                    "excess_rupees": line_excess_rupees,
                     "excess_share_pct": round(excess_share * 100, 1),
-                    "qty": qty,
-                    "amount": amt
+                    "fallback_level": cat_bench.fallback_level,
+                    "sample_count": cat_bench.sample_count
                 }
-            ))
+            )
+            line_item_findings.append(item_finding)
+            findings.append(item_finding)
+
+    # 2. TOTAL_ABOVE_DIAGNOSIS_BENCHMARK
+    has_total_breach = total_paise > upper_band_paise
+    has_elevated_total_with_line_inflation = (total_paise > p95_total_paise) and len(line_item_findings) > 0
+
+    if has_total_breach or has_elevated_total_with_line_inflation:
+        ratio_band = total_paise / max(1, upper_band_paise)
+        diff_paise = total_paise - upper_band_paise if has_total_breach else (total_paise - p95_total_paise)
+
+        if has_total_breach:
+            if ratio_band > 1.35:
+                sev = Severity.HIGH
+            else:
+                sev = Severity.MEDIUM
+        else:
+            sev = Severity.MEDIUM
+
+        if diag_bench.sample_count < 30 or diag_bench.fallback_level in ("chapter", "global"):
+            if sev == Severity.HIGH:
+                sev = Severity.MEDIUM
+
+        ratio_p95 = total_paise / max(1, p95_total_paise)
+        pct_diff = (ratio_p95 - 1.0) * 100.0
+        pct_int = round(pct_diff)
+        pct_str = f"+{pct_diff:.1f}%" if pct_diff < 1.0 else f"+{pct_int}%"
+        pct_text = f"{pct_diff:.1f}%" if pct_diff < 1.0 else f"{pct_int}%"
+
+        chip_txt = f"Total vs p95: {ratio_p95:.2f}x"
+        chips.append(chip_txt)
+
+        computed["benchmark_ratio_p95"] = round(ratio_p95, 3)
+        computed["benchmark_ratio_p95_2dec"] = round(ratio_p95, 2)
+        computed["benchmark_pct_above_p95"] = round(pct_diff, 1)
+        computed["benchmark_pct_above_p95_int"] = pct_int
+        computed["benchmark_excess_rupees"] = to_rupees(diff_paise)
+        computed["benchmark_excess_paise"] = diff_paise
+
+        findings.insert(0, Finding(
+            finding_id="F-BENCH-TOTAL-P95",
+            agent=AgentName.POLICY,
+            check_id="TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+            severity=sev,
+            title=f"Total claim amount exceeds diagnosis benchmark ({pct_str} above p95)",
+            explanation=(
+                f"Total claimed amount of ₹{total_rupees:,.2f} is {pct_text} above the 95th percentile benchmark "
+                f"(₹{diag_bench.p95:,.2f}) and exceeds the effective regional upper band of ₹{upper_band:,.2f} "
+                f"for diagnosis {diag_bench.diagnosis_code} "
+                f"(benchmark fallback level: '{diag_bench.fallback_level}', sample size n={diag_bench.sample_count}, "
+                f"distribution: p50=₹{diag_bench.p50:,.2f}, p75=₹{diag_bench.p75:,.2f}, p90=₹{diag_bench.p90:,.2f}, p95=₹{diag_bench.p95:,.2f})."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=1,
+                quote=f"Total claimed: ₹{total_rupees:,.2f} vs diagnosis {diag_bench.diagnosis_code} benchmark p95=₹{diag_bench.p95:,.2f} (regional upper band: ₹{upper_band:,.2f}, level: {diag_bench.fallback_level}, n={diag_bench.sample_count})"
+            )],
+            confidence=0.95,
+            computed_chip=chip_txt,
+            computed_details={
+                "total_claimed": total_rupees,
+                "benchmark_p95": diag_bench.p95,
+                "benchmark_p50": diag_bench.p50,
+                "benchmark_p75": diag_bench.p75,
+                "benchmark_p90": diag_bench.p90,
+                "diagnosis_p50": diag_bench.p50,
+                "diagnosis_p75": diag_bench.p75,
+                "diagnosis_p90": diag_bench.p90,
+                "diagnosis_p95": diag_bench.p95,
+                "widened_upper_band": upper_band,
+                "diagnosis_widened_upper_band": upper_band,
+                "ratio_vs_p95": round(ratio_p95, 3),
+                "ratio_vs_p95_2dec": round(ratio_p95, 2),
+                "ratio_vs_band": round(ratio_band, 3),
+                "pct_above_p95": round(pct_diff, 1),
+                "pct_above_p95_int": pct_int,
+                "excess_paise": diff_paise,
+                "excess_rupees": to_rupees(diff_paise),
+                "fallback_level": diag_bench.fallback_level,
+                "sample_count": diag_bench.sample_count
+            }
+        ))
 
     # 3. UNBUNDLED_OR_PADDED_ANCILLARY
     # Requires authentic category benchmark evidence:
@@ -736,6 +1044,31 @@ def check_dates(
         "admission_year": admission_ts.year,
         "discharge_year": discharge_ts.year
     }
+
+    # Future date check (current system audit year: 2026)
+    current_year = 2026
+    if admission_ts.year > current_year or discharge_ts.year > current_year:
+        future_dt = admission_ts if admission_ts.year > current_year else discharge_ts
+        chip = f"Future date: {future_dt.strftime('%d-%b-%Y')}"
+        findings.append(Finding(
+            finding_id="F-DATE-FUTURE",
+            agent=AgentName.POLICY,
+            check_id="FUTURE_OR_IMPLAUSIBLE_DATE",
+            severity=Severity.CRITICAL if future_dt.year >= 2030 else Severity.HIGH,
+            title="Future or Implausible Date on Medical Bill",
+            explanation=(
+                f"Hospitalization date ({future_dt.strftime('%d-%b-%Y')}) is dated in the future, "
+                f"which represents an impossible timeline for an actual healthcare reimbursement claim."
+            ),
+            evidence=[Evidence(doc_id=doc_id, page=1, quote=f"Future timestamp: {future_dt.isoformat()}")],
+            confidence=1.0,
+            computed_chip=chip,
+            computed_details={
+                "future_year": future_dt.year,
+                "current_year": current_year,
+                "future_date": future_dt.isoformat()
+            }
+        ))
 
     if not valid:
         findings.append(Finding(
@@ -879,6 +1212,9 @@ def ml_score(claim_features: Dict[str, Any]) -> Dict[str, Any]:
 
 TOOL_MAP: Dict[str, Callable[..., Any]] = {
     "validate_arithmetic": validate_arithmetic,
+    "detect_duplicate_line_items": detect_duplicate_line_items,
+    "check_room_days_vs_stay": check_room_days_vs_stay,
+    "validate_tax_rates": validate_tax_rates,
     "check_policy_caps": check_policy_caps,
     "check_price_benchmarks": check_price_benchmarks,
     "check_dates": check_dates,

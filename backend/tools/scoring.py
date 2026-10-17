@@ -196,6 +196,14 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
         for f in findings
     )
+    has_billing_irregularity = any(
+        f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+            "DUPLICATE_LINE_ITEM",
+            "ROOM_DAYS_EXCEED_STAY",
+            "TAX_RATE_MISMATCH"
+        )
+        for f in findings
+    )
 
     has_deception_fraud = (
         has_critical_injection or
@@ -214,7 +222,9 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
                 "IMPOSSIBLE_TRAVEL_VELOCITY",
                 "SUBTOTAL_SUM_MISMATCH",
                 "TOTAL_PAYABLE_MISMATCH",
-                "LINE_ITEM_ARITHMETIC_MISMATCH"
+                "LINE_ITEM_ARITHMETIC_MISMATCH",
+                "REVERSED_HOSPITALIZATION_DATES",
+                "FUTURE_OR_IMPLAUSIBLE_DATE"
             )
             for f in findings
         )
@@ -263,6 +273,9 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         elif has_benchmark_inflation:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 40)
+        elif has_billing_irregularity:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 40)
         else:
             verdict = Verdict.APPROVE
     elif risk_score < 70:
@@ -298,6 +311,9 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         verdict = Verdict.REVIEW
         risk_score = max(risk_score, 45)
     elif has_benchmark_inflation and verdict == Verdict.APPROVE:
+        verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 40)
+    elif has_billing_irregularity and verdict == Verdict.APPROVE:
         verdict = Verdict.REVIEW
         risk_score = max(risk_score, 40)
 

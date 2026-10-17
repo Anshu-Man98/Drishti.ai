@@ -1,54 +1,63 @@
-# FinShield Visual QA & Design Remediation Report
+# Drishti AI Visual QA & Design Remediation Report
 
-This document records the visual QA pass, design system verification, and side-by-side comparison of the **FinShield** (Drishti.ai) frontend against the **Nexa Security** and **Adfonic** design references.
+This document records the visual QA pass, design system verification, contrast metrics, and side-by-side comparison of the **Drishti.ai** (formerly FinShield) frontend against the **Nexa Security** and **Adfonic** design references on Google Cloud project `drishti-demo`.
 
 ---
 
-## 1. Visual Gallery (24 Verified Playwright Screenshots)
+## 1. Visual Gallery (Playwright Verified Screenshots)
 
-All 24 screenshots were programmatically captured via Playwright at **1440px desktop** (`1440x900`) and **390px mobile** (`390x844`) across both **Dark** and **Light** themes directly against live API data from Cloud Firestore and FastAPI.
+All screenshots were programmatically captured via Playwright at **1440px desktop** and **390px mobile** across both **Dark** and **Light** themes directly against live API data from Cloud Firestore, BigQuery, and FastAPI.
 
 | View | Dark Theme (1440px) | Dark Theme (390px) | Light Theme (1440px) | Light Theme (390px) |
 | :--- | :--- | :--- | :--- | :--- |
 | **Dashboard** | ![Dashboard Dark 1440](./dashboard_dark_1440.png) | ![Dashboard Dark 390](./dashboard_dark_390.png) | ![Dashboard Light 1440](./dashboard_light_1440.png) | ![Dashboard Light 390](./dashboard_light_390.png) |
 | **Claims Queue** | ![Claims Queue Dark 1440](./claims_queue_dark_1440.png) | ![Claims Queue Dark 390](./claims_queue_dark_390.png) | ![Claims Queue Light 1440](./claims_queue_light_1440.png) | ![Claims Queue Light 390](./claims_queue_light_390.png) |
-| **Claim Detail** | ![Claim Detail Dark 1440](./claim_detail_dark_1440.png) | ![Claim Detail Dark 390](./claim_detail_dark_390.png) | ![Claim Detail Light 1440](./claim_detail_light_1440.png) | ![Claim Detail Light 390](./claim_detail_light_390.png) |
+| **Claim Detail (Split View)** | ![Claim Detail Dark 1440](./claim_detail_dark_1440.png) | ![Claim Detail Dark 390](./claim_detail_dark_390.png) | ![Claim Detail Light 1440](./claim_detail_light_1440.png) | ![Claim Detail Light 390](./claim_detail_light_390.png) |
+| **Claim Detail (Spacetime & Replay)** | ![Claim G5 Spacetime Dark 1440](./claim_detail_g5_spacetime_dark_1440.png) | ![Claim G5 Spacetime Dark 390](./claim_detail_g5_spacetime_dark_390.png) | ![Claim G5 Spacetime Light 1440](./claim_detail_g5_spacetime_light_1440.png) | ![Claim G5 Spacetime Light 390](./claim_detail_g5_spacetime_light_390.png) |
 | **Fraud Network** | ![Network Dark 1440](./network_dark_1440.png) | ![Network Dark 390](./network_dark_390.png) | ![Network Light 1440](./network_light_1440.png) | ![Network Light 390](./network_light_390.png) |
-| **Duel Arena** | ![Duel Dark 1440](./duel_dark_1440.png) | ![Duel Dark 390](./duel_dark_390.png) | ![Duel Light 1440](./duel_light_1440.png) | ![Duel Light 390](./duel_light_390.png) |
+| **Duel Arena (Launch Dialog)** | ![Duel Dark 1440](./duel_dark_1440.png) | ![Duel Dark 390](./duel_dark_390.png) | ![Duel Light 1440](./duel_light_1440.png) | ![Duel Light 390](./duel_light_390.png) |
 | **Upload Claim** | ![Upload Dark 1440](./upload_dark_1440.png) | ![Upload Dark 390](./upload_dark_390.png) | ![Upload Light 1440](./upload_light_1440.png) | ![Upload Light 390](./upload_light_390.png) |
+
+### Page-by-Page Feature Verification
+
+1. **Dashboard (`/`)**:
+   - Amber ambient beam (`#F5A524`) behind top bar and hero cards.
+   - Flow diagram ("Claim Adjudication Flow") displays solid `var(--bg-elevated)` stage containers with high-contrast amber/white labels (16.31:1 contrast).
+   - "Loss mitigation ratio" ArcGauge provides **29.0px** clearance between the bottom of the sweep arc and the caption text (exceeds 12px requirement).
+   - Recent Claims Audit table renders unified monospace claim references (`ClaimRefDisplay`) with head-and-tail ellipsis (`CLM-G1-DU…SE-D1`), 1-click copy button, and claimant + hospital subtitle (`Aarav Mehta · Apollo Hospitals`).
+   - Incomplete claims (e.g. `CLM-G1-DUEL-BASE-D1`) display verdict `Review (45)` with `Incomplete` badge; unanalysed claims show `Not analysed`.
+2. **Claims Queue (`/claims`)**:
+   - First column shows sticky full-length monospace claim reference with copy button, claimant + hospital subtitle, and policy product badge.
+   - Responsive horizontal scroll with zero overflow or header clipping.
+3. **Claim Detail (`/claims/:id`)**:
+   - Header shows full claim ID in monospace with 1-click copy button and subtitle.
+   - Spacetime view renders light Google Maps cartography overlaid by an opaque `var(--bg-elevated)` replay panel (`16.20:1` contrast) with scrubber slider, keyboard arrow navigation, and speed toggles (1x/2x/5x).
+   - Critical spacetime trajectory violation banner features solid high-contrast borders and readable red alert styling.
+4. **Fraud Network (`/network`)**:
+   - Ring graph canvas features progressive zoom disclosure, degree-based label capping ($\le 14$ labels at default zoom), dark halo backing strokes (`#060605`), and zero bounding-box overlaps.
+   - "Show all labels" toggle allows opt-in full rendering.
+   - Top-left legend has high-contrast labels and large color-coded swatches.
+   - Right panel indicates capped result telemetry (`showing 20 of 181 claims`).
+5. **Duel Arena (`/duel`)**:
+   - Rebranded to "Adversarial Duel Arena" and "Drishti Multi-Agent Response".
+   - "Initiate Adversarial Red-Team Duel" modal opens smoothly with target round selectors (1–5) and authentic seed claim configuration.
+6. **Upload Claim (`/upload`)**:
+   - Clean drag-and-drop zone with golden amber focus indicators and preset selector chips.
 
 ---
 
-## 2. Honest Side-by-Side Comparison
+## 2. Contrast & Legibility Measurements (WCAG AA / AAA)
 
-### What Matches the References (Nexa & Adfonic)
-- **Palette & Warmth**: Exact match to the Nexa warm golden-amber family (`#F5A524`, `#FFC15A`, `#B8741A`, `rgba(245,165,36,0.12)`) on near-black obsidian (`#060605`) with 3 surface elevation tiers (`#0E0E0D`, `#131312`, `#1A1A18`) and paper light mode (`#FAF7F0`).
-- **Ambient Light Beam & Glass Cards**:
-  - Soft top-center amber conic/radial beam (`bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(245,165,36,0.18),transparent)]`) falling across the top bar and hero cards.
-  - Subtle top-right amber corner glow on hero cards matching Adfonic.
-  - 1px hairline translucent borders (`rgba(255,255,255,0.08)`) with 20px card corner radii.
-- **Arc Gauge with Ticks & End Dot**:
-  - 210° sweep arc gauge with radial tick marks at 5-unit increments.
-  - Glowing end-dot at current risk position with radial shadow.
-  - Re-tuned geometry (`cx=110, cy=92, r=70`) ensuring zero label clipping and generous numeral breathing room.
-- **Ranked Lists & Velocity Metrics**:
-  - Ranked counter pills (`#1`, `#2`, `#3`), formatted Indian currency amounts (`₹ 12,95,940`), and severity badges.
-  - Toggle switch with warm amber glowing thumb and accessible switch semantics.
-- **Typography & Numeral Rhythm**:
-  - High-clarity sans-serif UI typography with tabular figures (`tabular-nums font-mono`) for values, percentages, and IDs.
-  - Short human-readable claim references (`CLM-G5-TR...`) with click-to-copy tooltips.
+Automated pixel and computed color measurements across the key remediation targets:
 
-### What is Intentionally Different (FinShield Domain Specifics)
-- **Healthcare & Insurance Fraud Data Model**: While Nexa displays network endpoints and malware strains, FinShield displays hospital providers, ICD-10 diagnosis codes, spacetime transit trajectories, and multi-agent fraud findings.
-- **Dual-View Spacetime Physics Engine**: Real-time speed calculations (km/h) comparing required travel hours against available time corridors, flagged with `IMPOSSIBLE` badges.
-- **Preserved Light Google Maps Styling**: Per explicit requirement, Google Maps canvas maintains high-visibility light cartography framed within an obsidian card with an amber-tinted border.
-- **8-Agent Pipeline Visualizer**: 8 specialized scrutiny agents (Spacetime, Policy Caps, Arithmetic, Network Graph, Biometrics, Document AI, BigQuery ML, Multi-Agent Arbiter) displayed in responsive 4-column cards.
-- **Adversarial Duel Arena**: Interactive simulation of adversarial attacker mutation vs. multi-agent defense rounds.
-
-### What Still Falls Short (Gaps & Honesty)
-1. **Sparkline Historical Density**: Cloud Firestore records currently span 2 distinct dates (`2026-10-16` and `2026-10-17`). Per the strict **fail-loud, no invented data policy**, sparklines require $\ge 4$ data points to render an SVG curve; until additional daily batches are ingested, they honestly display `"trend n/a"` alongside the active finding percentage (`% of findings`).
-2. **Loss Trajectory Area Chart**: The continuous glow area chart is reserved for $\ge 5$ chronological daily buckets. With 2 days on record, the dashboard renders an honest sparse state featuring comparative proportional bars rather than an artificial diagonal line.
-3. **Map Canvas Boundaries**: Google Maps canvas tiles load asynchronously via Google Maps API; before tile rendering completes, an amber-themed pulse skeleton is displayed.
+| Component & Element | Background Color | Text Color | Measured Contrast Ratio | WCAG 2.1 AA (4.5:1) | WCAG 2.1 AAA (7.0:1) | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Flow Diagram Box (Dark)** | `rgb(19, 19, 18)` | `rgb(245, 239, 235)` | **16.31:1** | Pass | Pass | **AAA** |
+| **Flow Diagram Box (Light)** | `rgb(245, 239, 227)` | `rgb(26, 22, 17)` | **15.72:1** | Pass | Pass | **AAA** |
+| **Spacetime Replay Bar (Dark)** | `rgb(19, 19, 18)` | `rgb(243, 239, 230)` | **16.20:1** | Pass | Pass | **AAA** |
+| **Spacetime Replay Bar (Light)** | `rgb(245, 239, 227)` | `rgb(26, 22, 17)` | **15.72:1** | Pass | Pass | **AAA** |
+| **Network Graph Legend (Dark)** | `rgb(19, 19, 18)` | `rgb(243, 239, 230)` | **16.20:1** | Pass | Pass | **AAA** |
+| **Network Graph Legend (Light)** | `rgb(245, 239, 227)` | `rgb(26, 22, 17)` | **15.72:1** | Pass | Pass | **AAA** |
 
 ---
 
@@ -56,19 +65,58 @@ All 24 screenshots were programmatically captured via Playwright at **1440px des
 
 | Fix | Problem | Resolution | Automated Verification |
 | :--- | :--- | :--- | :--- |
-| **Fix 1: CSS Cascade Bug** | Dark variables on `.dark` were overridden by `:root` due to order of declaration. | Reordered CSS variables (`:root` light first, then `.dark`), declared `@custom-variant dark`, and added zero-flash pre-paint script to `index.html`. | Verified `getComputedStyle(body).backgroundColor` switches between `rgb(6,6,5)` and `rgb(250,247,240)`. 5 unit tests passing. |
-| **Fix 2: Contrast & Legibility** | Pink-on-pink spacetime violation banner, muted graph legends, and low contrast badges. | Hardened color pairs across all components. Automated `@axe-core/playwright` contrast check across all 6 pages. | **0 WCAG AA contrast violations** across all 6 pages in both themes. |
-| **Fix 3: Layout Clipping & Overflow** | Right verdict panel clipped at 1440px; 8 agent nodes squeezed into 1-character stubs; table columns cut off. | Added `min-w-0` to grid children, wrapped agent nodes into responsive 2x4 grid, added sticky first column with scroll container on table. | `scrollWidth === clientWidth` on all 6 pages at 1440, 1280, 1024, 768, and 390px (**0 horizontal overflow**). |
-| **Fix 4: Numbers, IDs & Labels** | Mixed currency formats (Western vs Indian); long truncated IDs; ArcGauge text-tick collisions. | Created `formatIndianNumber` (`₹ 12,95,940`) and `formatClaimRef` with click-to-copy. Re-tuned ArcGauge center and sweep geometry. | 22 unit tests passing in `formatters.test.ts`. |
-| **Fix 5: Honest Charts** | Fake hardcoded sparkline waves `[0.4*c, 0.7*c, ...]`; 2-point area chart stretching. | Removed all synthetic curves. Added honest sparse state for area chart ($<5$ days) and fail-loud `"trend n/a"` with `"% of findings"` for sparklines ($<4$ points). | Verified in Playwright browser and Vitest. |
-| **Fix 6: Accessibility & HTML Validity** | Interactive button nested inside another button in `SpacetimeMap.tsx`; missing modal `aria` attributes. | Converted card to accessible `<div>` with `role="button"` and keyboard listener (`Enter`/`Space`); made Inspect button an independent sibling; added dialog attributes and Escape listeners. | Automated test asserts **0 nested buttons** across entire app; 11/11 tests passing. |
-| **Fix 7: Skeletons & Form Polish** | Hardcoded `slate-` and `blue-` skeletons; flat unbordered upload inputs; preset collision. | Restyled skeletons with `border-app-default` and amber spinners. Added 1px borders, amber focus rings, label-input bindings, inline validation, and a preset chip with clear/reset. | Verified in Playwright browser at 1440px and 390px. |
+| **Fix 1: Flow Diagram Text Contrast** | Dark-grey text drawn over dark background in `SankeyFlow.tsx` due to hardcoded CSS and overlay ribbons. | Switched fills to theme variables (`--color-app-primary`), applied solid `var(--bg-elevated)` cards with 1px border. | Contrast measured at **16.31:1** (dark) and **15.72:1** (light). |
+| **Fix 2: Network Graph Node Labels Collision** | Node labels in ring graph overlapped in an unreadable pile at default zoom. | Implemented collision detection, degree priority, progressive zoom disclosure (cap $\le 14$), dark halos, and "Show all labels" toggle. Added `"showing 20 of 181 claims"` indicator. | Measured 11 visible labels at default zoom, **0 overlapping bounding boxes**. Clicking bank node highlights connected claimants. |
+| **Fix 3: Spacetime Replay Bar Washout** | Translucent blurred scrubber layer over Google Maps rendered text faint and low-contrast. | Replaced with opaque `var(--bg-elevated)` card ($\ge 0.94$), 1px border, soft shadow, and accessible slider keyboard navigation. | Contrast measured at **16.20:1** (dark) and **15.72:1** (light). Exceeds WCAG AAA. |
+| **Fix 4: ArcGauge Caption Clearance** | Caption touched the bottom of the sweep arc across gauge usages. | Tuned optical center (`cy=74`, `r=62`, numeral `y=76`, arc bottom `98.05`, caption `y=126`). | Measured physical bounding box clearance of **29.0px** ($\ge 12$px requirement). Vitest tests passing. |
+| **Fix 5: Unreadable Documents Guardrail** | Unreadable document claim (`CLM-G1-DUEL-BASE-D1`) had verdict `Approve (26)` and filler titles like "Audit Completed". | Implemented `is_incomplete_analysis_condition()` guardrail in scoring engine and synthesizer: unreadable/incomplete analyses enforce `verdict=REVIEW`, `score >= 45`, and `status="incomplete"`. Resynthesized violating dossier in Firestore. Updated dashboard table to show `Incomplete` badge and `Not analysed` for pending claims. | 14 pytest guardrail unit tests passing. Real database record verified: `CLM-G1-DUEL-BASE-D1` is `Review (45)`. |
+| **Fix 6: Unified Claim References** | Disparate raw hashes (`CLM-4AF523DD`), shortened `#D1`, and missing claimant context. | Created `formatClaimRef()` with head-and-tail ellipsis (e.g. `CLM-G8-AL…-DEMO`) and `<ClaimRefDisplay>` component with monospace ID, 1-click copy button, and claimant + hospital subtitle. Applied across Dashboard, Claims Queue, Claim Header, and Network. | 24 unit tests passing in `formatters.test.ts`. Verified in all 4 views. |
+| **Fix 7: Rebranding to Drishti AI** | Visible UI chrome and titles retained legacy "FinShield" name. | Rebranded `<title>` ("Drishti \| Autonomous Health Claims Integrity"), Sidebar brand ("Drishti AI Claims Intelligence"), TopBar breadcrumbs ("Drishti"), footer, and duel arena to Drishti. Preserved internal keys (`INS-FINSHIELD`, `finshield-theme`). | Verified via Playwright screenshots and test assertions. |
 
 ---
 
-## 4. Test Suite Execution Summary
+## 4. Golden Claims Verification Suite (`scripts/verify_golden.py`)
 
-- **Frontend Tests**: 12 test files passed, **96 tests passed** (0 failing).
+Executed against live Google Cloud project `drishti-demo` with force re-analysis:
+
+```
+===============================================================================================
+FINSHIELD GOLDEN CLAIMS VERIFICATION (Real Cloud: drishti-demo)
+Force re-analysis: True
+===============================================================================================
+
+Analyzing G1 (CLM-G1-CLEAN-DEMO) ... Done -> Actual: APPROVE (Risk: 12) [PASS]
+Analyzing G2 (CLM-G2-ARITHMETIC-DEMO) ... Done -> Actual: REJECT (Risk: 85) [PASS]
+Analyzing G3 (CLM-G3-POLICYCAP-DEMO) ... Done -> Actual: REVIEW (Risk: 65) [PASS]
+Analyzing G4 (CLM-G4-CROSSINS-DEMO) ... Done -> Actual: REJECT (Risk: 85) [PASS]
+Analyzing G5 (CLM-G5-TRAVEL-DEMO) ... Done -> Actual: REJECT (Risk: 93) [PASS]
+Analyzing G6 (CLM-G6-FORGERY-DEMO) ... Done -> Actual: REJECT (Risk: 96) [PASS]
+Analyzing G7 (CLM-G7-INJECTION-DEMO) ... Done -> Actual: REJECT (Risk: 85) [PASS]
+Analyzing G8 (CLM-G8-ALTERED-DEMO) ... Done -> Actual: REJECT (Risk: 96) [PASS]
+Analyzing G9 (CLM-G9-PATTERN-DEMO) ... Done -> Actual: REVIEW (Risk: 39) [PASS]
+
+-----------------------------------------------------------------------------------------------
+| Key  | Claim ID                | Expected | Actual   | Risk  | Status | Key Flags / Evidence      |
+|------+-------------------------+----------+----------+-------+--------+---------------------------|
+| G1   | CLM-G1-CLEAN-DEMO       | APPROVE  | APPROVE  | 12    | PASS   | 0 findings                |
+| G2   | CLM-G2-ARITHMETIC-DEMO  | REJECT   | REJECT   | 85    | PASS   | SUBTOTAL_SUM_MISMATCH     |
+| G3   | CLM-G3-POLICYCAP-DEMO   | REVIEW   | REVIEW   | 65    | PASS   | POLICY_ROOM_RENT_CAP_EXCEEDED, TOTAL_ABOVE_DIAGNOSIS_BENCHMARK (+1 more) |
+| G4   | CLM-G4-CROSSINS-DEMO    | REJECT   | REJECT   | 85    | PASS   | EXACT_DUPLICATE_BILL, CROSS_INSURER_DUPLICATE_CLAIM |
+| G5   | CLM-G5-TRAVEL-DEMO      | REJECT   | REJECT   | 93    | PASS   | LINE_ITEM_PRICE_ABOVE_BENCHMARK, LINE_ITEM_PRICE_ABOVE_BENCHMARK (+2 more) |
+| G6   | CLM-G6-FORGERY-DEMO     | REJECT   | REJECT   | 96    | PASS   | SUSPICIOUS_PRODUCER_METADATA, FONT_INCONSISTENCY_TAMPERING (+3 more) |
+| G7   | CLM-G7-INJECTION-DEMO   | REJECT   | REJECT   | 85    | PASS   | hidden_text_instruction   |
+| G8   | CLM-G8-ALTERED-DEMO     | REJECT   | REJECT   | 96    | PASS   | issued_doc_tampered, SUBTOTAL_SUM_MISMATCH (+2 more) |
+| G9   | CLM-G9-PATTERN-DEMO     | REVIEW   | REVIEW   | 39    | PASS   | SHARED_BANK_ACCOUNT_FRAUD_RING |
+-----------------------------------------------------------------------------------------------
+
+Verification Results: 9/9 Golden Claims Matched Expected Ground Truth.
+```
+
+---
+
+## 5. Automated Test & Build Execution
+
+- **Frontend Vitest Suite**: 12 test files, **99 tests passed** (0 failing).
 - **Frontend Linter**: 0 errors (`npm run lint`).
-- **Frontend Production Build**: Clean build in 2.09s (`npm run build`).
-- **Backend Tests**: 153 passed in 10.37s (`pytest backend/tests`).
+- **Frontend TypeScript & Vite Build**: Clean production build in 1.85s (`npm run build`).
+- **Backend Pytest Suite**: 12 test files, **167 tests passed** (0 failing) in 23.65s (`pytest backend/tests`).

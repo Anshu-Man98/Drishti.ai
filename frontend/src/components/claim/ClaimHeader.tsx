@@ -103,8 +103,8 @@ export const ClaimHeader: React.FC<ClaimHeaderProps> = ({
 
       {/* Right: Layout Switcher & Action Controls */}
       <div className="flex items-center gap-2.5 flex-wrap">
-        {/* Layout Switcher Tabs (Desktop only) */}
-        <div className="hidden md:flex items-center">
+        {/* Layout Switcher Tabs */}
+        <div className="flex items-center overflow-x-auto max-w-full">
           <PillTabs
             tabs={layoutTabs}
             activeTab={layoutMode}

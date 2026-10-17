@@ -510,56 +510,218 @@ def run_claims_fraud_pipeline(
                 )
             ], []
 
-    # 3. Execute Parallel Specialists Concurrently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    # Helper runner for ML specialist
+    def run_ml_specialist() -> Tuple[Optional[float], Optional[float], List[MlFeature], List[Finding]]:
+        db_service.set_agent_status(claim_id, "ml", "running")
+        t0_ml = time.perf_counter()
+        from backend.tools.bq import extract_claim_features
+        from backend.tools.registry import call_tool
+        ml_findings: List[Finding] = []
+        try:
+            claim_features = extract_claim_features(claim)
+            ml_res = call_tool(
+                "ml_score",
+                {"claim_features": claim_features},
+                claim_id=claim_id,
+                agent_name="ml"
+            )
+            ml_prob_val = ml_res["probability"]
+            baseline_ml_prob_val = ml_res.get("baseline_probability", 0.122)
+            top_ml_features_dicts = ml_res["top_features"]
+            top_ml_features_val = [
+                MlFeature(feature=it["feature"], attribution=it["attribution"], direction=it.get("direction"))
+                for it in top_ml_features_dicts
+            ]
+
+            if ml_prob_val > 0.6:
+                def _clean_feat_display(name: str) -> str:
+                    labels = {
+                        "doctor_distinct_cities_24h": "doctor multi-city presence",
+                        "claimant_prior_claims_90d": "claimant prior claims frequency",
+                        "days_policy_start_to_claim": "days policy start to claim",
+                        "amount_vs_diagnosis_median_ratio": "amount vs diagnosis median ratio",
+                        "room_rent_vs_cap_ratio": "room rent vs cap ratio",
+                        "shared_bank_account_count": "shared bank account count",
+                        "provider_claims_per_day": "provider claims per day",
+                        "line_item_count": "line item count",
+                        "length_of_stay": "length of stay",
+                        "claim_amount": "claim amount",
+                    }
+                    return labels.get(name, name.replace("_24h", "").replace("_90d", "").replace("_", " "))
+
+                feat_summaries = [f"{_clean_feat_display(f.feature)} (impact: {f.attribution:+.2f})" for f in top_ml_features_val[:3]]
+                ml_findings.append(Finding(
+                    finding_id="F-ML-PREDICT-ELEVATED",
+                    agent=AgentName.ML,
+                    check_id="BQML_HIGH_RISK_ANOMALY",
+                    severity=Severity.HIGH if ml_prob_val < 0.85 else Severity.CRITICAL,
+                    title=f"BigQuery ML predicts elevated fraud probability ({(ml_prob_val*100):.1f}%)",
+                    explanation=(
+                        f"Boosted tree classifier predicts elevated fraud probability of {(ml_prob_val*100):.1f}%. "
+                        f"Primary anomaly drivers: {', '.join(feat_summaries)}."
+                    ),
+                    evidence=[],
+                    confidence=round(ml_prob_val, 2),
+                    computed_chip=ml_res.get("chip", f"BQML: {ml_prob_val*100:.1f}%"),
+                    computed_details=ml_res.get("computed")
+                ))
+            db_service.set_agent_status(claim_id, "ml", "done")
+            lat_ms = (time.perf_counter() - t0_ml) * 1000
+            logger.info(
+                "[Pipeline] ML specialist completed for claim %s in %.2f ms",
+                claim_id, lat_ms,
+                extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
+            )
+            return ml_prob_val, baseline_ml_prob_val, top_ml_features_val, ml_findings
+        except Exception as e:
+            lat_ms = (time.perf_counter() - t0_ml) * 1000
+            logger.error(
+                "[Pipeline] BigQuery ML scoring failed for claim %s in %.2f ms: %s",
+                claim_id, lat_ms, e,
+                exc_info=True,
+                extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
+            )
+            db_service.set_agent_status(claim_id, "ml", "error")
+            err_f = Finding(
+                finding_id="F-ML-UNAVAILABLE",
+                agent=AgentName.ML,
+                check_id="AGENT_FAILED:ml",
+                severity=Severity.HIGH,
+                title="BigQuery ML Fraud Model Service Unavailable",
+                explanation=f"BigQuery ML scoring could not be computed: {e}. Dossier marked incomplete.",
+                evidence=[],
+                confidence=1.0,
+                computed_chip="BQML: Error",
+                computed_details={"error": str(e), "agent": "ml", "check_id": "BQML_SERVICE_FAILURE"}
+            )
+            return None, None, [], [err_f]
+
+    # 3. Execute Parallel Specialists Concurrently with Pipeline Budget
+    t0_pipeline = time.perf_counter()
+    pipeline_budget = getattr(settings, "ANALYSIS_BUDGET_SECONDS", 90.0)
+    remaining_budget = max(1.0, pipeline_budget - (time.perf_counter() - t0_pipeline))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         f_inj = executor.submit(run_injection_specialist)
         f_prov = executor.submit(run_provenance_specialist)
         f_foren = executor.submit(run_forensics_specialist)
         f_pol = executor.submit(run_policy_specialist)
         f_cross = executor.submit(run_crossref_specialist)
         f_space = executor.submit(run_spacetime_specialist)
+        f_ml = executor.submit(run_ml_specialist)
 
-        try:
-            inj_findings = f_inj.result()
-        except Exception as e:
-            logger.error("[Pipeline] Injection thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            inj_findings = [Finding(finding_id="F-ERR-INJ-THR", agent=AgentName.INJECTION, check_id="AGENT_FAILED:injection", severity=Severity.HIGH, title="Injection specialist execution error", explanation=str(e))]
-            db_service.set_agent_status(claim_id, "injection", "error")
+        future_map = {
+            f_inj: ("injection", AgentName.INJECTION),
+            f_prov: ("provenance", AgentName.PROVENANCE),
+            f_foren: ("forensics", AgentName.FORENSICS),
+            f_pol: ("policy", AgentName.POLICY),
+            f_cross: ("crossref", AgentName.CROSSREF),
+            f_space: ("spacetime", AgentName.SPACETIME),
+            f_ml: ("ml", AgentName.ML),
+        }
 
-        try:
-            prov_findings, provenance_obj = f_prov.result()
-        except Exception as e:
-            logger.error("[Pipeline] Provenance thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            prov_findings, provenance_obj = [Finding(finding_id="F-ERR-PROV-THR", agent=AgentName.PROVENANCE, check_id="AGENT_FAILED:provenance", severity=Severity.HIGH, title="Provenance specialist execution error", explanation=str(e))], None
-            db_service.set_agent_status(claim_id, "provenance", "error")
+        done, not_done = concurrent.futures.wait(future_map.keys(), timeout=remaining_budget)
 
-        try:
-            foren_findings = f_foren.result()
-        except Exception as e:
-            logger.error("[Pipeline] Forensics thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            foren_findings = [Finding(finding_id="F-ERR-FOREN-THR", agent=AgentName.FORENSICS, check_id="AGENT_FAILED:forensics", severity=Severity.HIGH, title="Forensics specialist execution error", explanation=str(e))]
-            db_service.set_agent_status(claim_id, "forensics", "error")
+        if not_done:
+            logger.warning("[Pipeline] %d specialists timed out on claim %s after %.2fs budget", len(not_done), claim_id, remaining_budget)
+            all_findings.append(Finding(
+                finding_id="F-ERR-PIPELINE-TIMEOUT",
+                agent=AgentName.FORENSICS,
+                check_id="PIPELINE_TIMEOUT",
+                severity=Severity.HIGH,
+                title=f"Analysis pipeline timed out after {pipeline_budget:.0f}s",
+                explanation=f"Overall analysis pipeline exceeded budget ceiling of {pipeline_budget:.0f}s. {len(not_done)} specialist(s) timed out.",
+                evidence=[],
+                confidence=1.0,
+                computed_chip="Pipeline Timeout",
+                computed_details={"budget_seconds": pipeline_budget, "timed_out_count": len(not_done)}
+            ))
+            for f in not_done:
+                f.cancel()
+                agent_name, agent_enum = future_map[f]
+                db_service.set_agent_status(claim_id, agent_name, "error")
+                all_findings.append(Finding(
+                    finding_id=f"F-ERR-{agent_name.upper()}-TIMEOUT",
+                    agent=agent_enum,
+                    check_id=f"AGENT_TIMEOUT:{agent_name}",
+                    severity=Severity.HIGH,
+                    title=f"Specialist '{agent_name}' timed out",
+                    explanation=f"Specialist '{agent_name}' timed out after exceeding the {pipeline_budget:.0f}s analysis budget.",
+                    evidence=[],
+                    confidence=1.0,
+                    computed_chip=f"{agent_name}: Timeout",
+                    computed_details={"agent": agent_name, "error": "timeout"}
+                ))
 
-        try:
-            pol_findings = f_pol.result()
-        except Exception as e:
-            logger.error("[Pipeline] Policy thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            pol_findings = [Finding(finding_id="F-ERR-POL-THR", agent=AgentName.POLICY, check_id="AGENT_FAILED:policy", severity=Severity.HIGH, title="Policy specialist execution error", explanation=str(e))]
-            db_service.set_agent_status(claim_id, "policy", "error")
+        if f_inj in done:
+            try:
+                inj_findings = f_inj.result()
+            except Exception as e:
+                logger.error("[Pipeline] Injection thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                inj_findings = [Finding(finding_id="F-ERR-INJ-THR", agent=AgentName.INJECTION, check_id="AGENT_FAILED:injection", severity=Severity.HIGH, title="Injection specialist execution error", explanation=str(e))]
+                db_service.set_agent_status(claim_id, "injection", "error")
+        else:
+            inj_findings = []
 
-        try:
-            cross_findings = f_cross.result()
-        except Exception as e:
-            logger.error("[Pipeline] Crossref thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            cross_findings = [Finding(finding_id="F-ERR-CROSS-THR", agent=AgentName.CROSSREF, check_id="AGENT_FAILED:crossref", severity=Severity.HIGH, title="Crossref specialist execution error", explanation=str(e))]
-            db_service.set_agent_status(claim_id, "crossref", "error")
+        if f_prov in done:
+            try:
+                prov_findings, provenance_obj = f_prov.result()
+            except Exception as e:
+                logger.error("[Pipeline] Provenance thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                prov_findings, provenance_obj = [Finding(finding_id="F-ERR-PROV-THR", agent=AgentName.PROVENANCE, check_id="AGENT_FAILED:provenance", severity=Severity.HIGH, title="Provenance specialist execution error", explanation=str(e))], None
+                db_service.set_agent_status(claim_id, "provenance", "error")
+        else:
+            prov_findings, provenance_obj = [], None
 
-        try:
-            space_findings, timeline = f_space.result()
-        except Exception as e:
-            logger.error("[Pipeline] Spacetime thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-            space_findings, timeline = [Finding(finding_id="F-ERR-SPACE-THR", agent=AgentName.SPACETIME, check_id="AGENT_FAILED:spacetime", severity=Severity.HIGH, title="Spacetime specialist execution error", explanation=str(e))], []
-            db_service.set_agent_status(claim_id, "spacetime", "error")
+        if f_foren in done:
+            try:
+                foren_findings = f_foren.result()
+            except Exception as e:
+                logger.error("[Pipeline] Forensics thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                foren_findings = [Finding(finding_id="F-ERR-FOREN-THR", agent=AgentName.FORENSICS, check_id="AGENT_FAILED:forensics", severity=Severity.HIGH, title="Forensics specialist execution error", explanation=str(e))]
+                db_service.set_agent_status(claim_id, "forensics", "error")
+        else:
+            foren_findings = []
+
+        if f_pol in done:
+            try:
+                pol_findings = f_pol.result()
+            except Exception as e:
+                logger.error("[Pipeline] Policy thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                pol_findings = [Finding(finding_id="F-ERR-POL-THR", agent=AgentName.POLICY, check_id="AGENT_FAILED:policy", severity=Severity.HIGH, title="Policy specialist execution error", explanation=str(e))]
+                db_service.set_agent_status(claim_id, "policy", "error")
+        else:
+            pol_findings = []
+
+        if f_cross in done:
+            try:
+                cross_findings = f_cross.result()
+            except Exception as e:
+                logger.error("[Pipeline] Crossref thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                cross_findings = [Finding(finding_id="F-ERR-CROSS-THR", agent=AgentName.CROSSREF, check_id="AGENT_FAILED:crossref", severity=Severity.HIGH, title="Crossref specialist execution error", explanation=str(e))]
+                db_service.set_agent_status(claim_id, "crossref", "error")
+        else:
+            cross_findings = []
+
+        if f_space in done:
+            try:
+                space_findings, timeline = f_space.result()
+            except Exception as e:
+                logger.error("[Pipeline] Spacetime thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                space_findings, timeline = [Finding(finding_id="F-ERR-SPACE-THR", agent=AgentName.SPACETIME, check_id="AGENT_FAILED:spacetime", severity=Severity.HIGH, title="Spacetime specialist execution error", explanation=str(e))], []
+                db_service.set_agent_status(claim_id, "spacetime", "error")
+        else:
+            space_findings, timeline = [], []
+
+        if f_ml in done:
+            try:
+                ml_prob, baseline_ml_prob, top_ml_features, ml_findings = f_ml.result()
+            except Exception as e:
+                logger.error("[Pipeline] ML thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
+                ml_prob, baseline_ml_prob, top_ml_features, ml_findings = None, None, [], [Finding(finding_id="F-ERR-ML-THR", agent=AgentName.ML, check_id="AGENT_FAILED:ml", severity=Severity.HIGH, title="ML specialist execution error", explanation=str(e))]
+                db_service.set_agent_status(claim_id, "ml", "error")
+        else:
+            ml_prob, baseline_ml_prob, top_ml_features, ml_findings = None, None, [], []
 
     all_findings.extend(inj_findings)
     all_findings.extend(prov_findings)
@@ -567,6 +729,7 @@ def run_claims_fraud_pipeline(
     all_findings.extend(pol_findings)
     all_findings.extend(cross_findings)
     all_findings.extend(space_findings)
+    all_findings.extend(ml_findings)
 
     # Missing critical fields check (Forensics)
     missing_critical = []
@@ -603,92 +766,6 @@ def run_claims_fraud_pipeline(
             computed_chip="Unreadable Fields",
             computed_details={"missing_fields": missing_critical}
         ))
-
-    # 4. BigQuery ML Scoring Step
-    db_service.set_agent_status(claim_id, "ml", "running")
-    from backend.tools.bq import extract_claim_features
-    from backend.tools.registry import call_tool
-
-    t0_ml = time.perf_counter()
-    claim_features = extract_claim_features(claim)
-    try:
-        ml_res = call_tool(
-            "ml_score",
-            {"claim_features": claim_features},
-            claim_id=claim_id,
-            agent_name="ml"
-        )
-        ml_prob = ml_res["probability"]
-        baseline_ml_prob = ml_res.get("baseline_probability", 0.122)
-        top_ml_features_dicts = ml_res["top_features"]
-        top_ml_features = [
-            MlFeature(feature=it["feature"], attribution=it["attribution"], direction=it.get("direction"))
-            for it in top_ml_features_dicts
-        ]
-
-        if ml_prob > 0.6:
-            def _clean_feat_display(name: str) -> str:
-                labels = {
-                    "doctor_distinct_cities_24h": "doctor multi-city presence",
-                    "claimant_prior_claims_90d": "claimant prior claims frequency",
-                    "days_policy_start_to_claim": "days policy start to claim",
-                    "amount_vs_diagnosis_median_ratio": "amount vs diagnosis median ratio",
-                    "room_rent_vs_cap_ratio": "room rent vs cap ratio",
-                    "shared_bank_account_count": "shared bank account count",
-                    "provider_claims_per_day": "provider claims per day",
-                    "line_item_count": "line item count",
-                    "length_of_stay": "length of stay",
-                    "claim_amount": "claim amount",
-                }
-                return labels.get(name, name.replace("_24h", "").replace("_90d", "").replace("_", " "))
-
-            feat_summaries = [f"{_clean_feat_display(f.feature)} (impact: {f.attribution:+.2f})" for f in top_ml_features[:3]]
-            all_findings.append(Finding(
-                finding_id="F-ML-PREDICT-ELEVATED",
-                agent=AgentName.ML,
-                check_id="BQML_HIGH_RISK_ANOMALY",
-                severity=Severity.HIGH if ml_prob < 0.85 else Severity.CRITICAL,
-                title=f"BigQuery ML predicts elevated fraud probability ({(ml_prob*100):.1f}%)",
-                explanation=(
-                    f"Boosted tree classifier predicts elevated fraud probability of {(ml_prob*100):.1f}%. "
-                    f"Primary anomaly drivers: {', '.join(feat_summaries)}."
-                ),
-                evidence=[],
-                confidence=round(ml_prob, 2),
-                computed_chip=ml_res.get("chip", f"BQML: {ml_prob*100:.1f}%"),
-                computed_details=ml_res.get("computed")
-            ))
-        db_service.set_agent_status(claim_id, "ml", "done")
-        lat_ms = (time.perf_counter() - t0_ml) * 1000
-        logger.info(
-            "[Pipeline] ML specialist completed for claim %s in %.2f ms",
-            claim_id, lat_ms,
-            extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
-        )
-    except Exception as e:
-        lat_ms = (time.perf_counter() - t0_ml) * 1000
-        logger.error(
-            "[Pipeline] BigQuery ML scoring failed for claim %s in %.2f ms: %s",
-            claim_id, lat_ms, e,
-            exc_info=True,
-            extra={"claim_id": claim_id, "specialist_id": "ml", "latency_ms": round(lat_ms, 2)}
-        )
-        ml_prob = None
-        baseline_ml_prob = None
-        top_ml_features = []
-        all_findings.append(Finding(
-            finding_id="F-ML-UNAVAILABLE",
-            agent=AgentName.ML,
-            check_id="AGENT_FAILED:ml",
-            severity=Severity.HIGH,
-            title="BigQuery ML Fraud Model Service Unavailable",
-            explanation=f"BigQuery ML scoring could not be computed: {e}. Dossier marked incomplete.",
-            evidence=[],
-            confidence=1.0,
-            computed_chip="BQML: Error",
-            computed_details={"error": str(e), "agent": "ml", "check_id": "BQML_SERVICE_FAILURE"}
-        ))
-        db_service.set_agent_status(claim_id, "ml", "error")
 
     # 5. Two-Corpus RAG Step
     retrieved_contexts = []

@@ -55,12 +55,25 @@ class DatabaseService:
             )
         return self._fs_client
 
+    def _call_fs(self, func: Any, *args: Any, timeout: float = 15.0, **kwargs: Any) -> Any:
+        from backend.app.services.cloud_call import cloud_call
+        return cloud_call(
+            func,
+            *args,
+            service="firestore",
+            timeout=timeout,
+            max_retries=settings.CLOUD_CALL_MAX_RETRIES,
+            **kwargs
+        )
+
     def save_claim(self, claim: Claim) -> None:
         claim_dict = json.loads(claim.model_dump_json())
         claim_dict["created_at"] = datetime.utcnow().isoformat()
         try:
-            self.client.collection("claims").document(claim.claim_id).set(claim_dict)
+            self._call_fs(self.client.collection("claims").document(claim.claim_id).set, claim_dict, timeout=10.0)
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to save claim '{claim.claim_id}' to Firestore: {e}",
@@ -69,11 +82,13 @@ class DatabaseService:
 
     def get_claim(self, claim_id: str) -> Optional[Claim]:
         try:
-            doc = self.client.collection("claims").document(claim_id).get()
+            doc = self._call_fs(self.client.collection("claims").document(claim_id).get, timeout=10.0)
             if doc.exists:
                 return Claim.model_validate(doc.to_dict())
             return None
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get claim '{claim_id}' from Firestore: {e}",
@@ -91,21 +106,21 @@ class DatabaseService:
         exclude_synthetic: bool = False,
     ) -> tuple[List[ClaimSummary], int]:
         try:
-            docs = list(self.client.collection("claims").stream())
+            docs = self._call_fs(lambda: list(self.client.collection("claims").stream()), timeout=20.0)
             if not docs:
                 return [], 0
 
             dossier_refs = [self.client.collection("dossiers").document(d.to_dict().get("claim_id", d.id)) for d in docs]
             dossiers_map: Dict[str, Dict[str, Any]] = {}
             try:
-                for d_doc in self.client.get_all(dossier_refs):
+                for d_doc in self._call_fs(lambda: list(self.client.get_all(dossier_refs)), timeout=20.0):
                     if d_doc.exists:
                         dossiers_map[d_doc.id] = d_doc.to_dict()
             except Exception as e:
                 logger.warning("Batch get_all failed for dossiers, falling back to individual gets: %s", e)
                 for ref in dossier_refs:
                     try:
-                        d_doc = ref.get()
+                        d_doc = self._call_fs(ref.get, timeout=5.0)
                         if d_doc.exists:
                             dossiers_map[d_doc.id] = d_doc.to_dict()
                     except Exception as err:
@@ -204,8 +219,10 @@ class DatabaseService:
         dossier_dict = json.loads(dossier.model_dump_json())
         dossier_dict["created_at"] = datetime.utcnow().isoformat()
         try:
-            self.client.collection("dossiers").document(dossier.claim_id).set(dossier_dict)
+            self._call_fs(self.client.collection("dossiers").document(dossier.claim_id).set, dossier_dict, timeout=10.0)
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to save dossier '{dossier.claim_id}' to Firestore: {e}",
@@ -214,11 +231,13 @@ class DatabaseService:
 
     def get_dossier(self, claim_id: str) -> Optional[Dossier]:
         try:
-            doc = self.client.collection("dossiers").document(claim_id).get()
+            doc = self._call_fs(self.client.collection("dossiers").document(claim_id).get, timeout=10.0)
             if doc.exists:
                 return Dossier.model_validate(doc.to_dict())
             return None
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get dossier '{claim_id}' from Firestore: {e}",
@@ -228,12 +247,18 @@ class DatabaseService:
     def set_agent_status(self, claim_id: str, agent_name: str, status: str) -> None:
         now = datetime.utcnow().isoformat()
         try:
-            self.client.collection("claims").document(claim_id).collection("agent_status").document(agent_name).set({
-                "status": status,
-                "agent_name": agent_name,
-                "updated_at": now
-            })
+            self._call_fs(
+                self.client.collection("claims").document(claim_id).collection("agent_status").document(agent_name).set,
+                {
+                    "status": status,
+                    "agent_name": agent_name,
+                    "updated_at": now
+                },
+                timeout=10.0
+            )
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to update agent status for '{claim_id}/{agent_name}' in Firestore: {e}",
@@ -253,7 +278,10 @@ class DatabaseService:
         ]
         statuses = {agent: "idle" for agent in canonical_agents}
         try:
-            docs = list(self.client.collection("claims").document(claim_id).collection("agent_status").stream())
+            docs = self._call_fs(
+                lambda: list(self.client.collection("claims").document(claim_id).collection("agent_status").stream()),
+                timeout=10.0
+            )
             for doc in docs:
                 d = doc.to_dict()
                 if "status" in d:
@@ -271,6 +299,8 @@ class DatabaseService:
 
             return statuses
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get agent statuses for '{claim_id}' from Firestore: {e}",
@@ -292,8 +322,14 @@ class DatabaseService:
             "created_at": now
         }
         try:
-            self.client.collection("claims").document(claim_id).collection("chat_messages").add(msg_dict)
+            self._call_fs(
+                self.client.collection("claims").document(claim_id).collection("chat_messages").add,
+                msg_dict,
+                timeout=10.0
+            )
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to save chat message for '{claim_id}' to Firestore: {e}",
@@ -302,12 +338,15 @@ class DatabaseService:
 
     def get_chat_history(self, claim_id: str) -> List[ChatMessage]:
         try:
-            docs = (
-                self.client.collection("claims")
-                .document(claim_id)
-                .collection("chat_messages")
-                .order_by("created_at")
-                .stream()
+            docs = self._call_fs(
+                lambda: list(
+                    self.client.collection("claims")
+                    .document(claim_id)
+                    .collection("chat_messages")
+                    .order_by("created_at")
+                    .stream()
+                ),
+                timeout=10.0
             )
             messages = []
             for doc in docs:
@@ -320,6 +359,8 @@ class DatabaseService:
                 ))
             return messages
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get chat history for '{claim_id}' from Firestore: {e}",
@@ -349,8 +390,14 @@ class DatabaseService:
             "metadata": metadata or {}
         }
         try:
-            self.client.collection("issuance_ledger").document(doc_id).set(record)
+            self._call_fs(
+                self.client.collection("issuance_ledger").document(doc_id).set,
+                record,
+                timeout=10.0
+            )
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to record issuance '{doc_id}' in Firestore: {e}",
@@ -359,11 +406,13 @@ class DatabaseService:
 
     def get_issuance(self, doc_id: str) -> Optional[Dict[str, Any]]:
         try:
-            doc = self.client.collection("issuance_ledger").document(doc_id).get()
+            doc = self._call_fs(self.client.collection("issuance_ledger").document(doc_id).get, timeout=10.0)
             if doc.exists:
                 return doc.to_dict()
             return None
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get issuance record '{doc_id}' from Firestore: {e}",
@@ -376,12 +425,14 @@ class DatabaseService:
             query = coll.where(filter=firestore.FieldFilter("claim_id", "==", claim_id))
             if doc_type:
                 query = query.where(filter=firestore.FieldFilter("doc_type", "==", doc_type))
-            docs = [doc.to_dict() for doc in query.stream()]
+            docs = self._call_fs(lambda: [doc.to_dict() for doc in query.stream()], timeout=10.0)
             if not docs:
                 return None
             docs.sort(key=lambda d: str(d.get("issued_at", "")), reverse=True)
             return docs[0]
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to query issuance ledger for '{claim_id}' from Firestore: {e}",
@@ -390,8 +441,14 @@ class DatabaseService:
 
     def save_duel_round(self, duel_id: str, round_number: int, round_data: Dict[str, Any]) -> None:
         try:
-            self.client.collection("duels").document(duel_id).collection("rounds").document(str(round_number)).set(round_data)
+            self._call_fs(
+                self.client.collection("duels").document(duel_id).collection("rounds").document(str(round_number)).set,
+                round_data,
+                timeout=10.0
+            )
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to save duel round '{duel_id}/{round_number}' to Firestore: {e}",
@@ -400,9 +457,14 @@ class DatabaseService:
 
     def get_duel_rounds(self, duel_id: str) -> List[Dict[str, Any]]:
         try:
-            docs = self.client.collection("duels").document(duel_id).collection("rounds").order_by("round_number").stream()
-            return [doc.to_dict() for doc in docs]
+            docs = self._call_fs(
+                lambda: [doc.to_dict() for doc in self.client.collection("duels").document(duel_id).collection("rounds").order_by("round_number").stream()],
+                timeout=10.0
+            )
+            return docs
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get duel rounds for '{duel_id}' from Firestore: {e}",
@@ -411,10 +473,10 @@ class DatabaseService:
 
     def save_duel_meta(self, duel_id: str, meta_data: Dict[str, Any]) -> None:
         try:
-            self.client.collection("duels").document(duel_id).set(meta_data, merge=True)
+            self._call_fs(lambda: self.client.collection("duels").document(duel_id).set(meta_data, merge=True), timeout=10.0)
         except TypeError:
             try:
-                self.client.collection("duels").document(duel_id).set(meta_data)
+                self._call_fs(lambda: self.client.collection("duels").document(duel_id).set(meta_data), timeout=10.0)
             except Exception as e:
                 logger.error("Failed to save duel meta for '%s': %s", duel_id, e)
         except Exception as e:
@@ -422,7 +484,7 @@ class DatabaseService:
 
     def get_duel_meta(self, duel_id: str) -> Optional[Dict[str, Any]]:
         try:
-            doc = self.client.collection("duels").document(duel_id).get()
+            doc = self._call_fs(self.client.collection("duels").document(duel_id).get, timeout=10.0)
             return doc.to_dict() if doc.exists else None
         except Exception as e:
             logger.error("Failed to get duel meta for '%s': %s", duel_id, e)
@@ -432,8 +494,14 @@ class DatabaseService:
         pid = pattern.get("pattern_id") or f"PAT-LEARNED-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         pattern["pattern_id"] = pid
         try:
-            self.client.collection("learned_patterns").document(pid).set(pattern)
+            self._call_fs(
+                self.client.collection("learned_patterns").document(pid).set,
+                pattern,
+                timeout=10.0
+            )
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to save learned pattern '{pid}' to Firestore: {e}",
@@ -442,9 +510,11 @@ class DatabaseService:
 
     def get_learned_patterns(self) -> List[Dict[str, Any]]:
         try:
-            docs = self.client.collection("learned_patterns").stream()
-            return [doc.to_dict() for doc in docs]
+            docs = self._call_fs(lambda: [doc.to_dict() for doc in self.client.collection("learned_patterns").stream()], timeout=10.0)
+            return docs
         except Exception as e:
+            if isinstance(e, CloudServiceError):
+                raise
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to get learned patterns from Firestore: {e}",
@@ -453,3 +523,4 @@ class DatabaseService:
 
 
 db_service = DatabaseService()
+

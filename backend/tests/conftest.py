@@ -191,7 +191,7 @@ class FakeBQQueryJob:
     def __init__(self, rows: List[Any]):
         self._rows = rows
 
-    def result(self):
+    def result(self, *args, **kwargs):
         return iter(self._rows)
 
 

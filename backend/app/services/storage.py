@@ -13,15 +13,19 @@ except Exception:
 
 class StorageService:
     """
-    Cloud-native Google Cloud Storage Service.
+    Cloud-native Google Cloud Storage Service with in-memory byte caching.
     All claims documents, rendered page images, and signed sanction PDFs
-    live exclusively in GCS bucket.
-    There is no local or in-memory blob fallback.
+    live in GCS bucket with per-analysis in-memory caching to avoid redundant downloads.
     """
     def __init__(self):
         self.bucket_name = settings.GCS_BUCKET_NAME
         self._client = None
+        self._cache = {}
         self._init_client()
+
+    def clear_cache(self) -> None:
+        """Clears in-memory storage cache."""
+        self._cache.clear()
 
     def _init_client(self):
         if _gcs_available and settings.GCP_PROJECT:
@@ -63,9 +67,11 @@ class StorageService:
         gcs_uri = f"gs://{self.bucket_name}/{destination_name}"
 
         try:
+            from backend.app.services.cloud_call import cloud_call
             bucket = self.client.bucket(self.bucket_name)
             blob = bucket.blob(destination_name)
-            blob.upload_from_string(file_bytes)
+            cloud_call(blob.upload_from_string, file_bytes, service="GCS", timeout=25.0)
+            self._cache[gcs_uri] = file_bytes
         except Exception as e:
             raise CloudServiceError(
                 service="gcs",
@@ -78,12 +84,18 @@ class StorageService:
     def read_file(self, uri: str) -> bytes:
         """
         Reads bytes directly from Google Cloud Storage (or test fixture file:// URI).
+        Uses in-memory cache to guarantee each document is downloaded at most once.
         """
+        if uri in self._cache:
+            return self._cache[uri]
+
         if uri.startswith("file://"):
             local_path = Path(uri.replace("file://", "")).resolve()
             if not local_path.exists() or not local_path.is_file():
                 raise FileNotFoundError(f"Local test file not found: {local_path}")
-            return local_path.read_bytes()
+            data = local_path.read_bytes()
+            self._cache[uri] = data
+            return data
 
         if not uri.startswith("gs://"):
             raise ValueError(f"Cloud-only storage violation: URI must start with gs://, received: {uri}")
@@ -97,9 +109,12 @@ class StorageService:
             raise PermissionError(f"Security error: Invalid GCS storage path or bucket: {uri}")
 
         try:
+            from backend.app.services.cloud_call import cloud_call
             bucket = self.client.bucket(bucket_name)
             blob = bucket.blob(blob_name)
-            return blob.download_as_bytes()
+            data = cloud_call(blob.download_as_bytes, service="GCS", timeout=25.0)
+            self._cache[uri] = data
+            return data
         except Exception as e:
             raise CloudServiceError(
                 service="gcs",

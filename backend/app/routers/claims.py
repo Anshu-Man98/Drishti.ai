@@ -3,12 +3,12 @@ import io
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 import unicodedata
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends, Query, BackgroundTasks, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
 import pypdf
@@ -23,6 +23,7 @@ from backend.app.config import settings, PDFIUM_LOCK
 from backend.app.exceptions import CloudServiceError, StorageError, ProvenanceSigningError
 from backend.app.services.storage import storage_service
 from backend.app.services.db import db_service
+from backend.app.services.claim_lock import claim_lock_manager
 from backend.app.dependencies import require_adjuster_role
 
 logger = logging.getLogger(__name__)
@@ -450,11 +451,37 @@ def get_agent_status(claim_id: str):
     return db_service.get_agent_statuses(claim_id)
 
 
-@router.post("/{claim_id}/analyze", response_model=Dossier)
-def analyze_claim(claim_id: str, force: bool = False):
+@router.get("/{claim_id}/status")
+def get_claim_status(claim_id: str):
+    """Returns general claim status, background analysis progress, and agent statuses."""
+    claim = db_service.get_claim(claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    dossier = db_service.get_dossier(claim_id)
+    statuses = db_service.get_agent_statuses(claim_id)
+    is_running = claim_lock_manager.is_running(claim_id)
+    return {
+        "claim_id": claim_id,
+        "status": "running" if is_running else ("analyzed" if dossier else "created"),
+        "agent_statuses": statuses,
+        "has_dossier": dossier is not None,
+        "dossier_url": f"/api/claims/{claim_id}/dossier" if dossier else None,
+        "agent_status_url": f"/api/claims/{claim_id}/agent-status"
+    }
+
+
+@router.post("/{claim_id}/analyze", response_model=Union[Dossier, Dict[str, Any]])
+def analyze_claim(
+    claim_id: str,
+    background_tasks: BackgroundTasks,
+    force: bool = False,
+    async_mode: bool = Query(default=False, alias="async"),
+):
     """
     Runs the multi-agent fraud pipeline via ADK Runner.
     Writes Dossier to DB/Firestore.
+    Idempotent across concurrent calls via claim_lock_manager.
+    Supports ?async=true to immediately return 202 with status URL.
     """
     claim = db_service.get_claim(claim_id)
     if not claim:
@@ -465,8 +492,53 @@ def analyze_claim(claim_id: str, force: bool = False):
         if existing_dossier and existing_dossier.findings:
             return existing_dossier
 
-    dossier = run_adk_pipeline(claim)
-    return dossier
+    is_leader, dossier = claim_lock_manager.acquire_or_wait(claim_id, async_mode=async_mode)
+
+    if not is_leader:
+        if async_mode:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content={
+                    "claim_id": claim_id,
+                    "status": "running",
+                    "status_url": f"/api/claims/{claim_id}/status",
+                    "agent_status_url": f"/api/claims/{claim_id}/agent-status"
+                }
+            )
+        if dossier:
+            return dossier
+        completed_dossier = db_service.get_dossier(claim_id)
+        if completed_dossier:
+            return completed_dossier
+        raise HTTPException(status_code=500, detail="Concurrent analysis completed without producing a dossier")
+
+    if async_mode:
+        def _bg_analyze():
+            try:
+                res_dossier = run_adk_pipeline(claim)
+                claim_lock_manager.complete_analysis(claim_id, dossier=res_dossier)
+            except Exception as e:
+                logger.error("Background analysis failed for claim %s: %s", claim_id, e, exc_info=True)
+                claim_lock_manager.complete_analysis(claim_id, error=e)
+
+        background_tasks.add_task(_bg_analyze)
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "claim_id": claim_id,
+                "status": "running",
+                "status_url": f"/api/claims/{claim_id}/status",
+                "agent_status_url": f"/api/claims/{claim_id}/agent-status"
+            }
+        )
+
+    try:
+        dossier = run_adk_pipeline(claim)
+        claim_lock_manager.complete_analysis(claim_id, dossier=dossier)
+        return dossier
+    except Exception as e:
+        claim_lock_manager.complete_analysis(claim_id, error=e)
+        raise
 
 
 @router.get("/{claim_id}/documents/{doc_id}")

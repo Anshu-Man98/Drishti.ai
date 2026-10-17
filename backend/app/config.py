@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     WATERMARK_ENABLED: bool = os.getenv("WATERMARK_ENABLED", "true").lower() == "true"
     RAG_PATTERNS_ENABLED: bool = os.getenv("RAG_PATTERNS_ENABLED", "true").lower() == "true"
     
+    # Latency & Resilience Budgets
+    ANALYSIS_BUDGET_SECONDS: float = float(os.getenv("ANALYSIS_BUDGET_SECONDS", "90.0"))
+    CLOUD_CALL_TIMEOUT_SEC: float = float(os.getenv("CLOUD_CALL_TIMEOUT_SEC", "30.0"))
+    CLOUD_CALL_MAX_RETRIES: int = int(os.getenv("CLOUD_CALL_MAX_RETRIES", "2"))
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

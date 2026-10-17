@@ -101,6 +101,8 @@ def is_incomplete_analysis_condition(f: Union[Finding, dict, Any]) -> bool:
         or "agent failed" in title
         or "agent timed out" in title
         or "pipeline_agent_error" in cid
+        or "pipeline_timeout" in cid
+        or "pipeline timeout" in title
     ):
         return True
 

@@ -45,6 +45,14 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
+# In-memory document extraction cache (keyed by document sha256)
+_DOCAI_EXTRACTION_CACHE: Dict[str, Tuple[Claim, List[ExtractedEntity]]] = {}
+
+
+def clear_docai_extraction_cache() -> None:
+    """Clears the document extraction cache for test isolation."""
+    _DOCAI_EXTRACTION_CACHE.clear()
+
 try:
     from google.cloud import documentai_v1 as documentai
     _docai_available = True
@@ -274,30 +282,22 @@ def extract_with_gemini_vision(
 
         contents.append(prompt)
 
-        for attempt in range(3):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GeminiExtractedBill,
-                        temperature=0.0
-                    )
+        from backend.app.services.cloud_call import cloud_call
+
+        def _generate():
+            return client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GeminiExtractedBill,
+                    temperature=0.0
                 )
-                if response.text:
-                    return GeminiExtractedBill.model_validate_json(response.text)
-                break
-            except Exception as e:
-                err_str = str(e)
-                if any(k in err_str for k in ("429", "RESOURCE_EXHAUSTED", "Resource exhausted")) and attempt < 2:
-                    wait_sec = (attempt + 1) * 3.0
-                    logger.info(f"[GeminiVision] Rate limit encountered, retrying in {wait_sec}s (attempt {attempt+1}/3)...")
-                    import time
-                    time.sleep(wait_sec)
-                    continue
-                logger.warning(f"[GeminiVision] Structured extraction failed: {e}")
-                break
+            )
+
+        response = cloud_call(_generate, service="Gemini", timeout=30.0, max_retries=2)
+        if response and response.text:
+            return GeminiExtractedBill.model_validate_json(response.text)
     except Exception as e:
         logger.warning(f"[GeminiVision] Structured extraction failed: {e}")
     return None
@@ -334,30 +334,22 @@ def reextract_line_items_gemini(
         )
         contents.append(prompt)
 
-        for attempt in range(3):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GeminiReExtractionResult,
-                        temperature=0.0
-                    )
+        from backend.app.services.cloud_call import cloud_call
+
+        def _generate_reextract():
+            return client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GeminiReExtractionResult,
+                    temperature=0.0
                 )
-                if response.text:
-                    return GeminiReExtractionResult.model_validate_json(response.text)
-                break
-            except Exception as e:
-                err_str = str(e)
-                if any(k in err_str for k in ("429", "RESOURCE_EXHAUSTED", "Resource exhausted")) and attempt < 2:
-                    wait_sec = (attempt + 1) * 3.0
-                    logger.info(f"[GeminiVision] Rate limit encountered, retrying re-extraction in {wait_sec}s (attempt {attempt+1}/3)...")
-                    import time
-                    time.sleep(wait_sec)
-                    continue
-                logger.warning(f"[GeminiVision] Line item re-extraction failed: {e}")
-                break
+            )
+
+        response = cloud_call(_generate_reextract, service="Gemini", timeout=30.0, max_retries=2)
+        if response and response.text:
+            return GeminiReExtractionResult.model_validate_json(response.text)
     except Exception as e:
         logger.warning(f"[GeminiVision] Line item re-extraction failed: {e}")
     return None
@@ -380,6 +372,16 @@ def process_document_docai(
 
     if not claim_id:
         claim_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
+
+    import hashlib
+    doc_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    if doc_sha256 in _DOCAI_EXTRACTION_CACHE:
+        cached_claim, cached_ents = _DOCAI_EXTRACTION_CACHE[doc_sha256]
+        logger.info("[DocAI] Document extraction cache hit for sha256 %s (claim %s)", doc_sha256[:12], claim_id)
+        claim_copy = cached_claim.model_copy(deep=True)
+        claim_copy.claim_id = claim_id
+        ents_copy = [e.model_copy(deep=True) for e in cached_ents]
+        return claim_copy, ents_copy
 
     # Render pages to PNG images at 150 dpi (up to 10 pages)
     page_uris, page_images = render_document_to_images(pdf_bytes, claim_id, filename)
@@ -416,6 +418,8 @@ def process_document_docai(
     docai_doc = None
     try:
         from google.api_core.client_options import ClientOptions
+        from backend.app.services.cloud_call import cloud_call
+
         client = documentai.DocumentProcessorServiceClient(
             client_options=ClientOptions(api_endpoint=settings.docai_endpoint)
         )
@@ -431,7 +435,13 @@ def process_document_docai(
 
         raw_document = documentai.RawDocument(content=pdf_bytes, mime_type=mime_type)
         request = documentai.ProcessRequest(name=docai_processor, raw_document=raw_document)
-        result = client.process_document(request=request)
+        result = cloud_call(
+            client.process_document,
+            request=request,
+            service="Document AI",
+            timeout=30.0,
+            max_retries=2
+        )
         docai_doc = result.document
     except CloudServiceError:
         raise
@@ -450,7 +460,7 @@ def process_document_docai(
     )
 
     # 3. Fuse Document AI entities and Gemini Vision results
-    return _map_docai_result_to_claim(
+    res_claim, res_ents = _map_docai_result_to_claim(
         doc=docai_doc,
         pdf_bytes=pdf_bytes,
         filename=filename,
@@ -461,6 +471,8 @@ def process_document_docai(
         gemini_result=gemini_extracted,
         page_images_bytes=page_images
     )
+    _DOCAI_EXTRACTION_CACHE[doc_sha256] = (res_claim, res_ents)
+    return res_claim, res_ents
 
 
 def _map_docai_result_to_claim(

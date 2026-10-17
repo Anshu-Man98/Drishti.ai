@@ -345,6 +345,7 @@ def gemini_visual_review(
     try:
         from google.genai import types
         from backend.app.services.gemini_client import get_gemini_client, get_model_name
+        from backend.app.services.cloud_call import cloud_call
 
         client = get_gemini_client()
         model_name = get_model_name("flash")
@@ -353,14 +354,17 @@ def gemini_visual_review(
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             prompt
         ]
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=0.0
+        def _exec():
+            return client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.0
+                )
             )
-        )
-        if response.text and response.text.strip():
+
+        response = cloud_call(_exec, service="Gemini", timeout=30.0, max_retries=2)
+        if response and response.text and response.text.strip():
             return response.text.strip()
         raise ValueError("Gemini returned empty response for visual review.")
     except Exception as e:

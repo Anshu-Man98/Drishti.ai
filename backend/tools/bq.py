@@ -60,13 +60,27 @@ class BigQueryWarehouse:
             )
         return self._client
 
+    def query_rows(self, query: str, job_config: Optional[Any] = None, timeout: float = 30.0) -> List[Any]:
+        """Executes BigQuery SQL query through cloud_call with timeout and jittered retries."""
+        from backend.app.services.cloud_call import cloud_call
+
+        def _exec():
+            job = self.client.query(query, job_config=job_config)
+            try:
+                res = job.result(timeout=timeout)
+            except TypeError:
+                res = job.result()
+            return list(res)
+
+        return cloud_call(_exec, service="BigQuery", timeout=timeout + 5.0)
+
     def get_baseline_fraud_rate(self) -> float:
         """Returns the training baseline prior fraud rate from claims warehouse (cached)."""
         if hasattr(self, "_baseline_fraud_rate") and self._baseline_fraud_rate is not None:
             return self._baseline_fraud_rate
         try:
             query = f"SELECT AVG(CAST(is_fraud AS FLOAT64)) as rate FROM `{settings.GCP_PROJECT}.{settings.BIGQUERY_DATASET}.claims`"
-            results = list(self.client.query(query).result())
+            results = self.query_rows(query, timeout=15.0)
             if results and results[0].rate is not None:
                 self._baseline_fraud_rate = round(float(results[0].rate), 4)
                 return self._baseline_fraud_rate
@@ -90,7 +104,7 @@ class BigQueryWarehouse:
             query_parameters=[bigquery.ScalarQueryParameter("cname", "STRING", claimant_name.lower())]
         )
         try:
-            results = list(self.client.query(query, job_config=job_config).result())
+            results = self.query_rows(query, job_config=job_config, timeout=15.0)
             if results and results[0].bank_account_hash:
                 return str(results[0].bank_account_hash)
             return None
@@ -114,7 +128,7 @@ class BigQueryWarehouse:
             query_parameters=[bigquery.ScalarQueryParameter("bhash", "STRING", bank_account_hash)]
         )
         try:
-            results = list(self.client.query(query, job_config=job_config).result())
+            results = self.query_rows(query, job_config=job_config, timeout=15.0)
             if results and results[0].cnt:
                 return max(1, int(results[0].cnt))
             return 1
@@ -157,7 +171,7 @@ class BigQueryWarehouse:
 
         job_config = bigquery.QueryJobConfig(query_parameters=query_params)
         try:
-            for row in self.client.query(query, job_config=job_config).result():
+            for row in self.query_rows(query, job_config=job_config):
                 findings.append(Finding(
                     finding_id="F-XREF-EXACT-DUP",
                     agent=AgentName.CROSSREF,
@@ -221,7 +235,7 @@ class BigQueryWarehouse:
 
         job_config = bigquery.QueryJobConfig(query_parameters=query_params)
         try:
-            for row in self.client.query(query, job_config=job_config).result():
+            for row in self.query_rows(query, job_config=job_config):
                 prior_ins = row.insurer_id or "Another Insurer"
                 findings.append(Finding(
                     finding_id="F-XREF-CROSS-INSURER",
@@ -289,7 +303,7 @@ class BigQueryWarehouse:
             query_parameters=[bigquery.ScalarQueryParameter("cid", "STRING", claimant_id)]
         )
         try:
-            for row in self.client.query(query, job_config=job_config).result():
+            for row in self.query_rows(query, job_config=job_config):
                 return {
                     "claimant_id": claimant_id,
                     "total_claims_365d": int(row.total_claims_365d),
@@ -324,7 +338,7 @@ class BigQueryWarehouse:
             ]
         )
         try:
-            results = list(self.client.query(query, job_config=job_config).result())
+            results = self.query_rows(query, job_config=job_config)
             return int(results[0].cnt) if results else 0
         except Exception as e:
             raise CloudServiceError(
@@ -369,7 +383,7 @@ class BigQueryWarehouse:
         )
         events = []
         try:
-            for row in self.client.query(query, job_config=job_config).result():
+            for row in self.query_rows(query, job_config=job_config):
                 events.append({
                     "claim_id": row.claim_id or row.event_id,
                     "doctor_id": row.doctor_id,
@@ -613,8 +627,7 @@ def ml_score(
     ]
     job_config = bigquery.QueryJobConfig(query_parameters=query_params)
     try:
-        query_job = bq_warehouse.client.query(query, job_config=job_config)
-        results = list(query_job.result())
+        results = bq_warehouse.query_rows(query, job_config=job_config, timeout=30.0)
         if not results:
             raise RuntimeError("BigQuery ML returned empty prediction results.")
         row = results[0]

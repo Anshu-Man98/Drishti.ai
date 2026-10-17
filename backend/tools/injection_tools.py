@@ -409,15 +409,16 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
     safe_joined_text = joined_text.replace("</untrusted_extracted_text>", "&lt;/untrusted_extracted_text&gt;")
     prompt = f"<untrusted_extracted_text>\n{safe_joined_text}\n</untrusted_extracted_text>"
 
-    for attempt in range(2):
-        try:
-            from google.genai import types
-            from backend.app.services.gemini_client import get_gemini_client, get_model_name
+    try:
+        from google.genai import types
+        from backend.app.services.gemini_client import get_gemini_client, get_model_name
+        from backend.app.services.cloud_call import cloud_call
 
-            client = get_gemini_client()
-            model_name = get_model_name("flash")
+        client = get_gemini_client()
+        model_name = get_model_name("flash")
 
-            response = client.models.generate_content(
+        def _exec():
+            return client.models.generate_content(
                 model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -426,12 +427,15 @@ def classify_hidden_text(hidden_strings: List[str]) -> Dict[str, Any]:
                     temperature=0.0
                 )
             )
+
+        response = cloud_call(_exec, service="Gemini", timeout=15.0, max_retries=2)
+        if response and response.text:
             import json
             parsed = json.loads(response.text)
             if "classification" in parsed:
                 return parsed
-        except Exception as e:
-            logger.warning("Gemini classification attempt %d failed: %s", attempt + 1, e)
+    except Exception as e:
+        logger.warning("Gemini classification failed: %s", e)
 
     # If Gemini fails after retry, surface explicit error finding: "classification_unavailable"
     return {

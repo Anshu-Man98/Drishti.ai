@@ -212,6 +212,7 @@ describe('Stage 7: Contrast, Accessibility & Responsive Polish', () => {
         <SpacetimeMap
           timeline={mockTimeline}
           claimId="CLM-2024-TEST"
+          apiKey="TEST_API_KEY"
           onOpenDocument={onOpenDoc}
         />
       );

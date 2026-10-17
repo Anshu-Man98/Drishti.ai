@@ -1320,13 +1320,13 @@ def _parse_invoice_layout(
                                     source="layout"
                                 ))
                                 break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Failed parsing numeric value from layout token: %s", e)
     if pdf_ctx:
         try:
             pdf_ctx.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed closing pdf_ctx: %s", e)
 
     # Construct Claim
     claimant_obj = None

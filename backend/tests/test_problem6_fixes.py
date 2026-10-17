@@ -89,7 +89,7 @@ def test_duel_start_with_no_claim_id_autopick(sample_clean_claim, monkeypatch):
     monkeypatch.setattr("backend.agents.duel.run_claims_fraud_pipeline", lambda *args, **kwargs: fake_dossier)
 
     # 1. Test POST with empty dict {}
-    res_empty = client.post("/duel/start?wait=true", json={"rounds": 1})
+    res_empty = client.post("/api/duel/start?wait=true", json={"rounds": 1})
     assert res_empty.status_code == 200, f"Expected 200, got {res_empty.status_code}: {res_empty.text}"
     data_empty = res_empty.json()
     assert "duel_id" in data_empty
@@ -97,7 +97,7 @@ def test_duel_start_with_no_claim_id_autopick(sample_clean_claim, monkeypatch):
     assert data_empty["base_claim_id"] == "CLM-G1-CLEAN-DEMO"
 
     # 2. Test POST with no body
-    res_no_body = client.post("/duel/start?wait=true")
+    res_no_body = client.post("/api/duel/start?wait=true")
     assert res_no_body.status_code == 200, f"Expected 200, got {res_no_body.status_code}: {res_no_body.text}"
     data_no_body = res_no_body.json()
     assert "duel_id" in data_no_body
@@ -137,7 +137,7 @@ def test_agent_statuses_endpoint_honest_8_agents(sample_clean_claim):
     claim_id = sample_clean_claim.claim_id
 
     # 1. Unanalyzed claim with no stored status should report 'idle' across all 8 agents
-    res = client.get(f"/claims/{claim_id}/agent-status")
+    res = client.get(f"/api/claims/{claim_id}/agent-status")
     assert res.status_code == 200
     statuses = res.json()
     expected_agents = ["forensics", "policy", "crossref", "spacetime", "ml", "injection", "provenance", "rag"]
@@ -151,7 +151,7 @@ def test_agent_statuses_endpoint_honest_8_agents(sample_clean_claim):
     db_service.set_agent_status(claim_id, "policy", "done")
     db_service.set_agent_status(claim_id, "provenance", "error")
 
-    res_live = client.get(f"/claims/{claim_id}/agent-status")
+    res_live = client.get(f"/api/claims/{claim_id}/agent-status")
     assert res_live.status_code == 200
     live_statuses = res_live.json()
     assert live_statuses["forensics"] == "running"
@@ -181,5 +181,5 @@ def test_agent_statuses_endpoint_honest_8_agents(sample_clean_claim):
     # In a fresh query without subcollection docs, dossier derivation should mark forensics as error
     # Let's verify db_service.get_agent_statuses logic
     db_service.set_agent_status(claim_id, "forensics", "error")
-    res_error = client.get(f"/claims/{claim_id}/agent-status")
+    res_error = client.get(f"/api/claims/{claim_id}/agent-status")
     assert res_error.json()["forensics"] == "error"

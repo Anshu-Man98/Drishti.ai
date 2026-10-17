@@ -193,14 +193,8 @@ api_router.include_router(analytics.router, dependencies=[Depends(get_current_us
 api_router.include_router(reference.router, dependencies=[Depends(get_current_user)])
 api_router.include_router(graph.router, dependencies=[Depends(get_current_user)])
 
-# Mount both /api and root prefixed routers for seamless local dev & Cloud Run production
+# Mount /api prefixed router (single source of truth matching Firebase Hosting)
 app.include_router(api_router)
-app.include_router(claims.router, dependencies=[Depends(get_current_user)])
-app.include_router(provenance.router, dependencies=[Depends(get_current_user)])
-app.include_router(duel.router, dependencies=[Depends(get_current_user)])
-app.include_router(analytics.router, dependencies=[Depends(get_current_user)])
-app.include_router(reference.router, dependencies=[Depends(get_current_user)])
-app.include_router(graph.router, dependencies=[Depends(get_current_user)])
 
 
 @api_router.get("/health")

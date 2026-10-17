@@ -114,8 +114,8 @@ def extract_text_layers(
                             if operands:
                                 try:
                                     render_mode = int(operands[0])
-                                except Exception:
-                                    pass
+                                except (ValueError, TypeError, IndexError) as err:
+                                    logger.debug("Could not parse render_mode: %s", err)
                         elif op in (b'Tj', 'Tj', b'TJ', 'TJ', b'\'', '\'', b'"', '"'):
                             last_text_op = op_idx
                             if render_mode == 3:
@@ -128,12 +128,12 @@ def extract_text_layers(
                                 top = h - (ry + rh) if rh > 0 else h - ry
                                 bottom = top + abs(rh)
                                 late_rects.append((rx, top, rx + rw, bottom))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed parsing page content stream for hidden text on page %s: %s", page_idx + 1, e)
             page_tr3_strings[page_idx + 1] = tr3_list
             page_late_rects[page_idx + 1] = late_rects
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed pypdf pass for hidden text extraction: %s", e)
 
     # 2. Second pass with pdfplumber: extract words and test geometry/color/fonts
     try:
@@ -267,8 +267,8 @@ def extract_text_layers(
     if pdf_ctx:
         try:
             pdf_ctx.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed closing pdf_ctx in extract_text_layers: %s", e)
 
     # Group adjacent hidden runs on the same page into sentences
     merged_hidden_runs = _merge_adjacent_hidden_runs(hidden_runs)

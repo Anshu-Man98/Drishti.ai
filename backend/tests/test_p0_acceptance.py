@@ -133,12 +133,12 @@ def test_seed_and_claims_api_flow():
         ])
     }
 
-    res = client.post("/claims", data=data, files=files)
+    res = client.post("/api/claims", data=data, files=files)
     assert res.status_code == 200
     claim_id = res.json()["claim_id"]
 
     # Verify claim retrieval
-    get_res = client.get(f"/claims/{claim_id}")
+    get_res = client.get(f"/api/claims/{claim_id}")
     assert get_res.status_code == 200
     claim_data = get_res.json()
     assert claim_data["claim_id"] == claim_id
@@ -146,12 +146,12 @@ def test_seed_and_claims_api_flow():
 
     # Verify document retrieval
     doc_id = claim_data["documents"][0]["doc_id"]
-    doc_res = client.get(f"/claims/{claim_id}/documents/{doc_id}")
+    doc_res = client.get(f"/api/claims/{claim_id}/documents/{doc_id}")
     assert doc_res.status_code == 200
     assert len(doc_res.content) > 0
 
     # Verify analyze creates dossier
-    an_res = client.post(f"/claims/{claim_id}/analyze")
+    an_res = client.post(f"/api/claims/{claim_id}/analyze")
     assert an_res.status_code == 200
     dossier = an_res.json()
     assert dossier["claim_id"] == claim_id

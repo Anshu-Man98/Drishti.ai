@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import math
 import re
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from backend.app.schemas import Claim
+
+logger = logging.getLogger("finshield.tools.grounding")
 
 
 # Whitelist patterns for non-factual numerals
@@ -149,8 +152,8 @@ def _collect_ground_truth_numbers(
                 stored = get_all_computed_values(cid)
                 if stored:
                     _harvest(stored)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed harvesting computed values for claim %s: %s", cid, e)
 
     # Add standard base numbers (0, 1)
     truth_set.add(0.0)

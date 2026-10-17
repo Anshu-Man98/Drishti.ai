@@ -33,11 +33,11 @@ def test_unauthenticated_request_returns_401():
     """Requests without an Authorization Bearer token must receive 401 Unauthorized."""
     app.dependency_overrides.clear()  # Clear test fixture to test raw endpoint auth
     try:
-        resp = client.get("/claims")
+        resp = client.get("/api/claims")
         assert resp.status_code == 401, f"Expected 401, got {resp.status_code}"
         assert "Authentication required" in resp.json().get("detail", "")
 
-        resp2 = client.post("/claims/CLM-1/issue-approval", json={"amount_paise": 10000})
+        resp2 = client.post("/api/claims/CLM-1/issue-approval", json={"amount_paise": 10000})
         assert resp2.status_code == 401, f"Expected 401, got {resp2.status_code}"
 
         # Public endpoints remain accessible
@@ -104,12 +104,12 @@ def test_authenticated_bearer_tokens_and_roles():
     try:
         # 1. Viewer token can read claims
         headers_viewer = {"Authorization": "Bearer viewer-token"}
-        resp = client.get("/claims", headers=headers_viewer)
+        resp = client.get("/api/claims", headers=headers_viewer)
         assert resp.status_code == 200
 
         # 2. Viewer token gets 403 Forbidden on issue-approval
         resp_forbid = client.post(
-            "/claims/CLM-SEC-TEST/issue-approval",
+            "/api/claims/CLM-SEC-TEST/issue-approval",
             json={"amount_paise": 500000},
             headers=headers_viewer
         )
@@ -118,7 +118,7 @@ def test_authenticated_bearer_tokens_and_roles():
         # 3. Adjuster token succeeds on issue-approval
         headers_adjuster = {"Authorization": "Bearer adjuster-token"}
         resp_ok = client.post(
-            "/claims/CLM-SEC-TEST/issue-approval",
+            "/api/claims/CLM-SEC-TEST/issue-approval",
             json={"amount_paise": 500000},
             headers=headers_adjuster
         )
@@ -140,14 +140,14 @@ def test_sanction_amount_bounded_to_total_claimed():
 
     # 1. Negative or zero amount -> 422 Unprocessable Entity by Pydantic validator
     resp_zero = client.post(
-        "/claims/CLM-BOUNDS-TEST/issue-approval",
+        "/api/claims/CLM-BOUNDS-TEST/issue-approval",
         json={"amount_paise": 0}
     )
     assert resp_zero.status_code == 422
 
     # 2. Amount exceeding total_claimed (e.g. 6,000,000 paise = ₹60,000) -> 400 Bad Request
     resp_excess = client.post(
-        "/claims/CLM-BOUNDS-TEST/issue-approval",
+        "/api/claims/CLM-BOUNDS-TEST/issue-approval",
         json={"amount_paise": 6000000}
     )
     assert resp_excess.status_code == 400
@@ -155,7 +155,7 @@ def test_sanction_amount_bounded_to_total_claimed():
 
     # 3. Valid amount within bounds -> 200 OK
     resp_valid = client.post(
-        "/claims/CLM-BOUNDS-TEST/issue-approval",
+        "/api/claims/CLM-BOUNDS-TEST/issue-approval",
         json={"amount_paise": 4000000}
     )
     assert resp_valid.status_code == 200
@@ -165,7 +165,7 @@ def test_arbitrary_file_read_rejected():
     """POST /claims/direct with arbitrary file URIs like file:///etc/passwd must be rejected."""
     claim = _make_dummy_claim("CLM-DIRECT-EXPLOIT", total_claimed=1000.0, doc_uri="file:///etc/passwd")
     payload = claim.model_dump(mode="json")
-    resp = client.post("/claims/direct", json=payload)
+    resp = client.post("/api/claims/direct", json=payload)
     assert resp.status_code == 400
     assert "Arbitrary file read attempt rejected" in resp.json()["detail"]
 
@@ -185,7 +185,7 @@ def test_upload_path_traversal_neutralized():
         "policy_id": "POL-TRAVERSAL",
         "claimant_name": "Test Claimant"
     }
-    resp = client.post("/claims", data=data, files=files)
+    resp = client.post("/api/claims", data=data, files=files)
     assert resp.status_code == 200
     claim_id = resp.json()["claim_id"]
 

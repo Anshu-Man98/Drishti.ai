@@ -52,7 +52,7 @@ def test_b1_duel_start_and_status(clean_duel_claim):
     # Test wait=False (default)
     with patch("backend.app.routers.duel.run_duel") as mock_run:
         resp = client.post(
-            "/duel/start",
+            "/api/duel/start",
             json={"claim_id": clean_duel_claim.claim_id, "rounds": 2, "wait": False},
             headers=AUTH_HEADERS
         )
@@ -64,7 +64,7 @@ def test_b1_duel_start_and_status(clean_duel_claim):
         duel_id = data["duel_id"]
 
         # Check status endpoint
-        status_resp = client.get(f"/duel/{duel_id}/status", headers=AUTH_HEADERS)
+        status_resp = client.get(f"/api/duel/{duel_id}/status", headers=AUTH_HEADERS)
         assert status_resp.status_code == 200, status_resp.text
         st_data = status_resp.json()
         assert st_data["duel_id"] == duel_id
@@ -76,7 +76,7 @@ def test_b1_duel_start_and_status(clean_duel_claim):
 def test_b4_exclude_synthetic_analytics_and_claims():
     """Verify B4: exclude_synthetic query parameter correctly filters out DEMO / SYNTH claims."""
     # Test claims queue endpoint with exclude_synthetic=true
-    resp = client.get("/claims?limit=100&exclude_synthetic=true", headers=AUTH_HEADERS)
+    resp = client.get("/api/claims?limit=100&exclude_synthetic=true", headers=AUTH_HEADERS)
     assert resp.status_code == 200, resp.text
     claims = resp.json()
     for c in claims:
@@ -86,11 +86,11 @@ def test_b4_exclude_synthetic_analytics_and_claims():
         assert not cid.startswith("SYNTH-"), f"Found synth claim {cid} when exclude_synthetic=true"
 
     # Test analytics summary endpoint
-    resp_all = client.get("/analytics/summary?exclude_synthetic=false", headers=AUTH_HEADERS)
+    resp_all = client.get("/api/analytics/summary?exclude_synthetic=false", headers=AUTH_HEADERS)
     assert resp_all.status_code == 200
     all_summary = resp_all.json()
 
-    resp_filtered = client.get("/analytics/summary?exclude_synthetic=true", headers=AUTH_HEADERS)
+    resp_filtered = client.get("/api/analytics/summary?exclude_synthetic=true", headers=AUTH_HEADERS)
     assert resp_filtered.status_code == 200
     filtered_summary = resp_filtered.json()
 

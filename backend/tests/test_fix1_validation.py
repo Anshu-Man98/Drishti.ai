@@ -65,7 +65,7 @@ def create_valid_jpeg_bytes() -> bytes:
 
 def test_upload_no_files_returns_400():
     """POST /claims with no file must return 400."""
-    resp = client.post("/claims", data={"claimant_name": "Test User"}, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", data={"claimant_name": "Test User"}, headers=AUTH_HEADERS)
     assert resp.status_code == 400
     assert "At least one file must be uploaded" in resp.json()["detail"]
 
@@ -73,7 +73,7 @@ def test_upload_no_files_returns_400():
 def test_upload_empty_file_returns_422():
     """POST /claims with 0-byte file must return 422."""
     files = [("files", ("empty.pdf", io.BytesIO(b""), "application/pdf"))]
-    resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 422
     assert "The document could not be read" in resp.json()["detail"]
     assert "is empty" in resp.json()["detail"]
@@ -85,7 +85,7 @@ def test_upload_exceeds_max_file_size_returns_413():
     with patch.object(settings, "MAX_UPLOAD_MB", 1):
         big_content = b"%PDF-1.4\n" + b"A" * (1024 * 1024 + 50)
         files = [("files", ("big.pdf", io.BytesIO(big_content), "application/pdf"))]
-        resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+        resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
         assert resp.status_code == 413
         assert "Payload Too Large" in resp.json()["detail"]
 
@@ -109,7 +109,7 @@ def test_upload_exceeds_total_cap_returns_413():
             ("files", ("f1.pdf", io.BytesIO(padded_pdf), "application/pdf")),
             ("files", ("f2.pdf", io.BytesIO(padded_pdf), "application/pdf")),
         ]
-        resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+        resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
         assert resp.status_code == 413
         assert "Total upload size exceeds" in resp.json()["detail"]
 
@@ -119,7 +119,7 @@ def test_upload_exceeds_max_files_returns_400():
     pdf_bytes = create_valid_pdf_bytes("Test")
     with patch.object(settings, "MAX_UPLOAD_FILES", 3):
         files = [("files", (f"bill_{i}.pdf", io.BytesIO(pdf_bytes), "application/pdf")) for i in range(4)]
-        resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+        resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
         assert resp.status_code == 400
         assert "Maximum 3 files allowed" in resp.json()["detail"]
 
@@ -127,7 +127,7 @@ def test_upload_exceeds_max_files_returns_400():
 def test_upload_unsupported_extension_returns_415():
     """POST /claims with unsupported extension must return 415."""
     files = [("files", ("script.exe", io.BytesIO(b"MZ\x90\x00"), "application/octet-stream"))]
-    resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 415
     assert "Unsupported Media Type" in resp.json()["detail"]
 
@@ -136,7 +136,7 @@ def test_upload_invalid_magic_bytes_returns_415():
     """POST /claims with .pdf extension but non-PDF content must return 415."""
     fake_pdf = b"Hello, this is just plain text disguised as a PDF file."
     files = [("files", ("bill.pdf", io.BytesIO(fake_pdf), "application/pdf"))]
-    resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 415
     assert "invalid magic bytes" in resp.json()["detail"]
 
@@ -145,7 +145,7 @@ def test_upload_corrupt_pdf_returns_422():
     """POST /claims with corrupt PDF content must return 422 with clear message."""
     corrupt_pdf = b"%PDF-1.5\nMalformed binary junk without xref or trailer\x00\xff\xee"
     files = [("files", ("corrupt.pdf", io.BytesIO(corrupt_pdf), "application/pdf"))]
-    resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 422
     assert "The document could not be read" in resp.json()["detail"]
     assert "corrupt or unreadable" in resp.json()["detail"]
@@ -155,7 +155,7 @@ def test_upload_corrupt_png_returns_422():
     """POST /claims with corrupt PNG content must return 422."""
     corrupt_png = b"\x89PNG\r\n\x1a\nCorrupt header without IHDR chunk\x00\x00"
     files = [("files", ("corrupt.png", io.BytesIO(corrupt_png), "image/png"))]
-    resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 422
     assert "The document could not be read" in resp.json()["detail"]
 
@@ -171,7 +171,7 @@ def test_upload_dependency_outage_returns_503():
             message="Document AI service is temporarily unavailable",
             retryable=True
         )
-        resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+        resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
         assert resp.status_code == 503
         data = resp.json()
         assert data.get("service") == "Document AI"
@@ -190,7 +190,7 @@ def test_upload_docai_client_error_returns_422_without_leaking_provider_text():
             message="GoogleAPIError 400: field_violations [FieldViolation(field='raw_document.content')]",
             retryable=False
         )
-        resp = client.post("/claims", files=files, headers=AUTH_HEADERS)
+        resp = client.post("/api/claims", files=files, headers=AUTH_HEADERS)
         assert resp.status_code == 422
         assert resp.json()["detail"] == "The document could not be read"
         # Ensure raw Google provider string was NOT leaked in response
@@ -208,7 +208,7 @@ def test_upload_happy_path():
         "city": "Mumbai",
         "total_claimed": "25000.0"
     }
-    resp = client.post("/claims", data=data, files=files, headers=AUTH_HEADERS)
+    resp = client.post("/api/claims", data=data, files=files, headers=AUTH_HEADERS)
     assert resp.status_code == 200
     res_data = resp.json()
     assert res_data["status"] == "created"
@@ -223,7 +223,7 @@ def test_upload_happy_path():
 def test_chat_empty_message_returns_422():
     """Chat message that is empty or only whitespace returns 422."""
     resp = client.post(
-        "/claims/CLM-G1-CLEAN-DEMO/chat",
+        "/api/claims/CLM-G1-CLEAN-DEMO/chat",
         json={"message": "   \n\t  "},
         headers={**AUTH_HEADERS, "Accept": "application/json"}
     )
@@ -234,7 +234,7 @@ def test_chat_overlong_message_returns_422():
     """Chat message exceeding 2000 characters returns 422."""
     long_msg = "A" * 2005
     resp = client.post(
-        "/claims/CLM-G1-CLEAN-DEMO/chat",
+        "/api/claims/CLM-G1-CLEAN-DEMO/chat",
         json={"message": long_msg},
         headers={**AUTH_HEADERS, "Accept": "application/json"}
     )
@@ -245,7 +245,7 @@ def test_chat_control_characters_returns_422():
     """Chat message with disallowed control characters returns 422."""
     bad_msg = "Hello\x00World\x07Alert"
     resp = client.post(
-        "/claims/CLM-G1-CLEAN-DEMO/chat",
+        "/api/claims/CLM-G1-CLEAN-DEMO/chat",
         json={"message": bad_msg},
         headers={**AUTH_HEADERS, "Accept": "application/json"}
     )
@@ -258,13 +258,13 @@ def test_chat_control_characters_returns_422():
 
 def test_duel_unknown_id_status_returns_404():
     """GET /duel/{id}/status for unknown duel must return 404."""
-    resp = client.get("/duel/duel-does-not-exist-9999/status", headers=AUTH_HEADERS)
+    resp = client.get("/api/duel/duel-does-not-exist-9999/status", headers=AUTH_HEADERS)
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
 
 
 def test_duel_unknown_id_rounds_returns_404():
     """GET /duel/{id}/rounds for unknown duel must return 404."""
-    resp = client.get("/duel/duel-does-not-exist-9999/rounds", headers=AUTH_HEADERS)
+    resp = client.get("/api/duel/duel-does-not-exist-9999/rounds", headers=AUTH_HEADERS)
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()

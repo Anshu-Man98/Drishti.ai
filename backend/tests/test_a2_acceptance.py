@@ -319,12 +319,12 @@ def test_kill_switch_watermark_disabled(monkeypatch):
 
     # 1. Verify endpoint returns disabled status
     files = {"file": ("dummy.pdf", b"%PDF-1.4 dummy", "application/pdf")}
-    r_ver = client.post("/provenance/verify", files=files)
+    r_ver = client.post("/api/provenance/verify", files=files)
     assert r_ver.status_code == 200
     assert r_ver.json()["status"] == "disabled"
 
     # 2. Issue endpoint returns 400
-    r_iss = client.post("/claims/CLM-DUMMY/issue-approval", json={"amount_paise": 100000})
+    r_iss = client.post("/api/claims/CLM-DUMMY/issue-approval", json={"amount_paise": 100000})
     assert r_iss.status_code == 400
     assert "disabled" in r_iss.json()["detail"].lower()
 
@@ -340,7 +340,7 @@ def test_provenance_api_endpoints():
     client = TestClient(app)
 
     # 1. Pubkey endpoint
-    r_pk = client.get("/provenance/pubkey")
+    r_pk = client.get("/api/provenance/pubkey")
     assert r_pk.status_code == 200
     assert "BEGIN PUBLIC KEY" in r_pk.text
 
@@ -365,7 +365,7 @@ def test_provenance_api_endpoints():
     )
     db_service.save_claim(claim)
 
-    r_issue = client.post(f"/claims/{claim_id}/issue-approval", json={"amount_paise": 5000000, "notes": "Approved."})
+    r_issue = client.post(f"/api/claims/{claim_id}/issue-approval", json={"amount_paise": 5000000, "notes": "Approved."})
     assert r_issue.status_code == 200
     issue_data = r_issue.json()
     assert issue_data["amount_paise"] == 5000000
@@ -377,7 +377,7 @@ def test_provenance_api_endpoints():
 
     # 3. Verify genuine document via API
     files = {"file": ("issued_sanction.pdf", r_dl.content, "application/pdf")}
-    r_verify = client.post("/provenance/verify", files=files, data={"claim_id": claim_id})
+    r_verify = client.post("/api/provenance/verify", files=files, data={"claim_id": claim_id})
     assert r_verify.status_code == 200
     verify_data = r_verify.json()
     assert verify_data["status"] == "verified"

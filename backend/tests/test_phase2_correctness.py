@@ -122,12 +122,12 @@ def test_production_routing_api_and_health():
 
     r_claims_root = client.get("/claims", headers=AUTH_HEADERS)
     r_claims_api = client.get("/api/claims", headers=AUTH_HEADERS)
-    assert r_claims_root.status_code == 200
+    assert r_claims_root.status_code == 404
     assert r_claims_api.status_code == 200
 
     r_pubkey_root = client.get("/provenance/pubkey", headers=AUTH_HEADERS)
     r_pubkey_api = client.get("/api/provenance/pubkey", headers=AUTH_HEADERS)
-    assert r_pubkey_root.status_code == 200
+    assert r_pubkey_root.status_code == 404
     assert r_pubkey_api.status_code == 200
     assert b"BEGIN PUBLIC KEY" in r_pubkey_api.content
 
@@ -236,12 +236,12 @@ def test_claims_pagination_and_error_handling():
     and invalid date strings produce a 400 Bad Request instead of 500.
     """
     # Test pagination
-    r_page1 = client.get("/claims?limit=2&offset=0", headers=AUTH_HEADERS)
+    r_page1 = client.get("/api/claims?limit=2&offset=0", headers=AUTH_HEADERS)
     assert r_page1.status_code == 200
     claims_p1 = r_page1.json()
     assert len(claims_p1) <= 2
 
-    r_page2 = client.get("/claims?limit=2&offset=2", headers=AUTH_HEADERS)
+    r_page2 = client.get("/api/claims?limit=2&offset=2", headers=AUTH_HEADERS)
     assert r_page2.status_code == 200
     claims_p2 = r_page2.json()
 
@@ -251,7 +251,7 @@ def test_claims_pagination_and_error_handling():
 
     # Test invalid date parsing returns 400 Bad Request
     r_bad_date = client.post(
-        "/claims",
+        "/api/claims",
         data={
             "claimant_name": "Test Patient",
             "admission_ts": "NOT-A-DATE",

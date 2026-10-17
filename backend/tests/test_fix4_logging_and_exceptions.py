@@ -272,3 +272,53 @@ def test_simulated_warehouse_crossref_outage(clean_base_claim):
 
         statuses = db_service.get_agent_statuses(clean_base_claim.claim_id)
         assert statuses.get("crossref") == "error"
+
+
+# ==============================================================================
+# 4. AST LINT TEST: NO SILENT EXCEPTION SWALLOWING IN BACKEND
+# ==============================================================================
+
+def test_no_silent_exception_swallowing_in_backend():
+    """
+    AST lint test over backend/ ensuring zero silent broad exception swallowing
+    ('except Exception: pass' or bare 'except: pass') ever re-enters the codebase.
+    """
+    import os
+    import ast
+    from pathlib import Path
+
+    backend_dir = Path(__file__).resolve().parent.parent
+    violations = []
+
+    for root, dirs, files in os.walk(backend_dir):
+        for f in files:
+            if f.endswith(".py"):
+                path = Path(root) / f
+                rel_path = path.relative_to(backend_dir.parent)
+                with open(path, "r", encoding="utf-8") as fh:
+                    content = fh.read()
+                try:
+                    tree = ast.parse(content, filename=str(path))
+                except SyntaxError:
+                    continue
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Try):
+                        for handler in node.handlers:
+                            # Check if handler body is just a Pass
+                            is_silent = (
+                                len(handler.body) == 1 and
+                                (isinstance(handler.body[0], ast.Pass) or
+                                 (isinstance(handler.body[0], ast.Expr) and isinstance(getattr(handler.body[0], "value", None), ast.Constant) and handler.body[0].value.value is ...))
+                            )
+                            if is_silent:
+                                is_broad = False
+                                if handler.type is None:
+                                    is_broad = True
+                                elif isinstance(handler.type, ast.Name) and handler.type.id in ("Exception", "BaseException"):
+                                    is_broad = True
+
+                                if is_broad:
+                                    violations.append(f"{rel_path}:{handler.lineno} silent broad exception pass")
+
+    assert not violations, f"Found {len(violations)} silent exception swallowing sites:\n" + "\n".join(violations)

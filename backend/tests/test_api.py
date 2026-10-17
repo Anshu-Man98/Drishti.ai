@@ -80,7 +80,7 @@ def test_allow_dev_tokens_enforcement(monkeypatch):
 
     try:
         # Dev token should now fail with 401
-        res = client.get("/claims", headers={"Authorization": "Bearer adjuster-token"})
+        res = client.get("/api/claims", headers={"Authorization": "Bearer adjuster-token"})
         assert res.status_code == 401
         assert "Invalid authentication token" in res.json().get("detail", "")
     finally:
@@ -94,7 +94,7 @@ def test_allow_dev_tokens_enforcement(monkeypatch):
 
 def test_claims_crud_flow():
     # 1. List claims (should return empty or list)
-    resp = client.get("/claims")
+    resp = client.get("/api/claims")
     assert resp.status_code == 200
     initial_claims = resp.json()
 
@@ -129,14 +129,14 @@ def test_claims_crud_flow():
     c.save()
     test_files = [("files", ("invoice.pdf", io.BytesIO(buf.getvalue()), "application/pdf"))]
 
-    create_resp = client.post("/claims", data=claim_payload, files=test_files)
+    create_resp = client.post("/api/claims", data=claim_payload, files=test_files)
     assert create_resp.status_code == 200
     create_data = create_resp.json()
     claim_id = create_data["claim_id"]
     assert claim_id.startswith("CLM-")
 
     # 3. Retrieve claim
-    get_resp = client.get(f"/claims/{claim_id}")
+    get_resp = client.get(f"/api/claims/{claim_id}")
     assert get_resp.status_code == 200
     claim_data = get_resp.json()
     assert claim_data["claim_id"] == claim_id
@@ -145,7 +145,7 @@ def test_claims_crud_flow():
     assert claim_data["total_claimed"] == 89250.0
 
     # 4. Trigger analyze
-    analyze_resp = client.post(f"/claims/{claim_id}/analyze")
+    analyze_resp = client.post(f"/api/claims/{claim_id}/analyze")
     assert analyze_resp.status_code == 200
     dossier = analyze_resp.json()
     assert dossier["claim_id"] == claim_id
@@ -153,7 +153,7 @@ def test_claims_crud_flow():
     assert "verdict" in dossier
 
     # 5. Retrieve dossier
-    dossier_resp = client.get(f"/claims/{claim_id}/dossier")
+    dossier_resp = client.get(f"/api/claims/{claim_id}/dossier")
     assert dossier_resp.status_code == 200
     assert dossier_resp.json()["claim_id"] == claim_id
 
@@ -161,7 +161,7 @@ def test_claims_crud_flow():
 def test_fraud_rings_graph_endpoint():
     """Validates that GET /graph/rings queries BigQuery and returns nodes, edges, and real claims."""
     headers = {"Authorization": "Bearer test-token"}
-    response = client.get("/graph/rings", headers=headers)
+    response = client.get("/api/graph/rings", headers=headers)
     assert response.status_code == 200
     data = response.json()
 

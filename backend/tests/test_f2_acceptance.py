@@ -144,7 +144,7 @@ def test_api_page_image_and_entities_endpoints():
     # 1. Upload G1 via API
     with open(g1_path, "rb") as f:
         resp = client.post(
-            "/claims",
+            "/api/claims",
             files={"files": ("G1_clean_claim.pdf", f, "application/pdf")},
             data={"policy_id": "POL-AROGYA-88124", "insurer_id": "INS-HDFC"}
         )
@@ -152,13 +152,13 @@ def test_api_page_image_and_entities_endpoints():
     claim_id = resp.json()["claim_id"]
 
     # 2. Test GET /claims/{id}/pages/1
-    page_resp = client.get(f"/claims/{claim_id}/pages/1")
+    page_resp = client.get(f"/api/claims/{claim_id}/pages/1")
     assert page_resp.status_code == 200
     assert page_resp.headers["content-type"] == "image/png"
     assert len(page_resp.content) > 10000
 
     # 3. Test GET /claims/{id}/entities
-    ent_resp = client.get(f"/claims/{claim_id}/entities")
+    ent_resp = client.get(f"/api/claims/{claim_id}/entities")
     assert ent_resp.status_code == 200
     ent_data = ent_resp.json()
     assert "entities" in ent_data

@@ -13,6 +13,7 @@ import re
 import json
 import base64
 import hashlib
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List, Union
@@ -29,6 +30,8 @@ from cryptography.hazmat.primitives import serialization
 
 from backend.app.config import settings
 from backend.app.services.db import db_service
+
+logger = logging.getLogger("finshield.services.provenance")
 
 PUBKEY_PATH = Path(__file__).resolve().parent.parent.parent / "infra" / "provenance_pubkey.pem"
 
@@ -447,8 +450,8 @@ def verify_document(
                 envelope_json = base64.b64decode(prov_b64).decode('utf-8')
                 envelope = json.loads(envelope_json)
                 recovered_carrier = "xmp"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Carrier 1 (XMP/Metadata) extraction failed: %s", e)
 
     # Step 2: Check Carrier 2 (LSB Steganography from letterhead band) if Carrier 1 missing
     if not envelope:
@@ -465,7 +468,8 @@ def verify_document(
                             envelope = json.loads(dec.decode('utf-8'))
                             recovered_carrier = "lsb"
                             break
-                    except Exception:
+                    except Exception as err:
+                        logger.debug("LSB extraction from page image failed: %s", err)
                         continue
 
             # Fallback for Carrier 2: Rasterize page 1 at 150 DPI and inspect top 15%
@@ -490,8 +494,8 @@ def verify_document(
                     finally:
                         if doc:
                             doc.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Carrier 2 (LSB letterhead) extraction failed: %s", e)
 
     # ==========================================================================
     # EVALUATE RECOVERED CARRIER
@@ -508,8 +512,8 @@ def verify_document(
         if getattr(settings, "FINSHIELD_PROVENANCE_KEY", None) or os.getenv("FINSHIELD_PROVENANCE_KEY"):
             try:
                 candidate_pubkeys.append(get_signing_key().public_key())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Could not derive public key from signing key: %s", e)
 
         sig_valid = False
         for pubkey in candidate_pubkeys:
@@ -517,7 +521,8 @@ def verify_document(
                 pubkey.verify(sig_bytes, payload_bytes)
                 sig_valid = True
                 break
-            except Exception:
+            except Exception as e:
+                logger.debug("Candidate pubkey verification failed: %s", e)
                 continue
 
         if not sig_valid:
@@ -638,8 +643,8 @@ def verify_document(
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             text = " ".join([page.extract_text() or "" for page in pdf.pages])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to extract text via pdfplumber for sanction check: %s", e)
 
     target_claim_id = claim_id
     if not target_claim_id:
@@ -698,8 +703,8 @@ def _extract_semantic_fields_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for page in pdf.pages:
                 full_text += (page.extract_text() or "") + "\n"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to extract full text via pdfplumber: %s", e)
 
     # Extract Sanctioned Amount: INR X,XXX.XX or ₹ X,XXX.XX
     m_amt = re.search(r"(?:SANCTIONED DISBURSEMENT AMOUNT|Sanctioned Amount)[:\s]*INR\s*([\d,]+(?:\.\d{2})?)", full_text, re.IGNORECASE)
@@ -712,8 +717,8 @@ def _extract_semantic_fields_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
         try:
             amt_val = float(m_amt.group(1).replace(",", ""))
             fields["amount_paise"] = int(round(amt_val * 100))
-        except Exception:
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Failed to parse numeric amount from '%s': %s", m_amt.group(1), e)
 
     # Extract Claim Reference
     m_clm = re.search(r"Claim Reference\s*([A-Za-z0-9_\-]+)", full_text, re.IGNORECASE)

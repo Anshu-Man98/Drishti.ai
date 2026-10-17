@@ -70,8 +70,8 @@ class BigQueryWarehouse:
             if results and results[0].rate is not None:
                 self._baseline_fraud_rate = round(float(results[0].rate), 4)
                 return self._baseline_fraud_rate
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not query baseline fraud rate from BigQuery claims warehouse: %s; using default baseline 0.1216", e)
         self._baseline_fraud_rate = 0.1216
         return self._baseline_fraud_rate
 

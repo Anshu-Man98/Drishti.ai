@@ -101,14 +101,15 @@ class DatabaseService:
                 for d_doc in self.client.get_all(dossier_refs):
                     if d_doc.exists:
                         dossiers_map[d_doc.id] = d_doc.to_dict()
-            except Exception:
+            except Exception as e:
+                logger.warning("Batch get_all failed for dossiers, falling back to individual gets: %s", e)
                 for ref in dossier_refs:
                     try:
                         d_doc = ref.get()
                         if d_doc.exists:
                             dossiers_map[d_doc.id] = d_doc.to_dict()
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.warning("Could not fetch individual dossier for %s: %s", getattr(ref, "id", "unknown"), err)
 
             summaries: List[ClaimSummary] = []
             for doc in docs:

@@ -17,7 +17,7 @@ import pytest
 from datetime import datetime
 
 from backend.app.schemas import Claim, LineItem, Provider, Claimant, Document, DocType, Verdict
-from backend.tools.arithmetic import validate_arithmetic, check_dates
+from backend.tools.registry import validate_arithmetic, check_dates
 from backend.tools.policy_tools import check_policy_caps, search_policy
 from backend.tools.forensics_tools import pdf_metadata_check, font_consistency_check
 from backend.tools.scoring import score_findings
@@ -33,11 +33,11 @@ def test_tool_arithmetic_clean_and_mismatched():
         {"description": "Room Rent", "qty": 3, "unit_price": 4000.0, "amount": 12000.0},
         {"description": "Surgery", "qty": 1, "unit_price": 50000.0, "amount": 50000.0}
     ]
-    findings = validate_arithmetic(items, subtotal=62000.0, tax=3100.0, total=65100.0)
+    findings = validate_arithmetic(items, subtotal=62000.0, tax=3100.0, total=65100.0)["findings"]
     assert len(findings) == 0, "Clean arithmetic should emit 0 findings"
 
     # Mismatched total (e.g. G2)
-    findings_bad = validate_arithmetic(items, subtotal=62000.0, tax=3100.0, total=85000.0)
+    findings_bad = validate_arithmetic(items, subtotal=62000.0, tax=3100.0, total=85000.0)["findings"]
     assert len(findings_bad) >= 1
     total_finding = next((f for f in findings_bad if f.check_id == "TOTAL_PAYABLE_MISMATCH"), None)
     assert total_finding is not None

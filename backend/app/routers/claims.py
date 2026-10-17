@@ -495,8 +495,8 @@ def get_claim_page_image(claim_id: str, page_num: int = 1):
     try:
         content = storage_service.read_file(page_uri)
         return Response(content=content, media_type="image/png")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Page image not in cache for claim %s page %s, attempting on-the-fly rendering: %s", claim_id, page_num, e)
 
     # Render on the fly from document if not already cached
     claim = db_service.get_claim(claim_id)
@@ -651,7 +651,7 @@ async def issue_claim_approval(
     claim.documents.append(new_doc)
     db_service.save_claim(claim)
 
-    download_url = f"/claims/{claim_id}/documents/{doc_id}"
+    download_url = f"/api/claims/{claim_id}/documents/{doc_id}"
 
     return IssueApprovalResponse(
         download_url=download_url,

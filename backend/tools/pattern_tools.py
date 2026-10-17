@@ -79,8 +79,7 @@ def register_learned_pattern(pattern: Dict[str, Any]) -> Dict[str, Any]:
             if errors:
                 logger.error("BigQuery insert error for learned pattern: %s", errors)
         except Exception as e:
-            # Non-blocking for offline/test environments
-            pass
+            logger.debug("Non-blocking insert of learned pattern to BigQuery failed: %s", e)
 
     return standardized_pattern
 
@@ -123,8 +122,8 @@ def _load_pattern_catalog() -> List[Dict[str, Any]]:
                     "signature": p.get("signature") or str(p.get("feature_signatures") or ""),
                     "typical_severity": p.get("typical_severity") or "HIGH",
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed retrieving persisted learned patterns from DB: %s", e)
 
     # Merge in-memory runtime learned patterns
     for p in _RUNTIME_LEARNED_PATTERNS:
@@ -321,8 +320,7 @@ def search_patterns(
             if results:
                 return results
         except Exception as e:
-            # Fall back seamlessly to local knowledge base
-            pass
+            logger.debug("Vertex Discovery Engine search failed (%s), falling back to local catalog: %s", type(e).__name__, e)
 
     # Deterministic local knowledge base search
     catalog = _load_pattern_catalog()

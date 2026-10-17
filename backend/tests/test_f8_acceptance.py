@@ -56,7 +56,7 @@ def test_chat_g2_why_was_this_flagged_cites_arithmetic_finding():
     claim_id = setup_claim_in_db("G2")
 
     response = client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "Why was this flagged?"}
     )
@@ -91,7 +91,7 @@ def test_chat_off_topic_question_polite_refusal():
     claim_id = setup_claim_in_db("G2")
 
     response = client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "What is the capital of France?"}
     )
@@ -112,7 +112,7 @@ def test_chat_which_policy_clause_applies_on_g3():
     claim_id = setup_claim_in_db("G3")
 
     response = client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "Which policy clause applies?"}
     )
@@ -131,7 +131,7 @@ def test_chat_strongest_evidence_on_g6():
     claim_id = setup_claim_in_db("G6")
 
     response = client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "What's the strongest evidence?"}
     )
@@ -150,7 +150,7 @@ def test_chat_sse_streaming_protocol():
     claim_id = setup_claim_in_db("G1")
 
     response = client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "text/event-stream"},
         json={"message": "Why was this flagged?"}
     )
@@ -191,20 +191,20 @@ def test_chat_history_persistence():
 
     # Send 1st question
     client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "Why was this flagged?"}
     )
 
     # Send 2nd question
     client.post(
-        f"/claims/{claim_id}/chat",
+        f"/api/claims/{claim_id}/chat",
         headers={"Accept": "application/json"},
         json={"message": "What should I verify next?"}
     )
 
     # Fetch history
-    history_resp = client.get(f"/claims/{claim_id}/chat")
+    history_resp = client.get(f"/api/claims/{claim_id}/chat")
     assert history_resp.status_code == 200
     messages = history_resp.json()
 

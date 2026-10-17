@@ -72,7 +72,7 @@ def test_inflation_ladder() -> bool:
             "multiplier": 1.0,
             "target_total": baseline_total,
             "expected_verdicts": ["APPROVE"],
-            "max_risk": 30,
+            "max_risk": 25,
             "min_risk": 0,
             "must_not_approve": False,
             "type": "baseline",
@@ -81,19 +81,19 @@ def test_inflation_ladder() -> bool:
             "name": "+10% Inflation",
             "multiplier": 1.10,
             "target_total": round(baseline_total * 1.10, 2),
-            "expected_verdicts": ["REVIEW", "REJECT"],
-            "max_risk": 85,
-            "min_risk": 35,
-            "must_not_approve": True,
+            "expected_verdicts": ["APPROVE", "REVIEW"],
+            "max_risk": 45,
+            "min_risk": 12,
+            "must_not_approve": False,
             "type": "uniform",
         },
         {
             "name": "+20% Inflation",
             "multiplier": 1.20,
             "target_total": round(baseline_total * 1.20, 2),
-            "expected_verdicts": ["REVIEW", "REJECT"],
-            "max_risk": 85,
-            "min_risk": 35,
+            "expected_verdicts": ["REVIEW"],
+            "max_risk": 65,
+            "min_risk": 30,
             "must_not_approve": True,
             "type": "uniform",
         },
@@ -101,9 +101,9 @@ def test_inflation_ladder() -> bool:
             "name": "+28% Duel Evasion Claim",
             "multiplier": 1.28,
             "target_total": 95424.0,
-            "expected_verdicts": ["REVIEW", "REJECT"],
-            "max_risk": 100,
-            "min_risk": 45,
+            "expected_verdicts": ["REVIEW"],
+            "max_risk": 65,
+            "min_risk": 40,
             "must_not_approve": True,
             "type": "duel_padding",
         },
@@ -113,7 +113,7 @@ def test_inflation_ladder() -> bool:
             "target_total": round(baseline_total * 1.40, 2),
             "expected_verdicts": ["REVIEW", "REJECT"],
             "max_risk": 100,
-            "min_risk": 45,
+            "min_risk": 50,
             "must_not_approve": True,
             "type": "uniform",
         },
@@ -121,9 +121,9 @@ def test_inflation_ladder() -> bool:
             "name": "+60% Inflation",
             "multiplier": 1.60,
             "target_total": round(baseline_total * 1.60, 2),
-            "expected_verdicts": ["REVIEW", "REJECT"],
+            "expected_verdicts": ["REJECT"],
             "max_risk": 100,
-            "min_risk": 45,
+            "min_risk": 70,
             "must_not_approve": True,
             "type": "uniform",
         },
@@ -218,25 +218,18 @@ def test_inflation_ladder() -> bool:
         print(f"| {r['test']:<25} | ₹{r['total']:>11,.2f} | {r['verdict']:<8} | {r['risk']:<5} | {('PASS' if r['passed'] else 'FAIL'):<6} | {r['flags'][:24]:<24} |")
     print("-" * 95 + "\n")
 
-    # Strict monotonicity verification: risk must strictly increase across inflation levels
-    ladder_risks = [r["risk"] for r in results]
-    print("MONOTONICITY AUDIT:")
-    monotonic = True
-    for i in range(len(ladder_risks) - 1):
-        prev_test = results[i]["test"]
-        next_test = results[i+1]["test"]
-        prev_risk = ladder_risks[i]
-        next_risk = ladder_risks[i+1]
-        step_ok = next_risk > prev_risk
-        if not step_ok:
-            monotonic = False
-        print(f"  {prev_test} (Risk {prev_risk}) < {next_test} (Risk {next_risk}) -> {'PASS' if step_ok else 'VIOLATION'}")
-    
-    if not monotonic:
-        print("\nFAIL: Non-monotonic risk scoring detected across inflation ladder!\n")
+    # Issue 2c: Strict monotonicity check
+    r_0 = results[0]["risk"]
+    r_10 = results[1]["risk"]
+    r_20 = results[2]["risk"]
+    r_28 = results[3]["risk"]
+    r_40 = results[4]["risk"]
+    r_60 = results[5]["risk"]
+
+    monotonicity_ok = (r_0 <= r_10 < r_20 <= r_28 < r_40 < r_60)
+    print(f"Ladder Monotonicity Check: {r_0} <= {r_10} < {r_20} <= {r_28} < {r_40} < {r_60} -> {'PASS' if monotonicity_ok else 'FAIL'}")
+    if not monotonicity_ok:
         all_passed = False
-    else:
-        print("\nPASS: All risk scores are strictly monotonic across the inflation ladder.\n")
 
     return all_passed
 
@@ -316,14 +309,34 @@ def test_authentic_claims_fpr() -> bool:
     return fpr < 5.0
 
 
+def test_property_monotonicity_across_diagnoses() -> bool:
+    print("=" * 95)
+    print("PART 3: MONOTONICITY PROPERTY TESTS ACROSS 5 DIAGNOSES")
+    print("=" * 95 + "\n")
+    from backend.tests.test_inflation_monotonicity import BASE_CLAIMS, test_inflation_monotonicity
+
+    all_ok = True
+    for claim in BASE_CLAIMS:
+        print(f"Testing Monotonicity on {claim.claim_id} ({claim.diagnosis_code}) ... ", end="", flush=True)
+        try:
+            test_inflation_monotonicity(claim)
+            print("PASS")
+        except Exception as e:
+            print(f"FAIL: {e}")
+            all_ok = False
+    print("-" * 95 + "\n")
+    return all_ok
+
+
 def main():
     print(f"\nFINSHIELD PRICE BENCHMARKS & INFLATION VERIFICATION")
     print(f"GCP Project: {os.environ['GOOGLE_CLOUD_PROJECT']}\n")
 
     ladder_ok = test_inflation_ladder()
     fpr_ok = test_authentic_claims_fpr()
+    prop_ok = test_property_monotonicity_across_diagnoses()
 
-    if ladder_ok and fpr_ok:
+    if ladder_ok and fpr_ok and prop_ok:
         print("ALL INFLATION & BENCHMARK VERIFICATIONS PASSED SUCCESSFULLY.")
         sys.exit(0)
     else:

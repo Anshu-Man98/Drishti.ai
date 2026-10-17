@@ -38,7 +38,7 @@ jobs:
           DOCUMENTAI_PROCESSOR_ID: "projects/finshield-dev/locations/us/processors/test-processor"
           FINSHIELD_PROVENANCE_KEY: "test-provenance-key-32-bytes-ok!"
         run: |
-          pytest backend/tests -q
+          pytest backend/tests --cov=backend/app --cov=backend/agents --cov=backend/tools --cov=backend/services --cov-report=term --cov-fail-under=80 -q
 
   frontend-build:
     name: Frontend Build Check

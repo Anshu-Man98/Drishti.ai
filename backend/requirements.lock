@@ -38,6 +38,8 @@ click==8.5.0
     #   uvicorn
 cloudpickle==3.1.2
     # via joblib
+coverage==7.16.2
+    # via pytest-cov
 cryptography==50.0.2
     # via
     #   -r backend/requirements.txt
@@ -198,7 +200,9 @@ pillow==13.0.0
     #   pdfplumber
     #   reportlab
 pluggy==1.7.0
-    # via pytest
+    # via
+    #   pytest
+    #   pytest-cov
 proto-plus==1.29.0
     # via
     #   google-api-core
@@ -243,6 +247,10 @@ pypdfium2==5.14.0
     #   -r backend/requirements.txt
     #   pdfplumber
 pytest==9.1.1
+    # via
+    #   -r backend/requirements.txt
+    #   pytest-cov
+pytest-cov==7.1.0
     # via -r backend/requirements.txt
 python-dateutil==2.9.0.post0
     # via

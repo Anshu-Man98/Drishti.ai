@@ -55,14 +55,15 @@ class DatabaseService:
             )
         return self._fs_client
 
-    def _call_fs(self, func: Any, *args: Any, timeout: float = 15.0, **kwargs: Any) -> Any:
+    def _call_fs(self, func: Any, *args: Any, timeout: float = 15.0, max_retries: Optional[int] = None, **kwargs: Any) -> Any:
         from backend.app.services.cloud_call import cloud_call
+        retries = max_retries if max_retries is not None else settings.CLOUD_CALL_MAX_RETRIES
         return cloud_call(
             func,
             *args,
             service="firestore",
             timeout=timeout,
-            max_retries=settings.CLOUD_CALL_MAX_RETRIES,
+            max_retries=retries,
             **kwargs
         )
 
@@ -261,15 +262,13 @@ class DatabaseService:
                     "agent_name": agent_name,
                     "updated_at": now
                 },
-                timeout=10.0
+                timeout=5.0,
+                max_retries=1
             )
         except Exception as e:
-            if isinstance(e, CloudServiceError):
-                raise
-            raise CloudServiceError(
-                service="firestore",
-                message=f"Failed to update agent status for '{claim_id}/{agent_name}' in Firestore: {e}",
-                retryable=True
+            logger.warning(
+                "Failed to update agent status for '%s/%s' in Firestore: %s",
+                claim_id, agent_name, e
             )
 
     def get_agent_statuses(self, claim_id: str) -> Dict[str, str]:

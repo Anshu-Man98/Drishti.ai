@@ -720,7 +720,7 @@ def run_claims_fraud_pipeline(
                 pol_findings = f_pol.result()
             except Exception as e:
                 logger.error("[Pipeline] Policy thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-                pol_findings = [Finding(finding_id="F-ERR-POL-THR", agent=AgentName.POLICY, check_id="AGENT_FAILED:policy", severity=Severity.HIGH, title="Policy specialist execution error", explanation=str(e))]
+                pol_findings = [Finding(finding_id="F-ERR-POL-THR", agent=AgentName.POLICY, check_id="AGENT_FAILED:policy", severity=Severity.HIGH, title="Policy specialist execution error", explanation=str(e), confidence=1.0)]
                 db_service.set_agent_status(claim_id, "policy", "error")
         else:
             pol_findings = []
@@ -730,7 +730,7 @@ def run_claims_fraud_pipeline(
                 cross_findings = f_cross.result()
             except Exception as e:
                 logger.error("[Pipeline] Crossref thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-                cross_findings = [Finding(finding_id="F-ERR-CROSS-THR", agent=AgentName.CROSSREF, check_id="AGENT_FAILED:crossref", severity=Severity.HIGH, title="Crossref specialist execution error", explanation=str(e))]
+                cross_findings = [Finding(finding_id="F-ERR-CROSS-THR", agent=AgentName.CROSSREF, check_id="AGENT_FAILED:crossref", severity=Severity.HIGH, title="Crossref specialist execution error", explanation=str(e), confidence=1.0)]
                 db_service.set_agent_status(claim_id, "crossref", "error")
         else:
             cross_findings = []
@@ -740,7 +740,7 @@ def run_claims_fraud_pipeline(
                 space_findings, timeline = f_space.result()
             except Exception as e:
                 logger.error("[Pipeline] Spacetime thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-                space_findings, timeline = [Finding(finding_id="F-ERR-SPACE-THR", agent=AgentName.SPACETIME, check_id="AGENT_FAILED:spacetime", severity=Severity.HIGH, title="Spacetime specialist execution error", explanation=str(e))], []
+                space_findings, timeline = [Finding(finding_id="F-ERR-SPACE-THR", agent=AgentName.SPACETIME, check_id="AGENT_FAILED:spacetime", severity=Severity.HIGH, title="Spacetime specialist execution error", explanation=str(e), confidence=1.0)], []
                 db_service.set_agent_status(claim_id, "spacetime", "error")
         else:
             space_findings, timeline = [], []
@@ -750,7 +750,7 @@ def run_claims_fraud_pipeline(
                 ml_prob, baseline_ml_prob, top_ml_features, ml_findings = f_ml.result()
             except Exception as e:
                 logger.error("[Pipeline] ML thread execution failure for claim %s: %s", claim_id, e, exc_info=True)
-                ml_prob, baseline_ml_prob, top_ml_features, ml_findings = None, None, [], [Finding(finding_id="F-ERR-ML-THR", agent=AgentName.ML, check_id="AGENT_FAILED:ml", severity=Severity.HIGH, title="ML specialist execution error", explanation=str(e))]
+                ml_prob, baseline_ml_prob, top_ml_features, ml_findings = None, None, [], [Finding(finding_id="F-ERR-ML-THR", agent=AgentName.ML, check_id="AGENT_FAILED:ml", severity=Severity.HIGH, title="ML specialist execution error", explanation=str(e), confidence=1.0)]
                 db_service.set_agent_status(claim_id, "ml", "error")
         else:
             ml_prob, baseline_ml_prob, top_ml_features, ml_findings = None, None, [], []
@@ -836,7 +836,25 @@ def run_claims_fraud_pipeline(
                     best_pattern.get("fraud_type") == "learned_evasion" or
                     "PAT-LEARNED-" in best_pattern.get("pattern_id", "")
                 )
-                sev = Severity.HIGH if is_learned or best_pattern.get("typical_severity") in ("HIGH", "CRITICAL") else Severity.LOW
+                is_duel_claim = claim.source == "duel" or (
+                    hasattr(claim, "metadata") and isinstance(claim.metadata, dict) and bool(claim.metadata.get("duel_id"))
+                )
+                has_independent_findings = any(
+                    f.severity in (Severity.HIGH, Severity.CRITICAL)
+                    and f.agent != AgentName.RAG
+                    and f.check_id != "ungrounded_number"
+                    for f in all_findings
+                )
+                # A learned or historical pattern alone is corroboration (low/medium)
+                # and must never push a claim from APPROVE to REVIEW or REJECT unless an independent finding already exists.
+                # In an active adversarial duel, matching the learned evasion catches the fraudster's evasion in round 3.
+                if is_learned and is_duel_claim:
+                    sev = Severity.HIGH
+                elif has_independent_findings and (is_learned or best_pattern.get("typical_severity") in ("HIGH", "CRITICAL")):
+                    sev = Severity.HIGH
+                else:
+                    sev = Severity.LOW
+
                 pat_title = (
                     f"Learned Adversarial Evasion Match ({best_pattern['pattern_id']})"
                     if is_learned else
@@ -867,7 +885,8 @@ def run_claims_fraud_pipeline(
                         "pattern_id": best_pattern["pattern_id"],
                         "fraud_type": best_pattern["fraud_type"],
                         "match_score": best_pattern["score"],
-                        "is_learned_evasion": is_learned
+                        "is_learned_evasion": is_learned,
+                        "is_duel_claim": is_duel_claim
                     }
                 ))
             db_service.set_agent_status(claim_id, "rag", "done")

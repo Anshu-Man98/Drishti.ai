@@ -135,8 +135,25 @@ def validate_arithmetic(
         }
 
 
+    # Check whether printed subtotal and total exist
+    has_printed_subtotal = (subtotal is not None and float(subtotal) > 0)
+    has_printed_total = (total is not None and float(total) > 0)
+
+    # Calculate sum of claimed line amounts
+    calculated_subtotal_paise = sum(to_paise(item.get("amount", 0.0)) for item in line_items)
+    calc_sub_rupees = to_rupees(calculated_subtotal_paise)
+    sub_rupees = subtotal if subtotal is not None else 0.0
+    tax_rupees = tax if tax is not None else 0.0
+    tot_rupees = total if total is not None else 0.0
+
+    subtotal_diff_paise = abs(calculated_subtotal_paise - stated_subtotal_paise) if has_printed_subtotal else 0
+    expected_total_paise = stated_subtotal_paise + stated_tax_paise if has_printed_subtotal else calculated_subtotal_paise + stated_tax_paise
+    total_diff_paise = abs(expected_total_paise - stated_total_paise) if (has_printed_total and has_printed_subtotal) else 0
+
+    # Internal mathematical consistency of the printed invoice totals
+    totals_reconciled = has_printed_subtotal and has_printed_total and (subtotal_diff_paise <= tolerance_paise) and (total_diff_paise <= tolerance_paise)
+
     # 1. Validate qty * unit_price == amount for each line item
-    calculated_subtotal_paise = 0
     for idx, item in enumerate(line_items):
         desc = item.get("description", f"Line item {idx+1}")
         qty = float(item.get("qty", 1.0))
@@ -151,40 +168,68 @@ def validate_arithmetic(
         if diff_item_paise > tolerance_paise:
             diff_item_val = to_rupees(diff_item_paise)
             pct_item = (diff_item_val / max(1.0, amount)) * 100.0
-            item_sev = calculate_arithmetic_severity(diff_item_val, pct_item)
 
-            findings.append(Finding(
-                finding_id=f"F-MATH-ITEM-{idx+1}",
-                agent=AgentName.POLICY,
-                check_id="LINE_ITEM_MATH_MISMATCH",
-                severity=item_sev,
-                title=f"Calculation mismatch in line item: {desc}",
-                explanation=(
-                    f"Line item '{desc}' claims ₹{amount:,.2f}, but {qty} × ₹{unit_price:,.2f} "
-                    f"equals ₹{to_rupees(expected_amount_paise):,.2f} (Discrepancy: ₹{to_rupees(diff_item_paise):,.2f})."
-                ),
-                evidence=[Evidence(
-                    doc_id=doc_id,
-                    page=item.get("page", page),
-                    bbox=item_bbox,
-                    quote=f"{desc}: claimed {amount}, expected {to_rupees(expected_amount_paise)}"
-                )],
-                confidence=1.0,
-                computed_chip=f"{qty} × ₹{unit_price:,.0f} ≠ ₹{amount:,.0f} (Δ ₹{to_rupees(diff_item_paise):,.0f})",
-                computed_details={
-                    "qty": qty,
-                    "unit_price_paise": to_paise(unit_price),
-                    "claimed_amount_paise": claimed_amount_paise,
-                    "expected_amount_paise": expected_amount_paise,
-                    "diff_paise": diff_item_paise
-                }
-            ))
-
-        calculated_subtotal_paise += claimed_amount_paise
-
-    # Check whether printed subtotal and total exist
-    has_printed_subtotal = (subtotal is not None and float(subtotal) > 0)
-    has_printed_total = (total is not None and float(total) > 0)
+            if totals_reconciled:
+                # If printed line amounts add up exactly to subtotal and subtotal + tax == total,
+                # a single-row quantity x price discrepancy is an EXTRACTION uncertainty:
+                # low severity "line quantity could not be verified", status stays complete, verdict unaffected
+                findings.append(Finding(
+                    finding_id=f"F-MATH-ITEM-{idx+1}",
+                    agent=AgentName.POLICY,
+                    check_id="LINE_QUANTITY_UNVERIFIED",
+                    severity=Severity.LOW,
+                    title=f"Line quantity could not be verified: {desc}",
+                    explanation=(
+                        f"Line item '{desc}' claims ₹{amount:,.2f} which reconciles with invoice subtotal, "
+                        f"but extracted quantity ({qty}) × unit price (₹{unit_price:,.2f}) equals "
+                        f"₹{to_rupees(expected_amount_paise):,.2f} (Discrepancy: ₹{to_rupees(diff_item_paise):,.2f}). "
+                        f"Treated as extraction uncertainty on document scan."
+                    ),
+                    evidence=[Evidence(
+                        doc_id=doc_id,
+                        page=item.get("page", page),
+                        bbox=item_bbox,
+                        quote=f"{desc}: claimed ₹{amount:,.2f}, expected {qty} × ₹{unit_price:,.2f} = ₹{to_rupees(expected_amount_paise):,.2f}"
+                    )],
+                    confidence=0.95,
+                    computed_chip=f"Unverified qty: {qty} × ₹{unit_price:,.0f} ≠ ₹{amount:,.0f}",
+                    computed_details={
+                        "qty": qty,
+                        "unit_price_paise": to_paise(unit_price),
+                        "claimed_amount_paise": claimed_amount_paise,
+                        "expected_amount_paise": expected_amount_paise,
+                        "diff_paise": diff_item_paise,
+                        "is_extraction_uncertainty": True
+                    }
+                ))
+            else:
+                item_sev = calculate_arithmetic_severity(diff_item_val, pct_item)
+                findings.append(Finding(
+                    finding_id=f"F-MATH-ITEM-{idx+1}",
+                    agent=AgentName.POLICY,
+                    check_id="LINE_ITEM_MATH_MISMATCH",
+                    severity=item_sev,
+                    title=f"Calculation mismatch in line item: {desc}",
+                    explanation=(
+                        f"Line item '{desc}' claims ₹{amount:,.2f}, but {qty} × ₹{unit_price:,.2f} "
+                        f"equals ₹{to_rupees(expected_amount_paise):,.2f} (Discrepancy: ₹{to_rupees(diff_item_paise):,.2f})."
+                    ),
+                    evidence=[Evidence(
+                        doc_id=doc_id,
+                        page=item.get("page", page),
+                        bbox=item_bbox,
+                        quote=f"{desc}: claimed {amount}, expected {to_rupees(expected_amount_paise)}"
+                    )],
+                    confidence=1.0,
+                    computed_chip=f"{qty} × ₹{unit_price:,.0f} ≠ ₹{amount:,.0f} (Δ ₹{to_rupees(diff_item_paise):,.0f})",
+                    computed_details={
+                        "qty": qty,
+                        "unit_price_paise": to_paise(unit_price),
+                        "claimed_amount_paise": claimed_amount_paise,
+                        "expected_amount_paise": expected_amount_paise,
+                        "diff_paise": diff_item_paise
+                    }
+                ))
 
     # 2. Check for missing printed totals (extraction / incompleteness issue)
     if not has_printed_total:
@@ -216,10 +261,8 @@ def validate_arithmetic(
         ))
 
     # 3. Validate sum(line_items) == subtotal when subtotal is present
-    subtotal_diff_paise = abs(calculated_subtotal_paise - stated_subtotal_paise) if has_printed_subtotal else 0
-    expected_total_paise = stated_subtotal_paise + stated_tax_paise if has_printed_subtotal else calculated_subtotal_paise + stated_tax_paise
-    total_diff_paise = abs(expected_total_paise - stated_total_paise) if (has_printed_total and has_printed_subtotal) else 0
     max_diff_paise = max(subtotal_diff_paise, total_diff_paise)
+
 
     # Compute formatting chip
     calc_sub_rupees = to_rupees(calculated_subtotal_paise)
@@ -299,9 +342,13 @@ def validate_arithmetic(
             }
         ))
 
-    match = has_printed_subtotal and has_printed_total and (subtotal_diff_paise <= tolerance_paise) and (total_diff_paise <= tolerance_paise)
+    match = totals_reconciled
     is_incomplete = extraction_incomplete or (not has_printed_total) or (not has_printed_subtotal and len(line_items) == 0)
-    status_str = "incomplete" if is_incomplete else ("valid" if len(findings) == 0 else "mismatch")
+    has_fraud_findings = any(f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_MATH_MISMATCH") for f in findings)
+    status_str = "incomplete" if is_incomplete else ("mismatch" if has_fraud_findings else "valid")
+
+
+
 
     computed = {
         "line_item_sum": calc_sub_rupees,

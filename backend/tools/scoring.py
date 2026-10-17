@@ -132,21 +132,25 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     Hybrid formula:
       final_risk_score = round(0.6 * agent_score + 40 * ml_probability)
     """
-    # Guardrail A4: A finding whose only evidence is a general retrieved pattern is capped at severity "low"
-    # and cannot by itself move a verdict from approve to reject.
-    # Active learned evasion patterns from the adversarial arena are exempt from this cap.
-    for f in findings:
-        is_learned = (
-            (f.computed_details and f.computed_details.get("is_learned_evasion")) or
-            (f.evidence and any("PAT-LEARNED-" in str(ev.doc_id) for ev in f.evidence)) or
-            "learned" in f.title.lower() or
-            f.check_id == "learned_evasion_match"
-        )
-        is_rag_pattern = ((f.agent == AgentName.RAG) or (
-            f.evidence and all(ev.layer == "retrieved" for ev in f.evidence)
-        )) and not is_learned
+    # Guardrail A4: A pattern finding (historical or learned) alone is corroboration (low/medium)
+    # and must never push a claim from APPROVE to REVIEW or REJECT unless an independent finding already exists.
+    # In an active adversarial duel, the learned evasion match catches the repeated mutation round.
+    has_independent_findings = any(
+        f.agent not in (AgentName.RAG, AgentName.ML)
+        and f.check_id != "ungrounded_number"
+        and f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
+        for f in findings
+    )
+    is_duel_claim = any(
+        bool(f.computed_details and f.computed_details.get("is_duel_claim"))
+        for f in findings
+    )
 
-        if is_rag_pattern:
+    for f in findings:
+        is_rag_pattern = (f.agent == AgentName.RAG) or (
+            f.evidence and all(ev.layer == "retrieved" for ev in f.evidence)
+        )
+        if is_rag_pattern and not (has_independent_findings or is_duel_claim):
             if f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL):
                 f.severity = Severity.LOW
 
@@ -197,10 +201,15 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         )
         for f in findings
     )
+    has_subtotal_mismatch = any(f.check_id == "SUBTOTAL_SUM_MISMATCH" and f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)
+    has_total_mismatch = any(f.check_id == "TOTAL_PAYABLE_MISMATCH" and f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)
+    has_totals_unreconciled = has_subtotal_mismatch or has_total_mismatch
+
     has_critical_arithmetic = any(
         f.severity == Severity.CRITICAL and (
-            f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH", "LINE_ITEM_MATH_MISMATCH")
-            or (f.agent == AgentName.POLICY and "ARITHMETIC" in f.check_id)
+            f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH")
+            or (f.check_id in ("LINE_ITEM_ARITHMETIC_MISMATCH", "LINE_ITEM_MATH_MISMATCH") and has_totals_unreconciled)
+            or (f.agent == AgentName.POLICY and "ARITHMETIC" in f.check_id and has_totals_unreconciled)
         )
         for f in findings
     )
@@ -210,9 +219,10 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
             "TOTAL_PAYABLE_MISMATCH",
             "LINE_ITEM_ARITHMETIC_MISMATCH",
             "LINE_ITEM_MATH_MISMATCH"
-        )
+        ) and (f.check_id not in ("LINE_ITEM_MATH_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH") or has_totals_unreconciled)
         for f in findings
     )
+
     has_medium_arithmetic = any(
         f.severity in (Severity.LOW, Severity.MEDIUM) and f.check_id in (
             "SUBTOTAL_SUM_MISMATCH",
@@ -280,11 +290,14 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         )
         for f in findings
     )
-    has_learned_pattern_match = any(
-        f.agent == AgentName.RAG and
-        f.check_id in ("matches_known_pattern", "learned_evasion_match") and
-        f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
-        for f in findings
+    has_learned_pattern_match = (
+        any(
+            f.agent == AgentName.RAG and
+            f.check_id in ("matches_known_pattern", "learned_evasion_match") and
+            f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
+            for f in findings
+        )
+        and (has_independent_findings or is_duel_claim)
     )
     has_billing_irregularity = any(
         f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL) and f.check_id in (

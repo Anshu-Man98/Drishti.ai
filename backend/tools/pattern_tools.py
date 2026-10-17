@@ -264,11 +264,47 @@ def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
     # Boost if signature-specific traits matched directly
     sig_boost = (len(sig_overlap) / max(1, len(sig_tokens))) * 0.4
 
+    # For learned evasion patterns, require a specific match beyond generic claim fields
+    # (diagnosis_code, length_of_stay, max_room_rent_rate, total_claimed).
+    # It must match specific tactic terms, discriminating features, or anomaly findings.
+    is_learned_evasion = (
+        card.get("fraud_type") == "learned_evasion" or
+        "PAT-LEARNED-" in str(card.get("pattern_id", ""))
+    )
+    if is_learned_evasion:
+        generic_field_names = {
+            "diagnosis_code", "total_claimed", "length_of_stay", "max_room_rent_rate",
+            "bank_account_hash", "diagnosis", "charges", "room", "rent", "rate"
+        }
+        # Specific tokens are signature overlap terms that are not pure digits, generic field names, or ICD codes
+        specific_tokens = {
+            t for t in sig_overlap
+            if t not in generic_field_names
+            and not (t.isdigit() or re.match(r"^[a-z]\d+(_\d+)?$", t))
+        }
+
+        discriminating_features = (
+            "inflation_ratio",
+            "room_rent_vs_cap_ratio_exceeded",
+            "unbundled_or_padded_ancillary",
+            "padded_ancillary",
+            "finding_check:total_above_diagnosis_benchmark",
+            "finding_check:line_item_price_above_benchmark",
+            "finding_check:policy_room_rent_cap_exceeded",
+            "finding_check:duplicate_line_item",
+            "finding_check:room_days_exceed_stay",
+            "finding_check:arithmetic_mismatch",
+            "finding_check:tax_rate_mismatch",
+        )
+        has_discriminating = any(feat in query.lower() for feat in discriminating_features)
+        if not specific_tokens and not has_discriminating:
+            return 0.0
+
     # Boost if fraud_type matched exactly
     type_boost = 0.3 if card.get("fraud_type", "").lower() in query.lower() else 0.0
 
     # Boost if active learned evasion pattern matches key signature traits
-    learned_boost = 0.25 if (card.get("fraud_type") == "learned_evasion" and len(sig_overlap) >= 2) else 0.0
+    learned_boost = 0.25 if (is_learned_evasion and len(sig_overlap) >= 3) else 0.0
 
     final_score = min(0.98, base_score * 0.4 + sig_boost + type_boost + learned_boost)
     return round(final_score, 3)

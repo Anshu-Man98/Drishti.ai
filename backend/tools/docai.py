@@ -74,7 +74,23 @@ CITY_COORDS = {
     "lucknow": ("Lucknow", 26.82149, 80.93017),
     "kochi": ("Kochi", 9.92162, 76.24663),
     "ahmedabad": ("Ahmedabad", 23.03149, 72.5741),
+    "dehradun": ("Dehradun", 30.3165, 78.0322),
+    "indore": ("Indore", 22.7196, 75.8577),
+    "bhopal": ("Bhopal", 23.2599, 77.4126),
+    "chandigarh": ("Chandigarh", 30.7333, 76.7794),
+    "patna": ("Patna", 25.5941, 85.1376),
+    "nagpur": ("Nagpur", 21.1458, 79.0882),
+    "surat": ("Surat", 21.1702, 72.8311),
+    "visakhapatnam": ("Visakhapatnam", 17.6868, 83.2185),
+    "coimbatore": ("Coimbatore", 11.0168, 76.9558),
+    "guwahati": ("Guwahati", 26.1445, 91.7362),
+    "bhubaneswar": ("Bhubaneswar", 20.2961, 85.8245),
+    "varanasi": ("Varanasi", 25.3176, 82.9739),
+    "vadodara": ("Vadodara", 22.3072, 73.1812),
+    "agra": ("Agra", 27.1767, 78.0081),
+    "kanpur": ("Kanpur", 26.4499, 80.3319),
 }
+
 
 
 class GeminiExtractedLineItem(BaseModel):
@@ -738,6 +754,17 @@ def _map_docai_result_to_claim(
             field_sources["city"] = "gemini" if (gemini_result and gemini_result.city) else "docai"
             break
 
+    if not city and gemini_result and gemini_result.city and len(gemini_result.city.strip()) > 1:
+        city = gemini_result.city.strip().title()
+        field_sources["city"] = "gemini"
+    elif not city and city_candidate and len(city_candidate.strip()) > 1:
+        # Check if address contains a city before state/pin
+        m_city = re.search(r"([A-Za-z\s]+),\s*(?:Uttarakhand|Madhya Pradesh|Maharashtra|Karnataka|Tamil Nadu|Delhi|Rajasthan|Kerala|Gujarat|West Bengal|Uttar Pradesh)", city_candidate, re.IGNORECASE)
+        if m_city:
+            city = m_city.group(1).strip().title()
+            field_sources["city"] = "docai_address"
+
+
     # Merge Step 4: Treating Doctor & ID
     doctor_name = None
     doctor_id = None
@@ -841,14 +868,37 @@ def _map_docai_result_to_claim(
     gem_tax = gemini_result.tax if gemini_result else None
     gem_tot = gemini_result.total_claimed if gemini_result else None
 
-    # Subtotal: Trust DocAI invoice parser when confidence >= 0.8; fallback to visual model if missing
+    gem_items_sum = round(sum(it.amount for it in gemini_result.line_items), 2) if (gemini_result and gemini_result.line_items) else None
+    docai_items_sum = round(sum(it.amount for it in docai_line_items), 2) if docai_line_items else None
+
+    gem_matches_items = gem_sub is not None and gem_items_sum is not None and abs(gem_sub - gem_items_sum) <= 1.0
+    docai_matches_items = docai_subtotal is not None and docai_items_sum is not None and abs(docai_subtotal - docai_items_sum) <= 1.0
+
+    # Check if DocAI confused the tax entity with subtotal (e.g. extracted tax amount 455 as net_amount)
+    docai_confused_tax = (
+        docai_subtotal is not None and (
+            (docai_tax is not None and abs(docai_subtotal - docai_tax) < 1.0) or
+            (gem_tax is not None and abs(docai_subtotal - gem_tax) < 1.0) or
+            (docai_items_sum is not None and abs(docai_subtotal - docai_items_sum) > 10.0 and gem_matches_items)
+        ) and (docai_total is None or docai_subtotal < docai_total * 0.5)
+    )
+
+    # Subtotal
     subtotal = None
-    if docai_subtotal is not None and docai_subtotal_conf >= 0.8:
+    if gem_matches_items and (not docai_matches_items or docai_confused_tax):
+        subtotal = gem_sub
+        field_sources["subtotal"] = "gemini"
+    elif docai_subtotal is not None and docai_subtotal_conf >= 0.8 and not docai_confused_tax:
         subtotal = docai_subtotal
         field_sources["subtotal"] = "docai"
     elif gem_sub is not None:
         subtotal = gem_sub
         field_sources["subtotal"] = "gemini"
+    elif docai_subtotal is not None:
+        subtotal = docai_subtotal
+        field_sources["subtotal"] = "docai"
+
+    if subtotal is not None and field_sources.get("subtotal") == "gemini":
         extracted_entities.append(ExtractedEntity(
             field_name="net_amount",
             text=f"₹{subtotal:,.2f}",
@@ -858,30 +908,12 @@ def _map_docai_result_to_claim(
             source="gemini"
         ))
 
-    # Tax: Trust DocAI invoice parser when confidence >= 0.8; fallback to visual model
-    tax = None
-    if docai_tax is not None and docai_tax_conf >= 0.8:
-        tax = docai_tax
-        field_sources["tax"] = "docai"
-    elif gem_tax is not None:
-        tax = gem_tax
-        field_sources["tax"] = "gemini"
-        extracted_entities.append(ExtractedEntity(
-            field_name="total_tax_amount",
-            text=f"₹{tax:,.2f}",
-            bbox=docai_tax_bbox or [0.7, 0.75, 0.95, 0.8],
-            page=1,
-            confidence=0.95,
-            source="gemini"
-        ))
-    else:
-        tax = 0.0
-
-    # Total Claimed: Trust DocAI invoice parser when confidence >= 0.8.
-    # CRITICAL: Never overwrite DocAI's extracted total with a calculated/consistent total,
-    # as mathematical discrepancy between subtotal+tax and total is a key invoice fraud vector.
+    # Total Claimed (resolved before Tax to verify subtotal + tax == total reconciliation)
     total_claimed = None
-    if docai_total is not None and docai_total_conf >= 0.8:
+    docai_total_diff = abs(docai_total - ((subtotal or 0.0) + (docai_tax or gem_tax or 0.0))) if (docai_total is not None and subtotal is not None) else 0.0
+    gem_total_diff = abs(gem_tot - ((subtotal or 0.0) + (gem_tax or docai_tax or 0.0))) if (gem_tot is not None and subtotal is not None) else 999.0
+
+    if docai_total is not None and docai_total_conf >= 0.8 and not (docai_total_diff >= 10.0 and gem_total_diff <= 1.0):
         total_claimed = docai_total
         field_sources["total_claimed"] = "docai"
     elif gem_tot is not None:
@@ -891,6 +923,49 @@ def _map_docai_result_to_claim(
             field_name="total_amount",
             text=f"₹{total_claimed:,.2f}",
             bbox=docai_total_bbox or [0.7, 0.8, 0.95, 0.85],
+            page=1,
+            confidence=0.95,
+            source="gemini"
+        ))
+    elif docai_total is not None:
+        total_claimed = docai_total
+        field_sources["total_claimed"] = "docai"
+
+    # Tax
+    docai_tax_reconciles = (
+        docai_tax is not None and subtotal is not None and total_claimed is not None and
+        abs((subtotal + docai_tax) - total_claimed) <= 1.5
+    )
+    gem_tax_reconciles = (
+        gem_tax is not None and subtotal is not None and total_claimed is not None and
+        abs((subtotal + gem_tax) - total_claimed) <= 1.5
+    )
+    docai_tax_implausible = (
+        docai_tax is not None and subtotal is not None and subtotal > 0 and
+        (docai_tax / subtotal > 0.28 or docai_tax >= subtotal)
+    )
+
+    tax = None
+    if gem_tax_reconciles and (not docai_tax_reconciles or docai_tax_implausible) and gem_tax is not None:
+        tax = gem_tax
+        field_sources["tax"] = "gemini"
+    elif docai_tax is not None and docai_tax_conf >= 0.8 and not docai_tax_implausible:
+        tax = docai_tax
+        field_sources["tax"] = "docai"
+    elif gem_tax is not None:
+        tax = gem_tax
+        field_sources["tax"] = "gemini"
+    elif docai_tax is not None:
+        tax = docai_tax
+        field_sources["tax"] = "docai"
+    else:
+        tax = 0.0
+
+    if tax is not None and field_sources.get("tax") == "gemini":
+        extracted_entities.append(ExtractedEntity(
+            field_name="total_tax_amount",
+            text=f"₹{tax:,.2f}",
+            bbox=docai_tax_bbox or [0.7, 0.75, 0.95, 0.8],
             page=1,
             confidence=0.95,
             source="gemini"
@@ -922,21 +997,68 @@ def _map_docai_result_to_claim(
         gemini_sum = round(sum(it.amount for it in gemini_items), 2)
         docai_sum = round(sum(it.amount for it in docai_line_items), 2) if docai_line_items else 0.0
 
-        if docai_line_items and len(docai_line_items) == len(gemini_items) and (subtotal is None or abs(docai_sum - subtotal) <= 1.0):
+        docai_math_valid = sum(1 for it in docai_line_items if abs(round(it.qty * it.unit_price, 2) - it.amount) <= 0.50) if docai_line_items else 0
+        gemini_math_valid = sum(1 for it in gemini_items if abs(round(it.qty * it.unit_price, 2) - it.amount) <= 0.50) if gemini_items else 0
+        docai_has_corrupt_items = any(not it.description.strip() or (it.qty <= 0 and it.amount <= 0) for it in docai_line_items)
+
+        if subtotal is not None and abs(gemini_sum - subtotal) <= 1.0:
+            if not docai_line_items or abs(docai_sum - subtotal) > 1.0 or docai_has_corrupt_items or gemini_math_valid > docai_math_valid:
+                final_line_items = gemini_items
+                line_items_source = "gemini"
+            else:
+                final_line_items = docai_line_items
+                line_items_source = "docai"
+        elif docai_line_items and (subtotal is None or abs(docai_sum - subtotal) <= 1.0):
             final_line_items = docai_line_items
             line_items_source = "docai"
-        elif subtotal is not None and abs(gemini_sum - subtotal) <= 1.0:
-            final_line_items = gemini_items
-            line_items_source = "gemini"
         elif len(gemini_items) >= len(docai_line_items):
             final_line_items = gemini_items
             line_items_source = "gemini"
         else:
             final_line_items = docai_line_items
             line_items_source = "docai"
+
     else:
         final_line_items = docai_line_items
         line_items_source = "docai" if docai_line_items else "none"
+
+    # Row-level reconciliation: reconcile each line with the row's printed amount
+    for idx, item in enumerate(final_line_items):
+        expected_amt = round(item.qty * item.unit_price, 2)
+        if abs(item.amount - expected_amt) > 0.50:
+            reconciled = False
+            if item.unit_price > 0:
+                cand_qty = item.amount / item.unit_price
+                if abs(cand_qty - round(cand_qty)) < 0.05 and round(cand_qty) > 0:
+                    int_qty = float(round(cand_qty))
+                    gemini_match = False
+                    if gemini_result and gemini_result.line_items:
+                        for g_it in gemini_result.line_items:
+                            if abs(g_it.amount - item.amount) <= 0.50 or (
+                                g_it.description.lower() in item.description.lower() or item.description.lower() in g_it.description.lower()
+                            ):
+                                if abs(g_it.qty - int_qty) <= 0.05:
+                                    gemini_match = True
+                                    break
+                    item.qty = int_qty
+                    source_won = "gemini" if gemini_match else "math_reconciled"
+                    field_sources[f"line_item_{idx+1}_qty"] = source_won
+                    item.source = source_won
+                    reconciled = True
+            if not reconciled and item.qty > 0:
+                cand_price = item.amount / item.qty
+                if cand_price > 0:
+                    gemini_price_match = False
+                    if gemini_result and gemini_result.line_items:
+                        for g_it in gemini_result.line_items:
+                            if abs(g_it.amount - item.amount) <= 0.50 and abs(g_it.unit_price - cand_price) <= 0.50:
+                                gemini_price_match = True
+                                break
+                    if gemini_price_match:
+                        item.unit_price = cand_price
+                        field_sources[f"line_item_{idx+1}_unit_price"] = "gemini"
+                        item.source = "gemini"
+
 
     # Merge Step 10: Reconcile Line Items vs Subtotal (Step 4 Requirement)
     calculated_subtotal = round(sum(it.amount for it in final_line_items), 2) if final_line_items else 0.0

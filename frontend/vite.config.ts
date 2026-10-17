@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Declare Node process.env interface for Vite config resolution
+declare const process: { env?: Record<string, string | undefined> };
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -8,9 +11,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        target: (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) || 'http://127.0.0.1:8000',
+        changeOrigin: true
       }
     }
   },

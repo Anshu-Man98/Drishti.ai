@@ -205,4 +205,9 @@ FinShield includes 9 canonical golden demo claims (G1–G9) demonstrating end-to
   ```bash
   cd frontend && npm run build
   ```
+- **UI-to-API Dev Proxy Smoke Script**:
+  ```bash
+  bash scripts/smoke_ui_api.sh
+  ```
 - **Automated CI**: GitHub Actions workflow at `.github/workflows/ci.yml` validates all backend tests and frontend compilation on pull requests and pushes to `main`.
+

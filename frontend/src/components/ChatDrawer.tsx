@@ -67,7 +67,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     try {
       setError(null);
       const hist = await fetchChatHistory(claimId);
-      setMessages(hist);
+      const msgList = Array.isArray(hist)
+        ? hist
+        : (Array.isArray((hist as Record<string, unknown>)?.messages)
+            ? (hist as Record<string, unknown>).messages as ChatMessage[]
+            : []);
+      setMessages(msgList);
     } catch (e: unknown) {
       console.warn('Failed to load chat history:', e);
     }

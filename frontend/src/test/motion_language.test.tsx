@@ -201,23 +201,25 @@ describe('Motion Language & Micro-interactions (Stage 6)', () => {
   });
 
   describe('ChatDrawer transition and interaction', () => {
-    it('handles close on Escape key and backdrop click', () => {
+    it('handles close on Escape key and backdrop click', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ messages: [] }),
+        json: async () => [],
       } as any);
 
       const handleClose = vi.fn();
-      render(
-        <ChatDrawer
-          claimId="CLM-101"
-          isOpen={true}
-          onClose={handleClose}
-          findings={[]}
-          activeFindingId={null}
-          onSelectFinding={vi.fn()}
-        />
-      );
+      await act(async () => {
+        render(
+          <ChatDrawer
+            claimId="CLM-101"
+            isOpen={true}
+            onClose={handleClose}
+            findings={[]}
+            activeFindingId={null}
+            onSelectFinding={vi.fn()}
+          />
+        );
+      });
 
       expect(screen.getByRole('dialog', { name: /case assistant chat/i })).toBeInTheDocument();
 

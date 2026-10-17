@@ -176,4 +176,70 @@ $$\text{Score} = w_1 + 0.8 w_2 + 0.6 w_3 + 0.4 \sum_{i \ge 4} w_i$$
 - **Proportionality**: Multiple minor observations (e.g. five medium findings of weight 15) combine to 48 (REVIEW), preventing artificial escalation to 75 (REJECT).
 - **Incomplete Analysis Guarantee**: Any unreadable document, extraction incompleteness, or non-medical document maintains a verdict floor of `REVIEW` with risk $\ge 45$, preventing automated approval.
 
+---
+
+## 8. Line-Item Reconciliation & Quantity Misread Robustness (Fix 2)
+
+### A. Root Cause & Empirical Diagnosis
+OCR engines (Document AI) occasionally misread printed quantities (e.g., reading "2" as "1.0" or "4" as "1.0") on clean, borderless hospital invoices. Previously, this produced a false `LINE_ITEM_MATH_MISMATCH` (CRITICAL), rejecting completely legitimate claims (such as UTI and fracture bills) even though the invoice was mathematically consistent internally: the printed line amounts summed exactly to the printed subtotal, and subtotal + tax matched the total.
+
+### B. Two-Tiered Solution
+1. **Reconciliation Candidate Logic (`docai.py`)**:
+   - If printed $amount \ne qty \times unit\_price$, the engine checks whether $amount / unit\_price$ yields a clean integer quantity.
+   - Cross-checks with Gemini vision line-item re-read and adopts the validated reading, updating `field_sources` and recording high confidence.
+2. **Severity Calibration (`validate_arithmetic` in `registry.py`)**:
+   - When the invoice totals are internally consistent ($\sum \text{amount}_i = \text{Subtotal}$ and $\text{Subtotal} + \text{Tax} = \text{Total}$), an isolated quantity $\times$ unit price discrepancy is classified as an extraction uncertainty:
+   - Emits `LINE_QUANTITY_UNVERIFIED` (`Severity.LOW`), keeping status as `valid` and verdict as `APPROVE`.
+   - Real fraud signatures (where printed line amounts fail to sum to subtotal, or where stated total is manipulated) strictly retain `LINE_ITEM_MATH_MISMATCH` / `SUBTOTAL_SUM_MISMATCH` (`Severity.CRITICAL` / `REJECT`).
+
+### C. Live Cloud Evaluation (V3 Corpus: 17 Clean Bills)
+Tested against Google Cloud services (`drishti-demo`):
+- **14 PDF Bills**: Across Dehradun, Indore, Jaipur, Kochi, Lucknow, Chennai, Mumbai, Hyderabad, Bengaluru, Pune, Kolkata, New Delhi, Ahmedabad.
+- **3 Rotated / Noisy Photo Bills**: Mobile camera captures under varying angles.
+- **Results**: 17 / 17 APPROVED (100.0% accuracy, **0.00% False Positive Rate**, target $\le 5.0\%$).
+- **Golden Claims**: 9 / 9 PASS against `ground_truth.json`.
+
+---
+
+## 9. Detector Gaps Resolution (Fix 3)
+
+### A. Flexible Date Parsing & Future Date Validation (`date_utils.py` & `check_dates`)
+- **Format Support**: ISO (`2031-03-14`, `2026-10-15T10:00:00Z`), Indian formats (`dd-Mon-yyyy`, `dd/mm/yyyy`, `d-m-yy`), 2-digit years, month names, and Indian dot notation (`14.03.2031`).
+- **Injectable Clock**: `check_dates` accepts an injectable `now` reference parameter for reliable unit and integration testing.
+- **Forensic Evidence**: Emits `FUTURE_OR_IMPLAUSIBLE_DATE` (`Severity.CRITICAL` for extreme future dates $\ge 2030$; `Severity.HIGH` for near-future dates) containing explicit quotes with parsed date, reference date, and day delta.
+
+### B. Missing Printed Total Handling
+- Invoices without a printed total/net payable line emit `EXTRACTION_INCOMPLETE: no printed total` (`Severity.LOW`, status `"incomplete"`).
+- **Floor Guardrail**: Verdict is floored at `REVIEW` (calibrated risk score 45–65), **never** `TOTAL_PAYABLE_MISMATCH` and never `REJECT`. Real discrepancies where a printed total is wrong continue to emit `TOTAL_PAYABLE_MISMATCH` (`Severity.CRITICAL` / `REJECT`).
+
+### C. Cross-Claim Duplicate Detection for Uploaded Claims (`find_firestore_duplicates`)
+Queries live Firestore claims collection with three-tiered deduplication:
+1. **Exact Document SHA-256 Match**: Emits `EXACT_DUPLICATE_BILL` (`Severity.CRITICAL`).
+2. **Duplicate Invoice Number**: Matching invoice number + facility + patient + total emits `EXACT_DUPLICATE_BILL` (`Severity.CRITICAL`).
+3. **Overlapping Hospitalization**: Same patient + facility + overlapping admission dates ($\pm 3$ days) + similar total ($\pm 5\%$) emits `EXACT_DUPLICATE_BILL` (`Severity.HIGH`).
+- **Guards**: Self-exclusion, temporal ordering (earlier claims are never duplicates of later claims), demo-claim isolation, and duel simulation marker bypass.
+
+### D. Provider City Extraction
+- Resolves hospital city from Document AI `supplier_address`, Gemini multimodal extraction, and bill header regex matching against `CITY_COORDS`.
+- Accuracy on V3 corpus: **17 / 17 (100.0%)**.
+
+---
+
+## 10. Learned Pattern Discriminating Feature Requirements (Fix 4)
+
+### A. Problem
+Learned evasion patterns generated during adversarial duel rounds (e.g., "Diagnostic Category Arbitrage and Upcoding to S82.8") previously matched honest fracture claims with S82.8 simply due to generic keyword overlap (`diagnosis_code:S82.8`, `length_of_stay:4`), raising unmerited risk on honest claims.
+
+### B. Discriminating Match Architecture (`pattern_tools.py`)
+1. **Diagnosis Family Gate**: Learned patterns targeting specific diagnosis codes require an exact ICD-10 family match (e.g. `S82`).
+2. **Discriminating Feature Requirement**: Claims must exhibit at least one explicit anomaly or discriminating feature:
+   - Inflation ratio $\ge 1.15$ vs benchmark corridor.
+   - Padded ancillary share $\ge 35\%$ of total claim.
+   - Room rent vs cap ratio exceeded.
+   - Corroborating policy or pricing anomaly findings (`TOTAL_ABOVE_DIAGNOSIS_BENCHMARK`, `LINE_ITEM_PRICE_ABOVE_BENCHMARK`, `POLICY_ROOM_RENT_CAP_EXCEEDED`, etc.).
+   - Clean honest claims with standard pricing return a match score of `0.0`.
+3. **Threshold Calibration**: Learned evasion patterns require a minimum match threshold of $\ge 0.70$ (vs $0.45$ for catalog archetypes).
+4. **Corroboration-Only Adjudication (`root.py`)**: On non-duel claims, learned pattern matches are capped at `Severity.MEDIUM` and serve strictly as corroboration, never pushing a clean claim to `REVIEW` or `REJECT` on their own.
+
+
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import {
   ArcGauge,
+  computeArcGaugeLayout,
   GlowAreaChart,
   SparklineRow,
   RankedList,
@@ -58,6 +59,47 @@ describe('Stage 2: Signature UI Components Suite', () => {
       );
       expect(screen.getByRole('meter')).toBeInTheDocument();
       expect(screen.getByText('Impossible Velocity')).toBeInTheDocument();
+    });
+
+    it('centers numeric value inside the arc and maintains at least 12px clear space below arc bottom for sizes 140px to 260px and 390px viewport', () => {
+      render(
+        <ArcGauge
+          value={87}
+          unit="%"
+          caption="Fraud Losses Prevented"
+          size="md"
+        />
+      );
+
+      const valueEl = screen.getByTestId('arc-gauge-value');
+      const captionEl = screen.getByTestId('arc-gauge-caption');
+
+      expect(valueEl).toBeInTheDocument();
+      expect(captionEl).toBeInTheDocument();
+
+      const arcBottom = parseFloat(captionEl.getAttribute('data-arc-bottom') || '0');
+      const captionY = parseFloat(captionEl.getAttribute('data-caption-y') || '0');
+      const clearanceSvg = parseFloat(captionEl.getAttribute('data-clearance-svg') || '0');
+
+      // Value must be optical-centered at y=76, strictly above arc bottom (98.05)
+      expect(parseFloat(valueEl.getAttribute('y') || '0')).toBeLessThan(arcBottom);
+
+      // In SVG space, caption is positioned at y=126, which is > 27 units below the lowest arc point
+      expect(captionY).toBeGreaterThan(arcBottom);
+      expect(clearanceSvg).toBeGreaterThanOrEqual(27);
+
+      // Verify layout geometry across all test widths: 140px, 180px, 220px, 240px, 260px, and 390px viewport card
+      const testWidths = [140, 180, 220, 240, 260, 390];
+      for (const w of testWidths) {
+        const layout = computeArcGaugeLayout(w);
+        // Clearance in physical pixels must be >= 12px
+        expect(layout.clearancePx).toBeGreaterThanOrEqual(12);
+        expect(layout.hasAtLeast12pxClearance).toBe(true);
+        // Caption must be strictly below arc bottom
+        expect(layout.captionYPx).toBeGreaterThan(layout.arcBottomPx);
+        // Value numeral is above arc bottom
+        expect(layout.valueCenterPx).toBeLessThan(layout.arcBottomPx);
+      }
     });
   });
 

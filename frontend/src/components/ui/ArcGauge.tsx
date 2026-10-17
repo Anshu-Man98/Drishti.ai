@@ -53,10 +53,13 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const currentRatio = animate ? targetRatio * progress : targetRatio;
 
   // Arc configuration: 210 degree sweep (from 165 deg to 375 deg)
-  // Center (cx, cy) = (110, 92), Radius R = 70
+  // Center (cx, cy) = (110, 74), Radius R = 62
+  // Value numeral is optical-centered at (110, 74).
+  // Arc lowest point (at 165 deg & 375 deg + 8px dot radius) = 98.05.
+  // Caption at y = 126 provides >= 12px clearance across all sizes (140px - 260px).
   const cx = 110;
-  const cy = 92;
-  const r = 70;
+  const cy = 74;
+  const r = 62;
 
   const startAngle = 165; // deg
   const endAngle = 375;   // deg (sweep = 210 deg)
@@ -87,12 +90,16 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const currentAngle = startAngle + sweepAngle * currentRatio;
   const dotCoord = polarToCartesian(cx, cy, r, currentAngle);
 
+  // Lowest point of arc geometry (including 8px dot radius and 5px stroke radius)
+  const arcBottom = cy + r * Math.sin(toRad(15)) + 8; // 74 + 16.05 + 8 = 98.05
+  const captionY = 126; // 126 - 98.05 = 27.95 SVG units (> 17.7px screen clearance at 140px width)
+
   // Generate fine tick marks (15 ticks across arc)
   const ticksCount = 15;
   const ticks = Array.from({ length: ticksCount }, (_, i) => {
     const angle = startAngle + (sweepAngle / (ticksCount - 1)) * i;
-    const innerPoint = polarToCartesian(cx, cy, r - 10, angle);
-    const outerPoint = polarToCartesian(cx, cy, r - 5, angle);
+    const innerPoint = polarToCartesian(cx, cy, r - 9, angle);
+    const outerPoint = polarToCartesian(cx, cy, r - 4, angle);
     const isMajor = i % 2 === 0;
     return {
       id: i,
@@ -243,11 +250,13 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
           />
         </g>
 
-        {/* Centered Large Numeric Display */}
+        {/* Centered Large Numeric Display inside the arc */}
         <text
           x={cx}
-          y={cy}
+          y={cy + 2}
           textAnchor="middle"
+          dominantBaseline="central"
+          data-testid="arc-gauge-value"
           className="fill-app-primary font-light tracking-tight tabular-nums select-none"
           style={{ fontSize: '28px' }}
         >
@@ -255,12 +264,17 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
           {unit && <tspan className="text-sm font-normal fill-app-muted ml-1 font-mono"> {unit}</tspan>}
         </text>
 
-        {/* Centered Subtext / Caption below with ample clearance */}
+        {/* Centered Subtext / Caption with >= 12px clear space below the arc's lowest point */}
         {caption && (
           <text
             x={cx}
-            y={cy + 18}
+            y={captionY}
             textAnchor="middle"
+            dominantBaseline="central"
+            data-testid="arc-gauge-caption"
+            data-arc-bottom={arcBottom}
+            data-caption-y={captionY}
+            data-clearance-svg={captionY - arcBottom}
             className="fill-app-muted font-mono text-[10px] select-none"
           >
             {caption}
@@ -270,10 +284,62 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
 
       {/* Label under Gauge */}
       {label && (
-        <span className="text-xs font-medium uppercase tracking-wider text-app-muted -mt-2">
+        <span
+          data-testid="arc-gauge-label"
+          className="text-xs font-medium uppercase tracking-wider text-app-muted mt-1"
+        >
           {label}
         </span>
       )}
     </div>
   );
 };
+
+/**
+ * Geometric layout validator for ArcGauge at arbitrary rendering widths.
+ * Calculates exact SVG-to-pixel scaled coordinates of the arc bottom, centered value,
+ * and caption to guarantee at least 12px clearance across all form factors.
+ */
+export function computeArcGaugeLayout(width: number) {
+  const vbWidth = 220;
+  const vbHeight = 160;
+  const cx = 110;
+  const cy = 74;
+  const r = 62;
+  const startAngle = 165;
+  const sweepAngle = 210;
+  const endAngle = startAngle + sweepAngle;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  const scale = width / vbWidth;
+  const arcEndY = cy + r * Math.sin(toRad(endAngle - 360));
+  const strokeHalfWidth = 5;
+  const dotRadius = 8;
+  const arcBottomSvg = arcEndY + Math.max(strokeHalfWidth, dotRadius); // 98.05
+  const arcBottomPx = arcBottomSvg * scale;
+
+  const valueCenterSvg = cy + 2; // 76
+  const valueCenterPx = valueCenterSvg * scale;
+
+  const captionYSvg = 126;
+  const captionYPx = captionYSvg * scale;
+  const clearancePx = captionYPx - arcBottomPx;
+
+  return {
+    width,
+    scale,
+    vbWidth,
+    vbHeight,
+    cx,
+    cy,
+    r,
+    valueCenterSvg,
+    valueCenterPx,
+    arcBottomSvg,
+    arcBottomPx,
+    captionYSvg,
+    captionYPx,
+    clearancePx,
+    hasAtLeast12pxClearance: clearancePx >= 12,
+  };
+}

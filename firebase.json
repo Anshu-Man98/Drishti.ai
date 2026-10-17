@@ -1,23 +1,11 @@
 {
+  "_comment": "OBSOLETE: Drishti AI now deploys as a unified single-service container (drishti-app) on Cloud Run where FastAPI directly serves the React SPA. Firebase Hosting is unused.",
   "hosting": {
     "public": "frontend/dist",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "finshield-backend",
-          "region": "asia-south1"
-        }
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
     ]
   }
 }

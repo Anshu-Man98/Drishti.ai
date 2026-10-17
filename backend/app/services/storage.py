@@ -92,7 +92,12 @@ class StorageService:
         if uri.startswith("file://"):
             local_path = Path(uri.replace("file://", "")).resolve()
             if not local_path.exists() or not local_path.is_file():
-                raise FileNotFoundError(f"Local test file not found: {local_path}")
+                repo_root = Path(__file__).resolve().parent.parent.parent.parent
+                alt_path = repo_root / "data" / "demo" / local_path.name
+                if alt_path.exists() and alt_path.is_file():
+                    local_path = alt_path
+                else:
+                    raise FileNotFoundError(f"Local test file not found: {local_path}")
             data = local_path.read_bytes()
             self._cache[uri] = data
             return data

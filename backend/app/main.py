@@ -257,15 +257,89 @@ def get_metrics_endpoint():
     return metrics_service.get_metrics()
 
 
-@app.get("/")
-def root():
-    return {
-        "message": "Welcome to Drishti.ai API",
-        "docs_url": "/docs",
-        "health_url": "/health",
-        "metrics_url": "/metrics",
-        "version": settings.VERSION
-    }
+from pathlib import Path
+from starlette.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
+
+
+class CachedStaticFiles(StaticFiles):
+    """StaticFiles subclass applying long immutable cache-control to hashed bundles."""
+    def file_response(self, *args, **kwargs) -> Response:
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+
+
+def get_frontend_dist_dir() -> Optional[Path]:
+    """Finds frontend/dist directory if built and exists."""
+    override = os.getenv("FRONTEND_DIST_DIR")
+    if override:
+        p = Path(override).resolve()
+        if p.is_dir() and (p / "index.html").is_file():
+            return p
+        return None
+
+    candidates = [
+        Path("/app/frontend/dist"),
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "index.html").is_file():
+            return c
+    return None
+
+
+frontend_dist = get_frontend_dist_dir()
+
+if frontend_dist:
+    logger.info("Serving frontend SPA from %s", frontend_dist)
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", CachedStaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_spa_index():
+        return FileResponse(
+            frontend_dist / "index.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa_or_static(full_path: str, request: Request):
+        # API routes: do not intercept unknown /api paths — return JSON 404
+        if full_path == "api" or full_path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+        # If a request arrives with an Authorization header or explicitly asks for JSON
+        # (and not HTML), it is an API request targeting a non-existent / non-prefixed endpoint.
+        auth_hdr = request.headers.get("authorization")
+        accept_hdr = request.headers.get("accept", "")
+        if auth_hdr or ("application/json" in accept_hdr and "text/html" not in accept_hdr):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+        # Specific static file directly in dist (e.g. favicon.ico, vite.svg)
+        if full_path:
+            file_path = (frontend_dist / full_path).resolve()
+            if file_path.is_file() and str(file_path).startswith(str(frontend_dist)):
+                return FileResponse(file_path)
+
+        # SPA client-side route fallback (e.g. /claims, /claims/CLM-101, /network, /duel)
+        return FileResponse(
+            frontend_dist / "index.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
+else:
+    logger.info("Frontend dist directory not found; serving API-only fallback on /")
+
+    @app.get("/")
+    def root():
+        return {
+            "message": "Welcome to Drishti.ai API",
+            "docs_url": "/docs",
+            "health_url": "/health",
+            "metrics_url": "/metrics",
+            "version": settings.VERSION
+        }
 
 
 if __name__ == "__main__":

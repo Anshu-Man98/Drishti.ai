@@ -1,5 +1,6 @@
 import React, { useId, useState, useRef } from 'react';
 import clsx from 'clsx';
+import { useMotionProgress } from '../../utils/motion';
 
 export interface DataPoint {
   label: string;
@@ -46,6 +47,7 @@ export const GlowAreaChart: React.FC<GlowAreaChartProps> = ({
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const progress = useMotionProgress({ duration: 900, enabled: animate });
 
   if (!data || data.length === 0) {
     return (
@@ -100,6 +102,17 @@ export const GlowAreaChart: React.FC<GlowAreaChartProps> = ({
     L ${points[0].x.toFixed(1)} ${padding.top + chartHeight}
     Z
   `;
+
+  let estimatedLength = 0;
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    estimatedLength += Math.sqrt(dx * dx + dy * dy);
+  }
+  estimatedLength = Math.max(10, estimatedLength);
+
+  const strokeDashoffset = animate ? estimatedLength * (1 - progress) : 0;
+  const areaOpacity = animate ? progress : 1;
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current) return;
@@ -173,7 +186,11 @@ export const GlowAreaChart: React.FC<GlowAreaChartProps> = ({
           />
 
           {/* Area Fill */}
-          <path d={areaPathD} fill={`url(#${gradientId})`} />
+          <path
+            d={areaPathD}
+            fill={`url(#${gradientId})`}
+            style={{ opacity: areaOpacity }}
+          />
 
           {/* Outer Glowing Stroke */}
           <path
@@ -181,7 +198,9 @@ export const GlowAreaChart: React.FC<GlowAreaChartProps> = ({
             fill="none"
             stroke="#FFC15A"
             strokeWidth="2"
-            opacity="0.6"
+            opacity={0.6 * areaOpacity}
+            strokeDasharray={estimatedLength}
+            strokeDashoffset={strokeDashoffset}
             filter={`url(#${filterId})`}
           />
 
@@ -193,9 +212,8 @@ export const GlowAreaChart: React.FC<GlowAreaChartProps> = ({
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={clsx(
-              animate && 'transition-all duration-500 ease-out'
-            )}
+            strokeDasharray={estimatedLength}
+            strokeDashoffset={strokeDashoffset}
           />
 
           {/* Hover Crosshair & Indicator */}

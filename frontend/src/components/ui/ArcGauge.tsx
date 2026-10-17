@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import clsx from 'clsx';
+import { useMotionProgress } from '../../utils/motion';
 
 export interface ArcGaugeProps {
   value: number;
@@ -44,9 +45,12 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const gradientId = useId();
   const filterId = useId();
 
+  const progress = useMotionProgress({ duration: 800, enabled: animate });
+
   const clampedValue = Math.min(max, Math.max(min, value));
   const range = max - min || 1;
-  const ratio = (clampedValue - min) / range;
+  const targetRatio = (clampedValue - min) / range;
+  const currentRatio = animate ? targetRatio * progress : targetRatio;
 
   // Arc configuration: 220 degree sweep (-200 deg to +20 deg)
   // Center (cx, cy) = (110, 110), Radius R = 80
@@ -77,10 +81,10 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
 
   // Total circumference of 220 deg arc
   const arcLength = 2 * Math.PI * r * (sweepAngle / 360);
-  const strokeDashoffset = arcLength * (1 - ratio);
+  const strokeDashoffset = arcLength * (1 - currentRatio);
 
   // End dot coordinates
-  const currentAngle = startAngle + sweepAngle * ratio;
+  const currentAngle = startAngle + sweepAngle * currentRatio;
   const dotCoord = polarToCartesian(cx, cy, r, currentAngle);
 
   // Generate fine tick marks (15 ticks across arc)

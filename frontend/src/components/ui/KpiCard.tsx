@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import clsx from 'clsx';
 import { GlowCard } from './GlowCard';
+import { useCountUp } from '../../utils/motion';
 
 export interface KpiCardProps {
   label: string;
@@ -46,41 +47,16 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 }) => {
   const isNumeric = typeof value === 'number';
   const targetNum = isNumeric ? (value as number) : 0;
-  const [displayValue, setDisplayValue] = useState<number>(animate && isNumeric ? 0 : targetNum);
+  const animatedNum = useCountUp(targetNum, {
+    duration: 800,
+    enabled: animate && isNumeric,
+    startValue: 0,
+  });
 
-  useEffect(() => {
-    if (!animate || !isNumeric) {
-      return;
-    }
-
-    // Check prefers-reduced-motion
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setDisplayValue(targetNum);
-      return;
-    }
-
-    let startTs: number | null = null;
-    const durationMs = 800;
-    let animationFrameId: number;
-
-    const step = (now: number) => {
-      if (!startTs) startTs = now;
-      const progress = Math.min(1, (now - startTs) / durationMs);
-      // Ease-out expo
-      const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-      setDisplayValue(targetNum * ease);
-
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(step);
-      }
-    };
-
-    animationFrameId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [targetNum, animate, isNumeric]);
+  const displayNum = animate && isNumeric ? animatedNum : targetNum;
 
   const formattedValue = isNumeric
-    ? displayValue.toLocaleString(undefined, {
+    ? displayNum.toLocaleString(undefined, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
       })

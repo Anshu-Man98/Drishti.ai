@@ -81,7 +81,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   }, [claimId, isOpen, loadHistory]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, [messages, streamingAnswer]);
 
   const handleSend = async (textToSend?: string) => {
@@ -178,31 +178,56 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     );
   };
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-surface border-l border-white/10 shadow-2xl flex flex-col transition-all duration-300 backdrop-blur-md">
-      {/* Header */}
-      <div className="p-4 bg-surface-elevated border-b border-white/8 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-primary/10 border border-amber-primary/20 flex items-center justify-center text-amber-primary">
-            <Bot className="w-5 h-5" />
+    <>
+      {/* Backdrop with fade transition */}
+      <div
+        className={`fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Drawer Panel with hardware-accelerated translateX */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Case Assistant Chat"
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-surface border-l border-white/10 shadow-2xl flex flex-col backdrop-blur-md transition-transform duration-300 ease-out will-change-transform ${
+          isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'
+        }`}
+      >
+        {/* Header */}
+        <div className="p-4 bg-surface-elevated border-b border-white/8 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-primary/10 border border-amber-primary/20 flex items-center justify-center text-amber-primary">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <span>Case Assistant</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-primary/10 text-amber-primary border border-amber-primary/25">
+                  Gemini
+                </span>
+              </h3>
+              <p className="text-[11px] text-muted">Grounded strictly on Claim & Dossier findings</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-              <span>Case Assistant</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-primary/10 text-amber-primary border border-amber-primary/25">
-                Gemini
-              </span>
-            </h3>
-            <p className="text-[11px] text-muted">Grounded strictly on Claim & Dossier findings</p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded-lg text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
-          title="Close Case Assistant"
-        >
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-muted hover:text-text-primary hover:bg-white/10 transition-colors cursor-pointer"
+            title="Close Case Assistant"
+          >
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -348,5 +373,6 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </form>
       </div>
     </div>
-  );
+  </>
+);
 };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Sparkles, FileText, Cpu, ShieldCheck, FileCheck } from 'lucide-react';
 import { uploadClaim } from '../services/api';
+import { GlowCard } from '../components/ui/GlowCard';
 
 const GOLDEN_PRESETS = [
   {
@@ -99,8 +100,8 @@ const GOLDEN_PRESETS = [
   },
   {
     key: 'G6',
-    name: 'G6: Forged Total & Photoshop Metadata',
-    desc: 'Total row altered in Courier-Bold font, producer metadata indicates image editor.',
+    name: 'G6: Forged Total & Font Metadata',
+    desc: 'Total row altered in mismatched font, image editor artifacts flagged.',
     data: {
       policy_id: 'POL-AROGYA-77112',
       insurer_id: 'INS-HDFC',
@@ -174,172 +175,231 @@ export const UploadClaim: React.FC = () => {
     }
   };
 
+  const steps = [
+    { num: '1', title: 'File & Metadata', desc: 'Upload PDF & claim fields', icon: FileText, current: true },
+    { num: '2', title: 'Document AI', desc: 'OCR & Line-item extraction', icon: Cpu, current: false },
+    { num: '3', title: '8-Agent Scrutiny', desc: 'Spacetime, Caps, Fraud audit', icon: ShieldCheck, current: false },
+    { num: '4', title: 'Adjudication Dossier', desc: 'Final verdict & breakdown', icon: FileCheck, current: false },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Register New Health Insurance Claim</h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <h1 className="text-2xl font-bold text-text-primary tracking-tight">
+          Register New Health Insurance Claim
+        </h1>
+        <p className="text-xs sm:text-sm text-text-muted mt-1">
           Upload medical hospital bill, discharge summaries, and prescriptions for multi-agent automated fraud scrutiny.
         </p>
       </div>
 
+      {/* Amber Progress Stepper */}
+      <GlowCard className="p-4 sm:p-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative">
+          {steps.map((st, idx) => {
+            const Icon = st.icon;
+            return (
+              <div key={st.num} className="flex flex-col items-start gap-2 relative">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold transition-all ${
+                      st.current
+                        ? 'bg-amber-primary text-black ring-2 ring-amber-primary/30'
+                        : 'bg-surface-elevated text-text-muted border border-white/8'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+                  <span
+                    className={`text-xs font-semibold ${
+                      st.current ? 'text-amber-primary' : 'text-text-muted'
+                    }`}
+                  >
+                    {st.title}
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-faint pl-9 hidden sm:block">
+                  {st.desc}
+                </p>
+                {idx < steps.length - 1 && (
+                  <div className="hidden md:block absolute right-0 top-3.5 w-6 h-[1px] bg-white/10 -mr-3" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </GlowCard>
+
       {/* Quick Load Golden Presets */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
-        <div className="flex items-center space-x-2 text-xs font-semibold uppercase tracking-wider text-blue-400">
-          <Sparkles className="w-4 h-4" />
-          <span>Quick Benchmark Presets (Golden Demo Cases)</span>
+      <GlowCard className="p-4 sm:p-5 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-primary">
+          <Sparkles className="w-3.5 h-3.5 text-amber-primary" />
+          <span>Quick Benchmark Presets (Golden Benchmark Claims)</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {GOLDEN_PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => handleApplyPreset(p.key)}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                selectedPreset === p.key
-                  ? 'bg-blue-600/10 border-blue-500 text-white'
-                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white">{p.name}</span>
-                {selectedPreset === p.key && <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">{p.desc}</p>
-            </button>
-          ))}
+          {GOLDEN_PRESETS.map((p) => {
+            const isSelected = selectedPreset === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => handleApplyPreset(p.key)}
+                className={`p-3.5 rounded-xl border text-left transition-all ${
+                  isSelected
+                    ? 'bg-amber-primary/10 border-amber-primary text-text-primary shadow-xs'
+                    : 'bg-surface-elevated/60 border-white/8 text-text-muted hover:border-amber-primary/30 hover:text-text-primary'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-text-primary">{p.name}</span>
+                  {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-amber-primary shrink-0" />}
+                </div>
+                <p className="text-[11px] text-text-muted mt-1 leading-snug">{p.desc}</p>
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </GlowCard>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center space-x-3 text-sm">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-3 text-xs sm:text-sm">
+          <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Upload & Metadata Form */}
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-        {/* File Dropzone */}
-        <div className="space-y-2">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Document PDF / Bill Upload
-          </label>
-          <div className="border-2 border-dashed border-slate-800 hover:border-blue-500/50 rounded-xl p-8 text-center transition-colors bg-slate-950/60">
-            <Upload className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-            <p className="text-sm text-slate-300 font-medium">
-              {file ? file.name : 'Select or drag hospital invoice PDF here'}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Accepts PDF, PNG, JPG (up to 15MB)</p>
-            <input
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg"
-              onChange={(e) => e.target.files && setFile(e.target.files[0])}
-              className="hidden"
-              id="file-upload"
-            />
-            <label
-              htmlFor="file-upload"
-              className="mt-4 inline-block px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
-            >
-              Browse Files
-            </label>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <GlowCard glow corner="top-right" className="p-5 sm:p-6 space-y-6">
+          {/* Dashed Amber-Tinted File Dropzone */}
+          <div className="space-y-2">
+            <span className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
+              Hospital Invoice PDF / Bill Document
+            </span>
+            <div className="border-2 border-dashed border-amber-primary/30 hover:border-amber-primary/60 rounded-[20px] p-6 sm:p-8 text-center transition-colors bg-surface">
+              <Upload className="w-8 h-8 text-amber-primary/70 mx-auto mb-2" />
+              <p className="text-xs sm:text-sm text-text-primary font-medium">
+                {file ? file.name : 'Select or drag hospital invoice PDF here'}
+              </p>
+              <p className="text-[11px] text-text-faint mt-1">Accepts PDF, PNG, JPG (up to 15MB)</p>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => e.target.files && setFile(e.target.files[0])}
+                className="hidden"
+                id="file-upload"
+              />
+              <label
+                htmlFor="file-upload"
+                className="mt-3 inline-block px-4 py-1.5 rounded-xl bg-surface-elevated hover:bg-surface-elevated/80 text-text-primary text-xs font-medium cursor-pointer transition-colors border border-amber-primary/30"
+              >
+                Browse Files
+              </label>
+            </div>
           </div>
-        </div>
 
-        {/* Claim Core Metadata */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-          <div>
-            <label className="block text-slate-400 mb-1">Policy ID</label>
-            <input
-              type="text"
-              value={formData.policy_id}
-              onChange={(e) => setFormData({ ...formData, policy_id: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
-              required
-            />
+          {/* Claim Core Metadata */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label htmlFor="form-policy-id" className="block text-text-muted mb-1 font-medium">Policy ID</label>
+              <input
+                id="form-policy-id"
+                type="text"
+                value={formData.policy_id}
+                onChange={(e) => setFormData({ ...formData, policy_id: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-insurer-id" className="block text-text-muted mb-1 font-medium">Insurer ID</label>
+              <input
+                id="form-insurer-id"
+                type="text"
+                value={formData.insurer_id}
+                onChange={(e) => setFormData({ ...formData, insurer_id: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-claimant-name" className="block text-text-muted mb-1 font-medium">Claimant Full Name</label>
+              <input
+                id="form-claimant-name"
+                type="text"
+                value={formData.claimant_name}
+                onChange={(e) => setFormData({ ...formData, claimant_name: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-hospital-name" className="block text-text-muted mb-1 font-medium">Hospital Provider Name</label>
+              <input
+                id="form-hospital-name"
+                type="text"
+                value={formData.hospital_name}
+                onChange={(e) => setFormData({ ...formData, hospital_name: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-provider-city" className="block text-text-muted mb-1 font-medium">Provider City</label>
+              <input
+                id="form-provider-city"
+                type="text"
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-diagnosis-code" className="block text-text-muted mb-1 font-medium">Diagnosis Code (ICD-10)</label>
+              <input
+                id="form-diagnosis-code"
+                type="text"
+                value={formData.diagnosis_code}
+                onChange={(e) => setFormData({ ...formData, diagnosis_code: e.target.value })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-subtotal" className="block text-text-muted mb-1 font-medium">Subtotal (₹)</label>
+              <input
+                id="form-subtotal"
+                type="number"
+                step="any"
+                value={formData.subtotal}
+                onChange={(e) => setFormData({ ...formData, subtotal: parseFloat(e.target.value) })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary font-mono focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="form-total-claimed" className="block text-text-muted mb-1 font-medium">Total Claimed (₹)</label>
+              <input
+                id="form-total-claimed"
+                type="number"
+                step="any"
+                value={formData.total_claimed}
+                onChange={(e) => setFormData({ ...formData, total_claimed: parseFloat(e.target.value) })}
+                className="w-full bg-surface-elevated border border-white/8 rounded-xl px-3.5 py-2.5 text-text-primary font-mono font-bold focus:outline-none focus:ring-1 focus:ring-amber-primary focus:border-amber-primary"
+                required
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Insurer ID</label>
-            <input
-              type="text"
-              value={formData.insurer_id}
-              onChange={(e) => setFormData({ ...formData, insurer_id: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Claimant Name</label>
-            <input
-              type="text"
-              value={formData.claimant_name}
-              onChange={(e) => setFormData({ ...formData, claimant_name: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Hospital Name</label>
-            <input
-              type="text"
-              value={formData.hospital_name}
-              onChange={(e) => setFormData({ ...formData, hospital_name: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">City</label>
-            <input
-              type="text"
-              value={formData.city}
-              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Diagnosis Code</label>
-            <input
-              type="text"
-              value={formData.diagnosis_code}
-              onChange={(e) => setFormData({ ...formData, diagnosis_code: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Subtotal (₹)</label>
-            <input
-              type="number"
-              step="any"
-              value={formData.subtotal}
-              onChange={(e) => setFormData({ ...formData, subtotal: parseFloat(e.target.value) })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 mb-1">Total Claimed (₹)</label>
-            <input
-              type="number"
-              step="any"
-              value={formData.total_claimed}
-              onChange={(e) => setFormData({ ...formData, total_claimed: parseFloat(e.target.value) })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono font-bold"
-              required
-            />
-          </div>
-        </div>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
-        >
-          {submitting ? 'Uploading & Registering Claim...' : 'Submit Claim for Multi-Agent Scrutiny'}
-        </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-3 rounded-xl bg-amber-primary hover:bg-amber-bright text-black font-semibold text-xs sm:text-sm transition-all shadow-md shadow-amber-primary/20 disabled:opacity-50"
+          >
+            {submitting ? 'Uploading & Registering Claim...' : 'Submit Claim for Multi-Agent Scrutiny'}
+          </button>
+        </GlowCard>
       </form>
     </div>
   );

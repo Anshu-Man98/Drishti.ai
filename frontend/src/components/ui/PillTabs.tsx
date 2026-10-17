@@ -10,7 +10,8 @@ export interface TabItem {
 
 export interface PillTabsProps {
   tabs: TabItem[];
-  activeTabId: string;
+  activeTabId?: string;
+  activeTab?: string;
   onChange: (id: string) => void;
   onAddTab?: () => void;
   className?: string;
@@ -28,11 +29,13 @@ export interface PillTabsProps {
 export const PillTabs: React.FC<PillTabsProps> = ({
   tabs,
   activeTabId,
+  activeTab,
   onChange,
   onAddTab,
   className,
   size = 'md',
 }) => {
+  const currentActive = activeTabId ?? activeTab ?? '';
   const sizeClasses = {
     sm: 'px-3 py-1 text-xs',
     md: 'px-4 py-1.5 text-xs',
@@ -41,7 +44,7 @@ export const PillTabs: React.FC<PillTabsProps> = ({
   return (
     <div className={clsx('flex items-center gap-2 overflow-x-auto select-none py-1', className)} role="tablist">
       {tabs.map((tab) => {
-        const isActive = tab.id === activeTabId;
+        const isActive = tab.id === currentActive;
         return (
           <button
             key={tab.id}

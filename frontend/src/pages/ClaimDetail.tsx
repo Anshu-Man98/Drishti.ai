@@ -149,8 +149,8 @@ export const ClaimDetail: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-24 text-center text-slate-500 dark:text-slate-400 space-y-4">
-        <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500" />
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center text-text-secondary space-y-4">
+        <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-primary" />
         <p className="text-sm font-medium">Loading claim dossier & visual document citations...</p>
       </div>
     );
@@ -159,14 +159,14 @@ export const ClaimDetail: React.FC = () => {
   if (error || !claim) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center space-y-4">
-        <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Claim Not Found</h2>
-        <p className="text-slate-500 dark:text-slate-400 text-sm">
+        <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
+        <h2 className="text-xl font-bold text-text-primary">Claim Not Found</h2>
+        <p className="text-text-secondary text-sm">
           {error || `Claim ${id} could not be located.`}
         </p>
         <Link
           to="/claims"
-          className="inline-flex items-center text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium"
+          className="inline-flex items-center text-amber-primary hover:text-amber-bright hover:underline text-sm font-medium"
         >
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to Claims Queue
         </Link>
@@ -192,14 +192,14 @@ export const ClaimDetail: React.FC = () => {
       />
 
       {/* Mobile-Only Segmented Control (< 768px) */}
-      <div className="md:hidden flex items-center bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold gap-1">
+      <div className="md:hidden flex items-center bg-surface-elevated p-1 rounded-xl border border-white/10 text-xs font-semibold gap-1">
         <button
           type="button"
           onClick={() => setMobileTab('audit')}
           className={`flex-1 py-2 rounded-lg text-center transition-all ${
             mobileTab === 'audit'
-              ? 'bg-blue-600 text-white shadow-2xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'bg-amber-primary text-black font-bold shadow-2xs'
+              : 'text-text-secondary hover:text-text-primary'
           }`}
         >
           Audit Dossier
@@ -209,8 +209,8 @@ export const ClaimDetail: React.FC = () => {
           onClick={() => setMobileTab('doc')}
           className={`flex-1 py-2 rounded-lg text-center transition-all ${
             mobileTab === 'doc'
-              ? 'bg-blue-600 text-white shadow-2xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'bg-amber-primary text-black font-bold shadow-2xs'
+              : 'text-text-secondary hover:text-text-primary'
           }`}
         >
           Document AI
@@ -226,8 +226,8 @@ export const ClaimDetail: React.FC = () => {
             onClick={() => setMobileTab('spacetime')}
             className={`flex-1 py-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 ${
               mobileTab === 'spacetime'
-                ? 'bg-blue-600 text-white shadow-2xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                ? 'bg-amber-primary text-black font-bold shadow-2xs'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             <span>Spacetime</span>
@@ -375,11 +375,11 @@ export const ClaimDetail: React.FC = () => {
       {!isChatOpen && (
         <button
           onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-xl shadow-blue-500/25 border border-blue-400/30 transition-all transform hover:scale-102"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-amber-primary hover:bg-amber-bright text-black font-semibold shadow-xl shadow-amber-primary/25 border border-amber-primary/40 transition-all transform hover:scale-102"
         >
-          <MessageSquare className="w-4 h-4 text-white" />
-          <span className="text-xs font-semibold">Ask Case Assistant</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <MessageSquare className="w-4 h-4 text-black" />
+          <span className="text-xs font-bold">Ask Case Assistant</span>
+          <span className="w-2 h-2 rounded-full bg-black animate-pulse" />
         </button>
       )}
 

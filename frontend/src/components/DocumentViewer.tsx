@@ -209,32 +209,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleResetZoom = () => setZoom(100);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 flex flex-col h-full">
+    <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4 flex flex-col h-full">
       {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/8 text-xs">
         {/* Left: Title & Page Selector */}
         <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1.5 font-bold text-white">
-            <FileText className="w-4 h-4 text-blue-400" />
+          <div className="flex items-center space-x-1.5 font-bold text-text-primary">
+            <FileText className="w-4 h-4 text-amber-primary" />
             <span>Document AI Viewer</span>
           </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center space-x-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+            <div className="flex items-center space-x-1 bg-surface-elevated px-2 py-1 rounded-lg border border-white/10">
               <button
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="p-1 hover:text-white disabled:text-slate-600 disabled:hover:text-slate-600"
+                className="p-1 hover:text-text-primary disabled:text-muted disabled:hover:text-muted"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="font-mono text-slate-300 px-1">
+              <span className="font-mono text-text-primary px-1">
                 {currentPage} / {totalPages}
               </span>
               <button
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1 hover:text-white disabled:text-slate-600 disabled:hover:text-slate-600"
+                className="p-1 hover:text-text-primary disabled:text-muted disabled:hover:text-muted"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -247,16 +247,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           {/* Toggle Button */}
           <button
             onClick={() => setShowAllFields(!showAllFields)}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors ${
               showAllFields
-                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-amber-primary/15 border-amber-primary/40 text-amber-primary'
+                : 'bg-surface-elevated border-white/10 text-muted hover:text-text-primary'
             }`}
             title="Toggle between showing only flagged anomalies or all Document AI extracted fields"
           >
-            {showAllFields ? <Layers className="w-3.5 h-3.5 text-blue-400" /> : <Eye className="w-3.5 h-3.5" />}
+            {showAllFields ? <Layers className="w-3.5 h-3.5 text-amber-primary" /> : <Eye className="w-3.5 h-3.5" />}
             <span>{showAllFields ? 'Showing All Fields' : 'Flags Only'}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-surface text-text-secondary font-mono border border-white/5">
               {showAllFields ? entityBoxes.length + findingBoxes.length : findingBoxes.length}
             </span>
           </button>
@@ -283,25 +283,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           </button>
 
           {/* Zoom Buttons */}
-          <div className="flex items-center space-x-1 bg-slate-950 px-1.5 py-1 rounded-lg border border-slate-800 text-slate-400">
+          <div className="flex items-center space-x-1 bg-surface-elevated px-2 py-1 rounded-xl border border-white/10 text-muted">
             <button
               onClick={handleZoomOut}
-              className="p-1 hover:text-white"
+              className="p-1 hover:text-text-primary transition-colors"
               title="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="font-mono text-[11px] px-1 text-slate-300">{zoom}%</span>
+            <span className="font-mono text-[11px] px-1 text-text-primary">{zoom}%</span>
             <button
               onClick={handleZoomIn}
-              className="p-1 hover:text-white"
+              className="p-1 hover:text-text-primary transition-colors"
               title="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleResetZoom}
-              className="p-1 hover:text-white border-l border-slate-800 pl-1.5 ml-0.5"
+              className="p-1 hover:text-text-primary border-l border-white/10 pl-1.5 ml-0.5 transition-colors"
               title="Reset Zoom"
             >
               <RotateCcw className="w-3 h-3" />
@@ -313,7 +313,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       {/* Main Document Display Area */}
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-[480px] max-h-[700px] overflow-auto bg-slate-950 rounded-xl border border-slate-800/80 p-2 flex justify-center items-start"
+        className="relative flex-1 min-h-[480px] max-h-[700px] overflow-auto bg-black/60 rounded-xl border border-white/8 p-2 flex justify-center items-start"
       >
         <div
           className="relative transition-all duration-150 inline-block shadow-2xl"

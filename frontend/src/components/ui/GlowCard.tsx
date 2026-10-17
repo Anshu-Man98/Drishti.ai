@@ -4,6 +4,8 @@ import clsx from 'clsx';
 export interface GlowCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   cornerGlow?: boolean;
+  glow?: boolean | string;
+  corner?: string;
   interactive?: boolean;
   className?: string;
   elevation?: 'surface' | 'elevated' | 'subtle';
@@ -17,11 +19,14 @@ export interface GlowCardProps extends React.HTMLAttributes<HTMLDivElement> {
 export const GlowCard: React.FC<GlowCardProps> = ({
   children,
   cornerGlow = false,
+  glow,
+  corner: _corner,
   interactive = false,
   elevation = 'surface',
   className,
   ...props
 }) => {
+  const isGlowing = cornerGlow || (glow !== undefined && glow !== false && glow !== 'none');
   const elevationClasses = {
     surface: 'bg-app-surface',
     elevated: 'bg-app-elevated',
@@ -35,7 +40,7 @@ export const GlowCard: React.FC<GlowCardProps> = ({
         'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)]',
         'transition-all duration-200 ease-out',
         elevationClasses,
-        cornerGlow && 'corner-glow-amber',
+        isGlowing && 'corner-glow-amber',
         interactive && [
           'cursor-pointer',
           'hover:-translate-y-0.5',

@@ -10,14 +10,45 @@ function getAuthHeaders(customHeaders: Record<string, string> = {}): Record<stri
   };
 }
 
-export async function fetchClaims(): Promise<ClaimSummary[]> {
-  const resp = await fetch(`${API_BASE_URL}/claims`, {
+export interface FetchClaimsParams {
+  limit?: number;
+  offset?: number;
+  verdict?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  search?: string;
+  excludeSynthetic?: boolean;
+}
+
+export interface FetchClaimsResult {
+  claims: ClaimSummary[];
+  totalCount: number;
+}
+
+export async function fetchClaims(params?: FetchClaimsParams): Promise<FetchClaimsResult> {
+  const query = new URLSearchParams();
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  if (params?.offset !== undefined) query.set('offset', String(params.offset));
+  if (params?.verdict && params.verdict !== 'all') query.set('verdict', params.verdict);
+  if (params?.sortBy) query.set('sort_by', params.sortBy);
+  if (params?.sortOrder) query.set('sort_order', params.sortOrder);
+  if (params?.search) query.set('search', params.search);
+  if (params?.excludeSynthetic) query.set('exclude_synthetic', 'true');
+
+  const qs = query.toString();
+  const url = `${API_BASE_URL}/claims${qs ? `?${qs}` : ''}`;
+  const resp = await fetch(url, {
     headers: getAuthHeaders(),
   });
   if (!resp.ok) {
     throw new Error(`Failed to fetch claims: ${resp.statusText}`);
   }
-  return resp.json();
+
+  const totalHeader = resp.headers.get('X-Total-Count');
+  const claims = await resp.json();
+  const totalCount = totalHeader ? parseInt(totalHeader, 10) : claims.length;
+
+  return { claims, totalCount };
 }
 
 export async function fetchClaim(claimId: string): Promise<Claim> {
@@ -273,6 +304,78 @@ export async function fetchHealthStatus(): Promise<HealthStatus> {
   const resp = await fetch(`${API_BASE_URL}/health`);
   if (!resp.ok && resp.status !== 503) {
     throw new Error(`Health check failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
+export async function fetchAnalyticsSummary(excludeSynthetic: boolean = false): Promise<import('../types').AnalyticsSummary> {
+  const url = excludeSynthetic
+    ? `${API_BASE_URL}/analytics/summary?exclude_synthetic=true`
+    : `${API_BASE_URL}/analytics/summary`;
+  const resp = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch analytics summary: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function fetchFraudRings(ringId?: string): Promise<import('../types').GraphRingsResponse> {
+  const url = ringId
+    ? `${API_BASE_URL}/graph/rings?ring_id=${encodeURIComponent(ringId)}`
+    : `${API_BASE_URL}/graph/rings`;
+  const resp = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch fraud rings: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function startDuel(
+  claimId?: string,
+  rounds: number = 3
+): Promise<import('../types').DuelResult> {
+  const resp = await fetch(`${API_BASE_URL}/duel/start`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ claim_id: claimId || null, rounds }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Failed to start adversarial duel: ${errText || resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function fetchDuelStatus(duelId: string): Promise<import('../types').DuelStatusResponse> {
+  const resp = await fetch(`${API_BASE_URL}/duel/${encodeURIComponent(duelId)}/status`, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch duel status: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function fetchDuelRounds(duelId: string): Promise<import('../types').DuelRound[]> {
+  const resp = await fetch(`${API_BASE_URL}/duel/${encodeURIComponent(duelId)}/rounds`, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch duel rounds: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+export async function fetchLearnedPatterns(): Promise<import('../types').LearnedPattern[]> {
+  const resp = await fetch(`${API_BASE_URL}/duel/patterns/learned`, {
+    headers: getAuthHeaders(),
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch learned evasion patterns: ${resp.statusText}`);
   }
   return resp.json();
 }

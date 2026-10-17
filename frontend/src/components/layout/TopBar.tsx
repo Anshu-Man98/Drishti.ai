@@ -80,21 +80,21 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
   const breadcrumbs = getBreadcrumbs();
 
   return (
-    <header className="h-16 rounded-[20px] bg-app-surface/90 backdrop-blur-md border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)] px-4 sm:px-6 flex items-center justify-between sticky top-4 z-30 mb-6 transition-colors">
+    <header className="h-16 rounded-[20px] bg-app-surface/90 backdrop-blur-md border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)] px-3 sm:px-6 flex items-center justify-between sticky top-4 z-30 mb-6 transition-colors">
       {/* Left: Hamburger & Dynamic Breadcrumbs */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onOpenMobile}
-          className="lg:hidden p-2 rounded-xl text-app-muted hover:text-app-primary hover:bg-white/[0.06] transition-colors"
+          className="lg:hidden p-2 rounded-xl text-app-muted hover:text-app-primary hover:bg-white/[0.06] transition-colors shrink-0"
           aria-label="Open mobile navigation"
         >
           <Menu className="w-5 h-5" />
         </button>
 
-        <nav className="flex items-center gap-1.5 text-xs sm:text-sm select-none" aria-label="Breadcrumb">
+        <nav className="flex items-center gap-1.5 text-xs sm:text-sm select-none min-w-0" aria-label="Breadcrumb">
           <Link
             to="/"
-            className="text-app-muted hover:text-amber-primary font-medium transition-colors"
+            className="text-app-muted hover:text-amber-primary font-medium transition-colors shrink-0"
           >
             FinShield
           </Link>
@@ -102,13 +102,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
             <React.Fragment key={crumb.path}>
               <ChevronRight className="w-3.5 h-3.5 text-app-muted/60 shrink-0" />
               {idx === breadcrumbs.length - 1 ? (
-                <span className="font-semibold text-app-primary font-mono text-xs sm:text-sm truncate max-w-[200px] sm:max-w-none">
+                <span className="font-semibold text-app-primary font-mono text-xs sm:text-sm truncate max-w-[110px] sm:max-w-none">
                   {crumb.label}
                 </span>
               ) : (
                 <Link
                   to={crumb.path}
-                  className="text-app-muted hover:text-amber-primary font-medium transition-colors truncate"
+                  className="text-app-muted hover:text-amber-primary font-medium transition-colors truncate max-w-[90px] sm:max-w-none"
                 >
                   {crumb.label}
                 </Link>
@@ -184,7 +184,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
         </div>
 
         {/* Nexa User Profile Chip */}
-        <div className="flex items-center gap-2.5 py-1 px-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none">
+        <div className="hidden sm:flex items-center gap-2.5 py-1 px-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none">
           <div className="w-7 h-7 rounded-lg bg-amber-primary/14 border border-amber-primary/30 flex items-center justify-center text-amber-primary shrink-0">
             <User className="w-4 h-4" />
           </div>

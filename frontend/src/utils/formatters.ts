@@ -157,6 +157,35 @@ export function formatIndianCurrency(amountInRupees: number | null | undefined):
 export const formatINR = formatIndianCurrency;
 
 /**
+ * Format number in Indian grouping system without currency symbol (e.g. 12,95,940)
+ */
+export function formatIndianNumber(num: number | null | undefined, decimals: number = 0): string {
+  if (num === null || num === undefined || isNaN(num)) {
+    return '0';
+  }
+  return new Intl.NumberFormat('en-IN', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals,
+  }).format(num);
+}
+
+/**
+ * Format claim reference for human-readable display (e.g. "Claim #G582")
+ */
+export function formatClaimRef(claimId?: string | null, mode: 'short' | 'full' = 'short'): string {
+  if (!claimId) return 'Claim #—';
+  const clean = claimId.trim();
+  if (mode === 'short') {
+    const parts = clean.split('-');
+    if (parts.length > 1) {
+      return `Claim #${parts[parts.length - 1]}`;
+    }
+    return `Claim #${clean.length > 6 ? clean.slice(-4) : clean}`;
+  }
+  return clean;
+}
+
+/**
  * Format diagnosis code to human-readable clinical label with code badge.
  * Normalizes code: exact match -> trailing-zero adjustment -> 3-char parent block.
  * For unknown codes, returns 'description not in reference table' (never duplicates code).

@@ -36,8 +36,8 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
   return (
     <GlowCard className="p-5 sm:p-6 space-y-5" glow={isReject ? 'none' : 'amber'}>
       {/* Risk Gauge & Verdict Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 pb-5 border-b border-white/8">
-        <div className="flex items-center gap-5">
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 pb-5 border-b border-app-default">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-5 min-w-0">
           {/* ArcGauge for Risk Score */}
           <div className="shrink-0 flex items-center justify-center">
             <ArcGauge
@@ -49,11 +49,11 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
             />
           </div>
 
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-muted font-semibold block">
+          <div className="min-w-0">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-app-muted font-semibold block">
               Adjudication Status
             </span>
-            <h2 className="text-lg font-bold text-text-primary tracking-tight">
+            <h2 className="text-lg font-bold text-app-primary tracking-tight">
               Audit Verdict
             </h2>
             <div className="mt-2">
@@ -76,7 +76,7 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
                   size="md"
                 />
               ) : (
-                <span className="text-xs text-muted">
+                <span className="text-xs text-app-muted">
                   Click &quot;Analyze Claim&quot; to trigger multi-agent audit
                 </span>
               )}
@@ -86,22 +86,22 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
 
         {/* Side-by-side Score Attribution Breakdown */}
         {dossier && (
-          <div className="flex items-center gap-3">
-            <div className="px-4 py-2.5 rounded-xl bg-surface-elevated/70 border border-white/8 text-right shadow-2xs">
-              <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider text-muted font-semibold">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <div className="px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-app-surface-elevated border border-app-default text-right shadow-2xs">
+              <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider text-app-muted font-semibold">
                 <Layers className="w-3 h-3 text-amber-primary" />
                 <span>Agent Score</span>
               </div>
               <div className="mt-0.5 flex items-baseline justify-end gap-1">
-                <span className="text-base font-mono font-bold text-text-primary tabular-nums">
+                <span className="text-base font-mono font-bold text-app-primary tabular-nums">
                   {agentScore}
                 </span>
-                <span className="text-[10px] text-muted">/ 100</span>
+                <span className="text-[10px] text-app-muted">/ 100</span>
               </div>
             </div>
 
-            <div className="px-4 py-2.5 rounded-xl bg-surface-elevated/70 border border-white/8 text-right shadow-2xs">
-              <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider text-muted font-semibold">
+            <div className="px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-app-surface-elevated border border-app-default text-right shadow-2xs">
+              <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider text-app-muted font-semibold">
                 <Cpu className="w-3 h-3 text-amber-bright" />
                 <span>BigQuery ML</span>
               </div>
@@ -111,7 +111,7 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
                     ? `${(dossier.ml_score * 100).toFixed(1)}%`
                     : '--'}
                 </span>
-                <span className="text-[10px] text-muted">prob</span>
+                <span className="text-[10px] text-app-muted">prob</span>
               </div>
             </div>
           </div>
@@ -120,11 +120,11 @@ export const VerdictSummaryCard: React.FC<VerdictSummaryCardProps> = ({ dossier 
 
       {/* Synthesis & Adjuster Summary */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-app-muted flex items-center gap-1.5">
           <FileText className="w-3.5 h-3.5 text-amber-primary" />
           <span>Synthesis & Adjuster Summary</span>
         </h3>
-        <p className="text-xs sm:text-sm text-text-primary leading-relaxed bg-surface-elevated/50 p-4 rounded-xl border border-white/6">
+        <p className="text-xs sm:text-sm text-app-primary leading-relaxed bg-app-surface-elevated p-4 rounded-xl border border-app-default">
           {dossier?.summary ||
             'No audit findings generated yet. Run the multi-agent pipeline to examine document forensics, policy limits, cross-insurer submissions, and trajectory spacetime feasibility.'}
         </p>

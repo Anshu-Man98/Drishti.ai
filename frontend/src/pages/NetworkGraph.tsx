@@ -181,13 +181,15 @@ export const NetworkGraph: React.FC = () => {
                   />
                 </div>
 
-                <div className="mt-2.5 flex items-baseline justify-between">
-                  <span className="text-sm font-bold font-mono text-text-primary tabular-nums">
+                <div className="mt-3 space-y-1">
+                  <div className="text-sm font-bold font-mono text-app-primary tabular-nums">
                     {formatINR(r.total_amount)}
-                  </span>
-                  <span className="text-[11px] font-mono text-muted">
-                    {r.claim_count} claims • {r.claimant_count} claimants
-                  </span>
+                  </div>
+                  <div className="text-[11px] font-mono text-app-muted flex items-center gap-1.5">
+                    <span>{r.claim_count} claims</span>
+                    <span>·</span>
+                    <span>{r.claimant_count} claimants</span>
+                  </div>
                 </div>
               </button>
             );

@@ -303,7 +303,7 @@ export const ClaimDetail: React.FC = () => {
         {(layoutMode === 'split' || layoutMode === 'doc') && (
           <div
             className={`${
-              layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6' : 'w-full'
+              layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6 min-w-0' : 'w-full min-w-0'
             } space-y-6`}
           >
             <DocumentViewer
@@ -323,7 +323,7 @@ export const ClaimDetail: React.FC = () => {
         {(layoutMode === 'split' || layoutMode === 'audit') && (
           <div
             className={`${
-              layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6' : 'w-full'
+              layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6 min-w-0' : 'w-full min-w-0'
             } space-y-6`}
           >
             <VerdictSummaryCard dossier={dossier} />

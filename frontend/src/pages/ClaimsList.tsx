@@ -28,6 +28,7 @@ import {
   formatInsurer,
   formatPolicy,
   formatDateTime,
+  formatClaimRef,
 } from '../utils/formatters';
 
 type SortField = 'created_at' | 'total_claimed' | 'risk_score' | 'claim_id' | 'claimant_name' | 'hospital_name' | 'diagnosis_code';
@@ -251,12 +252,12 @@ export const ClaimsList: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm text-text-primary">
-              <thead className="bg-surface-elevated/80 border-b border-white/8 text-[11px] uppercase tracking-wider text-muted sticky top-0 z-10">
+            <table className="w-full min-w-[1050px] text-left text-xs sm:text-sm text-app-primary">
+              <thead className="bg-app-surface-elevated border-b border-app-default text-[11px] uppercase tracking-wider text-app-muted sticky top-0 z-20">
                 <tr>
                   <th
                     onClick={() => handleSort('claim_id')}
-                    className="py-3 px-4 font-semibold cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold cursor-pointer hover:text-app-primary transition-colors sticky left-0 bg-app-surface-elevated z-30 shadow-[2px_0_6px_rgba(0,0,0,0.12)] min-w-[180px]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Claim Reference</span>
@@ -265,7 +266,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('claimant_name')}
-                    className="py-3 px-4 font-semibold cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold cursor-pointer hover:text-app-primary transition-colors"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Claimant</span>
@@ -274,7 +275,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('hospital_name')}
-                    className="py-3 px-4 font-semibold cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold cursor-pointer hover:text-app-primary transition-colors"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Hospital Provider</span>
@@ -283,7 +284,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('diagnosis_code')}
-                    className="py-3 px-4 font-semibold cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold cursor-pointer hover:text-app-primary transition-colors"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Clinical Indication</span>
@@ -292,7 +293,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('total_claimed')}
-                    className="py-3 px-4 font-semibold text-right cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold text-right cursor-pointer hover:text-app-primary transition-colors"
                   >
                     <div className="flex items-center justify-end gap-1.5">
                       <span>Claim Amount</span>
@@ -301,7 +302,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('risk_score')}
-                    className="py-3 px-4 font-semibold text-center cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold text-center cursor-pointer hover:text-app-primary transition-colors"
                   >
                     <div className="flex items-center justify-center gap-1.5">
                       <span>Audit Verdict & Risk</span>
@@ -310,7 +311,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                   <th
                     onClick={() => handleSort('created_at')}
-                    className="py-3 px-4 font-semibold text-right cursor-pointer hover:text-text-primary transition-colors"
+                    className="py-3 px-4 font-semibold text-right cursor-pointer hover:text-app-primary transition-colors min-w-[140px]"
                   >
                     <div className="flex items-center justify-end gap-1.5">
                       <span>Date / Action</span>
@@ -319,7 +320,7 @@ export const ClaimsList: React.FC = () => {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/6">
+              <tbody className="divide-y divide-app-default">
                 {claims.map((c) => {
                   const diagnosis = formatDiagnosis(c.diagnosis_code);
                   const insurer = formatInsurer(c.insurer_id);
@@ -341,13 +342,13 @@ export const ClaimsList: React.FC = () => {
                       className="hover:bg-white/3 transition-colors"
                     >
                       {/* Claim Reference & Policy */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 sticky left-0 bg-app-surface z-10 shadow-[2px_0_6px_rgba(0,0,0,0.12)]">
                         <div className="flex items-center gap-1.5">
                           <Link
                             to={`/claims/${c.claim_id}`}
                             className="font-semibold text-amber-primary hover:text-amber-bright hover:underline block truncate max-w-[160px] font-mono"
                           >
-                            Claim #{c.claim_id.length > 8 ? c.claim_id.slice(-6) : c.claim_id}
+                            {formatClaimRef(c.claim_id)}
                           </Link>
                           <button
                             onClick={(e) => {
@@ -357,7 +358,7 @@ export const ClaimsList: React.FC = () => {
                               setCopiedId(c.claim_id);
                               setTimeout(() => setCopiedId(null), 1500);
                             }}
-                            className="p-1 rounded hover:bg-white/10 text-muted hover:text-text-primary transition-colors"
+                            className="p-1 rounded hover:bg-white/10 text-app-muted hover:text-app-primary transition-colors cursor-pointer"
                             title={`Copy full Claim ID: ${c.claim_id}`}
                             aria-label="Copy Claim ID"
                           >
@@ -368,10 +369,10 @@ export const ClaimsList: React.FC = () => {
                             )}
                           </button>
                         </div>
-                        <span className="text-[11px] text-text-secondary block truncate max-w-[170px]" title={policy.name}>
+                        <span className="text-[11px] text-app-secondary block truncate max-w-[170px]" title={policy.name}>
                           {insurer.short} · {policy.name}
                         </span>
-                        <span className="font-mono text-[10px] text-muted block truncate max-w-[170px]">
+                        <span className="font-mono text-[10px] text-app-muted block truncate max-w-[170px]">
                           {c.claim_id}
                         </span>
                       </td>
@@ -439,17 +440,17 @@ export const ClaimsList: React.FC = () => {
                       </td>
 
                       {/* Action & Date */}
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right min-w-[140px] whitespace-nowrap">
                         <div className="flex flex-col items-end gap-1">
                           <Link
                             to={`/claims/${c.claim_id}`}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface hover:bg-amber-primary hover:text-black text-amber-primary border border-amber-primary/30 text-xs font-semibold transition-all group shadow-2xs"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-app-surface hover:bg-amber-primary hover:text-black text-amber-primary border border-amber-primary/30 text-xs font-semibold transition-all group shadow-2xs"
                           >
                             <span>Audit</span>
                             <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                           </Link>
                           {c.created_at && (
-                            <span className="text-[10px] text-muted font-mono">
+                            <span className="text-[10px] text-app-muted font-mono">
                               {formatDateTime(c.created_at)}
                             </span>
                           )}

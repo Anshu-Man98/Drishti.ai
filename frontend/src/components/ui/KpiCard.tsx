@@ -3,6 +3,7 @@ import { ArrowUpRight } from 'lucide-react';
 import clsx from 'clsx';
 import { GlowCard } from './GlowCard';
 import { useCountUp } from '../../utils/motion';
+import { formatIndianNumber } from '../../utils/formatters';
 
 export interface KpiCardProps {
   label: string;
@@ -56,10 +57,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   const displayNum = animate && isNumeric ? animatedNum : targetNum;
 
   const formattedValue = isNumeric
-    ? displayNum.toLocaleString(undefined, {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      })
+    ? formatIndianNumber(displayNum, decimals)
     : String(value);
 
   const contextToneClasses = {
@@ -90,10 +88,14 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
       {/* Main Numeral */}
       <div className="my-1">
-        <div className="text-3xl sm:text-4xl lg:text-[40px] font-light tracking-tight text-app-primary tabular-nums">
-          {prefix}
-          {formattedValue}
-          {suffix}
+        <div className="text-2xl sm:text-3xl lg:text-3xl xl:text-4xl font-light tracking-tight text-app-primary tabular-nums whitespace-nowrap flex items-baseline gap-0.5">
+          {prefix && (
+            <span className="text-xl sm:text-2xl lg:text-2xl xl:text-3xl font-normal opacity-90 select-none">
+              {prefix}
+            </span>
+          )}
+          <span>{formattedValue}</span>
+          {suffix && <span className="text-sm font-normal text-app-muted ml-0.5">{suffix}</span>}
         </div>
       </div>
 

@@ -326,72 +326,81 @@ export const SpacetimeMap: React.FC<SpacetimeMapProps> = ({
                 const matchingLeg = legs.find((l) => l.index === i);
 
                 return (
-                  <button
+                  <div
                     key={i}
-                    type="button"
-                    onClick={() => {
-                      setCurrentIndex(i);
-                      setIsPlaying(false);
-                    }}
-                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                    className={`w-full text-left p-3 rounded-xl border transition-all space-y-2 ${
                       isSelected
                         ? 'bg-amber-primary/10 border-amber-primary/50 shadow-2xs ring-1 ring-amber-primary/40'
-                        : 'bg-surface-elevated/60 border-white/8 hover:border-amber-primary/30'
+                        : 'bg-app-surface-elevated border-app-default hover:border-amber-primary/30'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold font-mono text-black shrink-0 ${
-                            isSelected ? 'bg-amber-primary font-bold' : 'bg-muted/40 text-text-primary'
-                          }`}
-                        >
-                          {i + 1}
-                        </span>
-                        <span className="text-xs font-bold text-text-primary truncate">
-                          {ev.place}
-                        </span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setCurrentIndex(i);
+                        setIsPlaying(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setCurrentIndex(i);
+                          setIsPlaying(false);
+                        }
+                      }}
+                      className="cursor-pointer space-y-1.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-primary rounded-lg select-none"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                          <span
+                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold font-mono text-black shrink-0 mt-0.5 ${
+                              isSelected ? 'bg-amber-primary font-bold' : 'bg-app-muted/40 text-app-primary'
+                            }`}
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="text-xs font-bold text-app-primary break-words">
+                            {ev.place}
+                          </span>
+                        </div>
+
+                        {matchingLeg?.isImpossible && (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/25 shrink-0 whitespace-nowrap">
+                            IMPOSSIBLE
+                          </span>
+                        )}
                       </div>
 
-                      {matchingLeg?.isImpossible && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
-                          IMPOSSIBLE
+                      <div className="text-[11px] text-app-secondary flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          {isDoctor ? (
+                            <Stethoscope className="w-3 h-3 text-amber-bright" />
+                          ) : (
+                            <User className="w-3 h-3 text-amber-primary" />
+                          )}
+                          <span>{isDoctor ? formatDoctor(ev.actor) : ev.actor}</span>
                         </span>
-                      )}
-                    </div>
+                        <span className="font-mono text-[10px] text-app-muted">{formatDateTime(ev.ts)}</span>
+                      </div>
 
-                    <div className="text-[11px] text-text-secondary flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        {isDoctor ? (
-                          <Stethoscope className="w-3 h-3 text-amber-bright" />
-                        ) : (
-                          <User className="w-3 h-3 text-amber-primary" />
-                        )}
-                        <span>{isDoctor ? formatDoctor(ev.actor) : ev.actor}</span>
-                      </span>
-                      <span className="font-mono text-[10px] text-muted">{formatDateTime(ev.ts)}</span>
+                      <p className="text-[11px] text-app-secondary leading-relaxed break-words">
+                        {ev.description}
+                      </p>
                     </div>
-
-                    <p className="text-[11px] text-text-secondary leading-relaxed">
-                      {ev.description}
-                    </p>
 
                     {ev.doc_id && onOpenDocument && (
-                      <div className="pt-1 flex justify-end">
+                      <div className="pt-1.5 flex justify-end border-t border-app-default/50">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenDocument(ev.doc_id);
-                          }}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-primary hover:text-amber-bright hover:underline"
+                          onClick={() => onOpenDocument(ev.doc_id)}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-primary hover:text-amber-bright hover:underline cursor-pointer"
                         >
                           <span>Inspect Linked Claim ({ev.doc_id})</span>
                           <ExternalLink className="w-3 h-3" />
                         </button>
                       </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>

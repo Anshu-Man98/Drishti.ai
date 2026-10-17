@@ -98,7 +98,7 @@ export const DuelRoundCard: React.FC<DuelRoundCardProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-primary uppercase tracking-wide">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-primary" />
-              <span>FinShield Multi-Agent Response</span>
+              <span>Drishti Multi-Agent Response</span>
             </div>
             <Badge
               variant={

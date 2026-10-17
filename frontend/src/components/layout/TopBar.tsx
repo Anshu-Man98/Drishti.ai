@@ -96,7 +96,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
             to="/"
             className="text-app-muted hover:text-amber-primary font-medium transition-colors shrink-0"
           >
-            FinShield
+            Drishti
           </Link>
           {breadcrumbs.map((crumb, idx) => (
             <React.Fragment key={crumb.path}>

@@ -84,14 +84,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-base tracking-tight text-app-primary">
-                    FinShield
+                    Drishti
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-primary/10 text-amber-primary border border-amber-primary/25">
                     AI
                   </span>
                 </div>
                 <span className="text-[11px] text-app-muted truncate font-mono">
-                  Drishti Insurance
+                  Claims Intelligence
                 </span>
               </div>
             )}

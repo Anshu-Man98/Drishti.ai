@@ -176,7 +176,7 @@ describe('Stage 7: Contrast, Accessibility & Responsive Polish', () => {
       const onClose = vi.fn();
       render(<ScoringModal isOpen={true} onClose={onClose} />);
 
-      const dialog = screen.getByRole('dialog', { name: /How FinShield Scoring Works/i });
+      const dialog = screen.getByRole('dialog', { name: /How Drishti Scoring Works/i });
       expect(dialog).toBeInTheDocument();
       expect(dialog).toHaveAttribute('aria-modal', 'true');
 

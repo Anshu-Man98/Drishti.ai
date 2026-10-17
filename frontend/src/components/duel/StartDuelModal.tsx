@@ -45,7 +45,7 @@ export const StartDuelModal: React.FC<StartDuelModalProps> = ({
             </h3>
           </div>
           <p className="text-xs text-text-secondary">
-            Pits an adversarial fraud synthesizer against the FinShield defense agents over multiple mutation rounds.
+            Pits an adversarial fraud synthesizer against the Drishti defense agents over multiple mutation rounds.
           </p>
         </div>
 

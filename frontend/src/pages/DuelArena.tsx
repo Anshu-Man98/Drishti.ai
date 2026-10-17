@@ -146,7 +146,7 @@ export const DuelArena: React.FC = () => {
             <span>Adversarial Duel Arena</span>
           </h1>
           <p className="text-xs sm:text-sm text-text-muted mt-1">
-            Automated red-team simulator ({configuredModel}) challenging the 8-agent FinShield scrutiny pipeline to expose evasion blindspots.
+            Automated red-team simulator ({configuredModel}) challenging the 8-agent Drishti scrutiny pipeline to expose evasion blindspots.
           </p>
         </div>
 
@@ -329,7 +329,7 @@ export const DuelArena: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-[11px] text-text-muted mt-1">
-                            {configuredModel} is mutating line items to test FinShield scrutiny boundaries.
+                            {configuredModel} is mutating line items to test Drishti scrutiny boundaries.
                           </p>
                         </div>
                       </div>
@@ -374,7 +374,7 @@ export const DuelArena: React.FC = () => {
                 Ready for Adversarial Red-Teaming
               </h3>
               <p className="text-xs text-text-muted leading-relaxed">
-                Launch a live duel where {configuredModel} attempts to inflate medical bills and bypass FinShield's 8-agent
+                Launch a live duel where {configuredModel} attempts to inflate medical bills and bypass Drishti's 8-agent
                 scrutiny pipeline. When evasion occurs, defense patterns are immediately immunized.
               </p>
             </div>

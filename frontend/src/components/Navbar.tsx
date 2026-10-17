@@ -36,10 +36,10 @@ export const Navbar: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-lg tracking-tight text-white">FinShield</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">Drishti.ai</span>
+              <span className="font-bold text-lg tracking-tight text-white">Drishti</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">AI</span>
             </div>
-            <p className="text-xs text-slate-400">Multi-Agent Insurance Fraud Copilot</p>
+            <p className="text-xs text-slate-400">Autonomous Health Claims Intelligence</p>
           </div>
         </Link>
 

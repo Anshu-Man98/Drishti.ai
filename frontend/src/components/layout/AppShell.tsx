@@ -57,7 +57,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         <footer className="mt-12 py-6 border-t border-white/[0.06] text-center text-xs text-app-muted flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-primary" />
-            <span>FinShield (Drishti.ai) — Google Cloud BFSI Claims Intelligence</span>
+            <span>Drishti.ai — Google Cloud BFSI Claims Intelligence</span>
           </div>
           <span className="font-mono text-[11px] text-app-muted/70">
             GCP drishti-demo • Vertex AI & Document AI

@@ -24,7 +24,7 @@ describe('Stage 3: AppShell & Nexa Layout Suite', () => {
     renderShell();
 
     // Brand
-    expect(screen.getAllByText('FinShield').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Drishti').length).toBeGreaterThan(0);
 
     // Nav items
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('Stage 3: AppShell & Nexa Layout Suite', () => {
     fireEvent.click(scoringBtn);
 
     await waitFor(() => {
-      expect(screen.getByText('How FinShield Scoring Works')).toBeInTheDocument();
+      expect(screen.getByText('How Drishti Scoring Works')).toBeInTheDocument();
       expect(screen.getByText(/0.6 × Agent Score \+ 40 × ML Probability/i)).toBeInTheDocument();
     });
 
@@ -56,7 +56,7 @@ describe('Stage 3: AppShell & Nexa Layout Suite', () => {
     fireEvent.click(closeBtn);
 
     await waitFor(() => {
-      expect(screen.queryByText('How FinShield Scoring Works')).not.toBeInTheDocument();
+      expect(screen.queryByText('How Drishti Scoring Works')).not.toBeInTheDocument();
     });
   });
 

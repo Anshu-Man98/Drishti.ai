@@ -44,7 +44,7 @@ export const ScoringModal: React.FC<ScoringModalProps> = ({ isOpen, onClose }) =
             <Scale className="w-5 h-5" />
           </div>
           <div>
-            <h2 id="scoring-modal-title" className="text-base font-semibold text-app-primary tracking-tight">How FinShield Scoring Works</h2>
+            <h2 id="scoring-modal-title" className="text-base font-semibold text-app-primary tracking-tight">How Drishti Scoring Works</h2>
             <p className="text-xs text-app-muted font-mono">Calibrated Multi-Agent & BigQuery ML Pipeline</p>
           </div>
         </div>

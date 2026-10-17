@@ -134,8 +134,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="FinShield API (Drishti.ai)",
-    description="Multi-agent claims-fraud copilot backend",
+    title="Drishti API",
+    description="Autonomous health claims integrity and multi-agent fraud copilot backend",
     version=settings.VERSION,
     lifespan=lifespan
 )
@@ -213,7 +213,7 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
 
     content = {
         "status": status_str,
-        "service": "FinShield API",
+        "service": "Drishti API",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "cloud_mode": "google_cloud",
@@ -235,7 +235,7 @@ def health_check(live: bool = Query(default=False, description="Force real-time 
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to FinShield (Drishti.ai) API",
+        "message": "Welcome to Drishti.ai API",
         "docs_url": "/docs",
         "health_url": "/health",
         "version": settings.VERSION

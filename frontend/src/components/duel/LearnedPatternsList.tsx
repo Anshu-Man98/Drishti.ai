@@ -43,7 +43,7 @@ export const LearnedPatternsList: React.FC<LearnedPatternsListProps> = ({ patter
       </div>
 
       <p className="text-xs text-text-secondary leading-relaxed">
-        Whenever an adversarial fraudster evades FinShield checks, the evasion signature is automatically extracted,
+        Whenever an adversarial fraudster evades Drishti checks, the evasion signature is automatically extracted,
         persisted to BigQuery, and embedded into the <strong className="text-amber-primary">Two-Corpus RAG Catalog</strong> to immunize future claims.
       </p>
 

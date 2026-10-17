@@ -163,7 +163,7 @@ export const FindingsAccordion: React.FC<FindingsAccordionProps> = ({
                       <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 flex items-center gap-2">
                         <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                         <span className="font-medium">
-                          This payload was quarantined before reaching downstream analysis agents.
+                          This payload was quarantined: not used as instructions.
                         </span>
                       </div>
                     )}

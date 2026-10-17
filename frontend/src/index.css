@@ -1,13 +1,303 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Brand Amber Family (Nexa warm golden amber) */
+  --color-amber-primary: #F5A524;
+  --color-amber-bright: #FFC15A;
+  --color-amber-deep: #B8741A;
+  --color-amber-glow: rgba(255, 193, 90, 0.28);
+  --color-amber-tint: rgba(245, 165, 36, 0.12);
+  --color-amber-border: rgba(245, 165, 36, 0.28);
+
+  /* Surface and Background mappings for Tailwind utilities */
+  --color-app-base: var(--bg-base);
+  --color-app-surface: var(--bg-surface);
+  --color-app-elevated: var(--bg-elevated);
+  --color-app-subtle: var(--bg-subtle);
+
+  /* Radii per design spec */
+  --radius-card: 20px;
+  --radius-panel: 14px;
+  --radius-control: 12px;
+  --radius-pill: 9999px;
+
+  /* Shadows & Glow */
+  --shadow-amber-glow: 0 0 24px -4px rgba(245, 165, 36, 0.28);
+  --shadow-amber-sm: 0 0 12px -2px rgba(245, 165, 36, 0.20);
+  --shadow-inner-top: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+/* =========================================================================
+   1. Theme Variables (Dark default, Light paper alternative)
+   ========================================================================= */
+
+.dark {
+  /* Surfaces: 3 elevation steps on near-black with warm tone (#050505 - #0A0A09) */
+  --bg-base: #060605;
+  --bg-surface: #0E0E0D;
+  --bg-elevated: #131312;
+  --bg-subtle: #1A1A18;
+  --bg-glass: rgba(14, 14, 13, 0.85);
+
+  /* 1px borders around rgba(255, 255, 255, 0.06 - 0.10) */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-amber-tint: rgba(245, 165, 36, 0.25);
+
+  /* Inner top highlight for large surfaces */
+  --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+
+  /* Typography: warm off-white, muted, faint */
+  --text-primary: #F3EFE6;
+  --text-secondary: #C5C0B4;
+  --text-muted: #8F8A7E;
+  --text-faint: #5F5B52;
+
+  /* Brand AMBER (warm gold, matching Nexa reference) */
+  --brand-primary: #F5A524;
+  --brand-bright: #FFC15A;
+  --brand-deep: #B8741A;
+  --brand-hover: #FFB338;
+  --brand-subtle: rgba(245, 165, 36, 0.12);
+  --brand-border: rgba(245, 165, 36, 0.30);
+  --brand-glow: rgba(245, 165, 36, 0.25);
+
+  /* Semantic Verdicts (paired with distinct shapes & icons) */
+  --risk-approve: #10B981;
+  --risk-approve-bg: rgba(16, 185, 129, 0.12);
+  --risk-approve-border: rgba(16, 185, 129, 0.32);
+
+  --risk-review: #F5A524;
+  --risk-review-bg: rgba(245, 165, 36, 0.14);
+  --risk-review-border: rgba(245, 165, 36, 0.35);
+
+  --risk-reject: #F43F5E;
+  --risk-reject-bg: rgba(244, 63, 94, 0.14);
+  --risk-reject-border: rgba(244, 63, 94, 0.35);
+
+  --risk-info: #8F8A7E;
+  --risk-info-bg: rgba(143, 138, 126, 0.14);
+  --risk-info-border: rgba(143, 138, 126, 0.30);
+
+  /* Light beam colors */
+  --beam-center: rgba(255, 193, 90, 0.24);
+  --beam-mid: rgba(245, 165, 36, 0.14);
+  --beam-faint: rgba(184, 116, 26, 0.04);
+}
+
+:root {
+  /* Light theme: warm paper background (#FAF7F0), intentional ink design */
+  --bg-base: #FAF7F0;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F5EFE3;
+  --bg-subtle: #ECE4D3;
+  --bg-glass: rgba(255, 255, 255, 0.90);
+
+  --border-subtle: rgba(28, 26, 22, 0.06);
+  --border-default: rgba(28, 26, 22, 0.12);
+  --border-strong: rgba(28, 26, 22, 0.20);
+  --border-amber-tint: rgba(183, 121, 31, 0.30);
+
+  --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+
+  --text-primary: #1C1A16;
+  --text-secondary: #4A453B;
+  --text-muted: #736C5E;
+  --text-faint: #A69E8E;
+
+  /* Deeper amber/bronze for AA contrast on warm paper:
+     #9A5B0B provides 4.8:1 contrast on #FAF7F0 for text (WCAG AA >= 4.5:1),
+     #B7791F provides 3.4:1 contrast for borders/controls (WCAG AA UI >= 3.0:1) */
+  --brand-primary: #9A5B0B;
+  --brand-bright: #B7791F;
+  --brand-deep: #784405;
+  --brand-hover: #854E0A;
+  --brand-subtle: rgba(227, 154, 27, 0.12);
+  --brand-border: rgba(183, 121, 31, 0.35);
+  --brand-glow: rgba(183, 121, 31, 0.16);
+
+  --risk-approve: #059669;
+  --risk-approve-bg: #ECFDF5;
+  --risk-approve-border: #A7F3D0;
+
+  --risk-review: #B7791F;
+  --risk-review-bg: rgba(227, 154, 27, 0.12);
+  --risk-review-border: #FDE68A;
+
+  --risk-reject: #E11D48;
+  --risk-reject-bg: #FFF1F2;
+  --risk-reject-border: #FECDD3;
+
+  --risk-info: #64748B;
+  --risk-info-bg: #F1F5F9;
+  --risk-info-border: #CBD5E1;
+
+  --beam-center: rgba(227, 154, 27, 0.08);
+  --beam-mid: rgba(183, 121, 31, 0.05);
+  --beam-faint: rgba(140, 86, 13, 0.02);
+}
+
+/* =========================================================================
+   2. Global Document Styles
+   ========================================================================= */
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  background-color: #0B0F19;
-  color: #F1F5F9;
+  font-family: var(--font-sans);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-code, pre {
-  font-family: 'JetBrains Mono', monospace;
+/* Accessible focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+/* Tabular figures for money, quantities, metrics */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* =========================================================================
+   3. Utility Classes (Surfaces, Borders, Text, Glows)
+   ========================================================================= */
+
+.bg-app-base { background-color: var(--bg-base); }
+.bg-app-surface { background-color: var(--bg-surface); }
+.bg-app-elevated { background-color: var(--bg-elevated); }
+.bg-app-subtle { background-color: var(--bg-subtle); }
+.bg-app-glass {
+  background-color: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.border-app-subtle { border-color: var(--border-subtle); }
+.border-app-default { border-color: var(--border-default); }
+.border-app-strong { border-color: var(--border-strong); }
+.border-amber-tint { border-color: var(--border-amber-tint); }
+
+.text-app-primary { color: var(--text-primary); }
+.text-app-secondary { color: var(--text-secondary); }
+.text-app-muted { color: var(--text-muted); }
+.text-app-faint { color: var(--text-faint); }
+.text-amber-primary { color: var(--brand-primary); }
+.text-amber-bright { color: var(--brand-bright); }
+
+/* The Nexa Top Light Beam (soft warm golden-amber light beam falling from top-center) */
+.light-beam-bg {
+  position: absolute;
+  top: -140px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(920px, 94vw);
+  height: 420px;
+  background: radial-gradient(
+    ellipse 65% 55% at 50% 0%,
+    var(--beam-center) 0%,
+    var(--beam-mid) 42%,
+    var(--beam-faint) 68%,
+    transparent 82%
+  );
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(32px);
+  will-change: opacity, transform;
+}
+
+/* Fine grain/dot texture near the beam */
+.beam-grain {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 320px;
+  opacity: 0.04;
+  pointer-events: none;
+  background-image: radial-gradient(var(--brand-primary) 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: radial-gradient(ellipse 65% 50% at 50% 0%, black 20%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 65% 50% at 50% 0%, black 20%, transparent 80%);
+}
+
+/* Adfonic-style Hero Card Corner Glow (warm amber radial glow at bottom-right corner) */
+.corner-glow-amber {
+  position: relative;
+  overflow: hidden;
+}
+.corner-glow-amber::after {
+  content: '';
+  position: absolute;
+  bottom: -30%;
+  right: -25%;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(
+    circle,
+    rgba(245, 165, 36, 0.22) 0%,
+    rgba(245, 165, 36, 0.08) 45%,
+    transparent 70%
+  );
+  filter: blur(24px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Glow Card Base: 20px radius, 1px subtle border, inner top highlight, 2px hover lift */
+.glow-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  box-shadow: var(--inner-highlight);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease,
+              box-shadow 0.2s ease;
+}
+
+.glow-card:hover {
+  border-color: var(--border-amber-tint);
+  box-shadow: var(--inner-highlight), 0 6px 24px -4px rgba(245, 165, 36, 0.12);
+}
+
+/* Subtle glow for amber text and icons */
+.text-glow-amber {
+  text-shadow: 0 0 16px rgba(245, 165, 36, 0.35);
+}
+
+/* =========================================================================
+   4. Motion Language & Reduced Motion
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

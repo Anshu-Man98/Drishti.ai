@@ -169,20 +169,47 @@ export function formatIndianNumber(num: number | null | undefined, decimals: num
   }).format(num);
 }
 
+export interface FormatClaimRefOptions {
+  mode?: 'full' | 'short' | 'ellipsis';
+  maxLen?: number;
+  headLen?: number;
+  tailLen?: number;
+}
+
 /**
- * Format claim reference for human-readable display (e.g. "Claim #G582")
+ * Format claim reference for human-readable display.
+ * Supports 'full', 'short' (default), and 'ellipsis' (e.g. CLM-G8-AL…-DEMO)
+ * with configurable length constraints.
  */
-export function formatClaimRef(claimId?: string | null, mode: 'short' | 'full' = 'short'): string {
+export function formatClaimRef(
+  claimId?: string | null,
+  options?: 'short' | 'full' | 'ellipsis' | FormatClaimRefOptions
+): string {
   if (!claimId) return 'Claim #—';
   const clean = claimId.trim();
-  if (mode === 'short') {
-    const parts = clean.split('-');
-    if (parts.length > 1) {
-      return `Claim #${parts[parts.length - 1]}`;
-    }
-    return `Claim #${clean.length > 6 ? clean.slice(-4) : clean}`;
+
+  const mode = typeof options === 'string' ? options : options?.mode ?? 'short';
+  const maxLen = typeof options === 'object' && options?.maxLen !== undefined ? options.maxLen : 17;
+  const headLen = typeof options === 'object' && options?.headLen !== undefined ? options.headLen : 9;
+  const tailLen = typeof options === 'object' && options?.tailLen !== undefined ? options.tailLen : 5;
+
+  if (mode === 'full') {
+    return clean;
   }
-  return clean;
+
+  if (mode === 'ellipsis') {
+    if (clean.length > maxLen) {
+      return `${clean.slice(0, headLen)}…${clean.slice(-tailLen)}`;
+    }
+    return clean;
+  }
+
+  // mode === 'short' (default for backward compatibility)
+  const parts = clean.split('-');
+  if (parts.length > 1) {
+    return `Claim #${parts[parts.length - 1]}`;
+  }
+  return `Claim #${clean.length > 6 ? clean.slice(-4) : clean}`;
 }
 
 /**

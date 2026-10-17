@@ -4,7 +4,6 @@ import {
   Network,
   Layers,
   ArrowRight,
-  ExternalLink,
   ShieldAlert,
   RefreshCw,
   X,
@@ -18,6 +17,7 @@ import { fetchFraudRings } from '../services/api';
 import { NetworkCanvas } from '../components/network/NetworkCanvas';
 import { Badge } from '../components/ui/Badge';
 import { PillTabs } from '../components/ui/PillTabs';
+import { ClaimRefDisplay } from '../components/ui/ClaimRefDisplay';
 import { formatINR, formatDateTime, formatDoctor } from '../utils/formatters';
 
 export const NetworkGraph: React.FC = () => {
@@ -335,26 +335,22 @@ export const NetworkGraph: React.FC = () => {
                       className="p-3 rounded-xl bg-surface-elevated/70 border border-white/8 hover:border-amber-primary/30 transition-all space-y-1.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <Link
-                          to={`/claims/${claim.claim_id}`}
-                          className="text-xs font-bold font-mono text-amber-primary hover:text-amber-bright hover:underline flex items-center gap-1"
-                        >
-                          <span>{claim.claim_id}</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </Link>
-                        <span className="text-xs font-mono font-bold text-text-primary tabular-nums">
+                        <ClaimRefDisplay
+                          claimId={claim.claim_id}
+                          claimantName={claim.claimant_name}
+                          hospitalName={claim.hospital_name}
+                          mode="ellipsis"
+                          maxLen={17}
+                          linkTo={`/claims/${claim.claim_id}`}
+                        />
+                        <span className="text-xs font-mono font-bold text-text-primary tabular-nums shrink-0">
                           {formatINR(claim.total_claimed)}
                         </span>
                       </div>
 
-                      <div className="text-[11px] text-text-secondary flex items-center justify-between">
-                        <span>{claim.claimant_name}</span>
-                        <span className="text-muted">{claim.city}</span>
-                      </div>
-
                       <div className="text-[10px] text-muted flex items-center justify-between font-mono pt-1 border-t border-white/6">
                         <span>{formatDoctor(claim.doctor_id)}</span>
-                        <span>{claim.hospital_name}</span>
+                        <span>{claim.city}</span>
                       </div>
                     </div>
                   ))}
@@ -403,7 +399,13 @@ export const NetworkGraph: React.FC = () => {
                     className="hover:bg-white/3 transition-colors"
                   >
                     <td className="py-2.5 px-3 font-mono font-medium text-amber-primary">
-                      {claim.claim_id}
+                      <ClaimRefDisplay
+                        claimId={claim.claim_id}
+                        claimantName={claim.claimant_name}
+                        hospitalName={claim.hospital_name}
+                        mode="full"
+                        linkTo={`/claims/${claim.claim_id}`}
+                      />
                     </td>
                     <td className="py-2.5 px-3 font-medium text-text-primary">
                       <div>{claim.claimant_name}</div>

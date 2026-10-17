@@ -13,8 +13,6 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
-  Copy,
-  Check,
 } from 'lucide-react';
 import { ClaimSummary } from '../types';
 import { fetchClaims } from '../services/api';
@@ -22,13 +20,13 @@ import { Badge } from '../components/ui/Badge';
 import { SearchBar } from '../components/ui/SearchBar';
 import { PillTabs } from '../components/ui/PillTabs';
 import { GlowCard } from '../components/ui/GlowCard';
+import { ClaimRefDisplay } from '../components/ui/ClaimRefDisplay';
 import {
   formatIndianCurrency,
   formatDiagnosis,
   formatInsurer,
   formatPolicy,
   formatDateTime,
-  formatClaimRef,
 } from '../utils/formatters';
 
 type SortField = 'created_at' | 'total_claimed' | 'risk_score' | 'claim_id' | 'claimant_name' | 'hospital_name' | 'diagnosis_code';
@@ -46,7 +44,6 @@ export const ClaimsList: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [excludeSynthetic, setExcludeSynthetic] = useState<boolean>(() => {
     return localStorage.getItem('finshield_filter_synthetic') === 'true';
   });
@@ -343,37 +340,15 @@ export const ClaimsList: React.FC = () => {
                     >
                       {/* Claim Reference & Policy */}
                       <td className="py-3.5 px-4 sticky left-0 bg-app-surface z-10 shadow-[2px_0_6px_rgba(0,0,0,0.12)]">
-                        <div className="flex items-center gap-1.5">
-                          <Link
-                            to={`/claims/${c.claim_id}`}
-                            className="font-semibold text-amber-primary hover:text-amber-bright hover:underline block truncate max-w-[160px] font-mono"
-                          >
-                            {formatClaimRef(c.claim_id)}
-                          </Link>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              navigator.clipboard.writeText(c.claim_id);
-                              setCopiedId(c.claim_id);
-                              setTimeout(() => setCopiedId(null), 1500);
-                            }}
-                            className="p-1 rounded hover:bg-white/10 text-app-muted hover:text-app-primary transition-colors cursor-pointer"
-                            title={`Copy full Claim ID: ${c.claim_id}`}
-                            aria-label="Copy Claim ID"
-                          >
-                            {copiedId === c.claim_id ? (
-                              <Check className="w-3 h-3 text-emerald-400" />
-                            ) : (
-                              <Copy className="w-3 h-3 opacity-60 hover:opacity-100" />
-                            )}
-                          </button>
-                        </div>
-                        <span className="text-[11px] text-app-secondary block truncate max-w-[170px]" title={policy.name}>
+                        <ClaimRefDisplay
+                          claimId={c.claim_id}
+                          claimantName={c.claimant_name}
+                          hospitalName={c.hospital_name}
+                          mode="full"
+                          linkTo={`/claims/${c.claim_id}`}
+                        />
+                        <span className="text-[11px] text-app-secondary block truncate max-w-[180px] mt-1" title={policy.name}>
                           {insurer.short} · {policy.name}
-                        </span>
-                        <span className="font-mono text-[10px] text-app-muted block truncate max-w-[170px]">
-                          {c.claim_id}
                         </span>
                       </td>
 

@@ -162,6 +162,41 @@ describe('Currency and Agent Formatting', () => {
       expect(formatClaimRef('CLM-2024-G582', 'full')).toBe('CLM-2024-G582');
     });
 
+    it('supports ellipsis mode with head-and-tail formatting', () => {
+      // Golden claim CLM-G8-ALTERED-DEMO (len 18) -> CLM-G8-AL…-DEMO
+      expect(formatClaimRef('CLM-G8-ALTERED-DEMO', { mode: 'ellipsis', maxLen: 17, headLen: 9, tailLen: 5 }))
+        .toBe('CLM-G8-AL…-DEMO');
+
+      // Golden claim CLM-G2-ARITHMETIC-DEMO (len 22)
+      expect(formatClaimRef('CLM-G2-ARITHMETIC-DEMO', { mode: 'ellipsis', maxLen: 17, headLen: 9, tailLen: 5 }))
+        .toBe('CLM-G2-AR…-DEMO');
+
+      // UUID CLM-4AF523DD (len 12 <= 17) -> stays un-truncated
+      expect(formatClaimRef('CLM-4AF523DD', { mode: 'ellipsis', maxLen: 17 }))
+        .toBe('CLM-4AF523DD');
+
+      // Duel claim CLM-G1-DUEL-BASE-D1 (len 19 > 17)
+      expect(formatClaimRef('CLM-G1-DUEL-BASE-D1', { mode: 'ellipsis', maxLen: 17, headLen: 10, tailLen: 4 }))
+        .toBe('CLM-G1-DUE…E-D1');
+    });
+
+    it('formats golden claims CLM-G1 through CLM-G9 correctly in full mode', () => {
+      const goldenClaims = [
+        'CLM-G1-DUEL-BASE-D1',
+        'CLM-G2-ARITHMETIC-DEMO',
+        'CLM-G3-POLICY-DEMO',
+        'CLM-G4-CROSSINS-DEMO',
+        'CLM-G5-TRAVEL-DEMO',
+        'CLM-G6-FORGERY-DEMO',
+        'CLM-G7-INJECTION-DEMO',
+        'CLM-G8-ALTERED-DEMO',
+        'CLM-G9-BENCHMARK-DEMO',
+      ];
+      for (const id of goldenClaims) {
+        expect(formatClaimRef(id, 'full')).toBe(id);
+      }
+    });
+
     it('handles null and undefined safely', () => {
       expect(formatClaimRef(null)).toBe('Claim #—');
       expect(formatClaimRef(undefined)).toBe('Claim #—');

@@ -5,6 +5,8 @@ import {
   FileCheck,
   MessageSquare,
   RefreshCw,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Claim, Dossier } from '../../types';
 import { formatInsurer, formatPolicy } from '../../utils/formatters';
@@ -31,6 +33,7 @@ export const ClaimHeader: React.FC<ClaimHeaderProps> = ({
   onOpenSanctionModal,
   onRunAnalysis,
 }) => {
+  const [copied, setCopied] = React.useState(false);
   const insurer = formatInsurer(claim.insurer_id);
   const policy = formatPolicy(claim.policy_id);
 
@@ -63,9 +66,28 @@ export const ClaimHeader: React.FC<ClaimHeaderProps> = ({
         </Link>
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-lg sm:text-xl font-bold text-text-primary font-mono tracking-tight">
-              {claim.claim_id}
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-lg sm:text-xl font-bold text-text-primary font-mono tracking-tight">
+                {claim.claim_id}
+              </h1>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(claim.claim_id);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                className="p-1 rounded hover:bg-white/10 text-muted hover:text-text-primary transition-colors cursor-pointer"
+                title={`Copy Claim ID: ${claim.claim_id}`}
+                aria-label={`Copy Claim ID ${claim.claim_id}`}
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 opacity-60 hover:opacity-100" />
+                )}
+              </button>
+            </div>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-medium bg-amber-primary/10 text-amber-primary border border-amber-primary/25">
               {policy.name}
             </span>

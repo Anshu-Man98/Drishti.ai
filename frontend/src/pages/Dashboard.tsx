@@ -10,8 +10,6 @@ import {
   Scale,
   Calendar,
   AlertOctagon,
-  Copy,
-  Check,
   Clock,
 } from 'lucide-react';
 import { AnalyticsSummary, RecentCriticalClaim } from '../types';
@@ -30,8 +28,9 @@ import {
   FilterButton,
   Badge,
 } from '../components/ui';
+import { ClaimRefDisplay } from '../components/ui/ClaimRefDisplay';
 import { SankeyFlow } from '../components/dashboard/SankeyFlow';
-import { formatIndianCurrency, formatDiagnosis, formatClaimRef } from '../utils/formatters';
+import { formatIndianCurrency, formatDiagnosis } from '../utils/formatters';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -45,8 +44,6 @@ export const Dashboard: React.FC = () => {
   const [activeVerdictTab, setActiveVerdictTab] = useState<string>('all');
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [chartMetric, setChartMetric] = useState<'amount' | 'volume'>('amount');
-
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Synthetic Test Claims Filter State - default to true (exclude synthetic demo claims)
   const [excludeSynthetic, setExcludeSynthetic] = useState<boolean>(() => {
@@ -169,30 +166,13 @@ export const Dashboard: React.FC = () => {
       header: 'Claim Reference',
       className: 'font-mono font-medium text-app-primary whitespace-nowrap',
       render: (c: RecentCriticalClaim) => (
-        <div className="flex items-center gap-1.5">
-          <span className="text-amber-primary hover:text-amber-bright font-mono font-semibold">
-            {formatClaimRef(c.claim_id)}
-          </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              navigator.clipboard.writeText(c.claim_id);
-              setCopiedId(c.claim_id);
-              setTimeout(() => setCopiedId(null), 1500);
-            }}
-            className="p-1 rounded hover:bg-white/10 text-app-muted hover:text-app-primary transition-colors cursor-pointer"
-            title={`Copy full Claim ID: ${c.claim_id}`}
-            aria-label="Copy Claim ID"
-          >
-            {copiedId === c.claim_id ? (
-              <Check className="w-3 h-3 text-emerald-400" />
-            ) : (
-              <Copy className="w-3 h-3 opacity-60 hover:opacity-100" />
-            )}
-          </button>
-        </div>
+        <ClaimRefDisplay
+          claimId={c.claim_id}
+          claimantName={c.claimant_name}
+          hospitalName={c.hospital_name}
+          mode="ellipsis"
+          maxLen={17}
+        />
       ),
     },
     {

@@ -51,8 +51,6 @@ steps:
       - '8080'
       - '--set-env-vars'
       - 'ENVIRONMENT=production,GCP_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GCP_REGION=asia-south1,GCS_BUCKET_NAME=finshield-claims-docs-$PROJECT_ID,BIGQUERY_DATASET=finshield,FIRESTORE_DATABASE=(default),DOCUMENTAI_PROCESSOR_ID=projects/848168056257/locations/us/processors/8cb7d125a43425e4,DOCUMENTAI_LOCATION=us,GEMINI_PRO_MODEL=gemini-3.5-flash,GEMINI_FLASH_MODEL=gemini-3.5-flash,REQUIRE_CLOUD_ON_STARTUP=true,RATE_LIMIT_ENABLED=true,ALLOW_DEV_TOKENS=true'
-      - '--set-secrets'
-      - 'FINSHIELD_PROVENANCE_KEY=finshield-provenance-signing-key:latest'
       - '--startup-probe'
       - 'timeoutSeconds=20,periodSeconds=20,failureThreshold=6,httpGet.path=/api/health,httpGet.port=8080'
       - '--liveness-probe'

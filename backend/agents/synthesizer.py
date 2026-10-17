@@ -144,7 +144,11 @@ def synthesize_dossier(
                 summary += f" Corroborating context: consistent with known historical fraud pattern [{pat.ref_id}: {pat.title}]."
 
     # Enforce Numeric Grounding Guard on Summary and Finding Explanations
+    from backend.tools.registry import CLAIM_COMPUTED_STORE
     computed_store = dict(get_all_computed_values(claim.claim_id))
+    for f in all_findings:
+        if getattr(f, "computed_details", None) and isinstance(f.computed_details, dict):
+            computed_store.update(f.computed_details)
     if ml_score is not None:
         computed_store["ml_probability"] = float(ml_score)
         computed_store["ml_percentage"] = round(float(ml_score) * 100, 1)
@@ -153,6 +157,7 @@ def synthesize_dossier(
         for idx, feat in enumerate(top_ml_features):
             attr_val = feat.attribution if hasattr(feat, "attribution") else feat.get("attribution", 0.0)
             computed_store[f"ml_attr_{idx}"] = float(attr_val)
+    CLAIM_COMPUTED_STORE.setdefault(claim.claim_id, {}).update(computed_store)
 
     sanitized_summary, ungrounded_summary = sanitize_text_grounding(summary, computed_store, claim)
     summary = sanitized_summary
@@ -169,7 +174,10 @@ def synthesize_dossier(
         ))
 
     for f in list(all_findings):
-        sanitized_exp, ungrounded_f = sanitize_text_grounding(f.explanation, computed_store, claim)
+        finding_store = dict(computed_store)
+        if getattr(f, "computed_details", None) and isinstance(f.computed_details, dict):
+            finding_store.update(f.computed_details)
+        sanitized_exp, ungrounded_f = sanitize_text_grounding(f.explanation, finding_store, claim)
         if ungrounded_f:
             f.explanation = sanitized_exp
             for ung in ungrounded_f:

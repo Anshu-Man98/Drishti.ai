@@ -20,7 +20,7 @@ WHITELIST_PATTERNS = [
     re.compile(r"\bF\d+\b", re.IGNORECASE),               # F1, F2
     re.compile(r"Clause\s*\d+(\.\d+)?", re.IGNORECASE),    # Clause 3.1
     re.compile(r"\b202[0-9]\b"),                          # Year 2026, 2025
-    re.compile(r"\b(1st|2nd|3rd|4th|5th)\b", re.IGNORECASE)
+    re.compile(r"\b\d+(?:st|nd|rd|th)\b(?:\s*percentile)?", re.IGNORECASE),  # 1st, 2nd, 95th, 95th percentile
 ]
 
 
@@ -108,29 +108,49 @@ def _collect_ground_truth_numbers(
 
     # 2. Harvest from Claim JSON if provided
     if claim is not None:
-        for val in [claim.subtotal, claim.tax, claim.total_claimed]:
+        def _get(obj: Any, key: str) -> Any:
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        for val in [_get(claim, "subtotal"), _get(claim, "tax"), _get(claim, "total_claimed")]:
             if val is not None:
                 truth_set.add(float(val))
                 truth_set.add(float(round(val * 100, 2)))
 
-        for it in (claim.line_items or []):
-            for val in [getattr(it, "qty", None), getattr(it, "unit_price", None), getattr(it, "amount", None)]:
+        line_items = _get(claim, "line_items") or []
+        for it in line_items:
+            for val in [_get(it, "qty"), _get(it, "unit_price"), _get(it, "amount")]:
                 if val is not None:
                     truth_set.add(float(val))
                     truth_set.add(float(round(val * 100, 2)))
 
-        if claim.provider:
-            if claim.provider.lat is not None:
-                truth_set.add(float(claim.provider.lat))
-            if claim.provider.lng is not None:
-                truth_set.add(float(claim.provider.lng))
+        provider = _get(claim, "provider")
+        if provider:
+            lat = _get(provider, "lat")
+            lng = _get(provider, "lng")
+            if lat is not None:
+                truth_set.add(float(lat))
+            if lng is not None:
+                truth_set.add(float(lng))
 
         # Dates (day, month, year)
-        for dt in [claim.admission_ts, claim.discharge_ts]:
+        for dt in [_get(claim, "admission_ts"), _get(claim, "discharge_ts")]:
             if isinstance(dt, datetime):
                 truth_set.add(float(dt.year))
                 truth_set.add(float(dt.month))
                 truth_set.add(float(dt.day))
+
+        # 3. Harvest from registered computed store by claim_id if available
+        cid = _get(claim, "claim_id")
+        if cid:
+            try:
+                from backend.tools.registry import get_all_computed_values
+                stored = get_all_computed_values(cid)
+                if stored:
+                    _harvest(stored)
+            except Exception:
+                pass
 
     # Add standard base numbers (0, 1)
     truth_set.add(0.0)

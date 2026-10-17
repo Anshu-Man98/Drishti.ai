@@ -355,6 +355,8 @@ def check_policy_caps(
                             )
                         ],
                         confidence=1.0,
+                        computed_chip=chip,
+                        computed_details=computed,
                     ))
 
     return {
@@ -394,28 +396,27 @@ def check_price_benchmarks(
     p90_total_paise = to_paise(diag_bench.p90)
     p75_total_paise = to_paise(diag_bench.p75)
     p50_total_paise = to_paise(diag_bench.p50)
-
-    computed["diagnosis_code"] = diag_bench.diagnosis_code
-    computed["diagnosis_benchmark_level"] = diag_bench.fallback_level
-    computed["diagnosis_benchmark_sample_count"] = diag_bench.sample_count
-    computed["diagnosis_p50"] = diag_bench.p50
-    computed["diagnosis_p75"] = diag_bench.p75
-    computed["diagnosis_p90"] = diag_bench.p90
-    computed["diagnosis_p95"] = diag_bench.p95
-    computed["total_claimed_paise"] = total_paise
-
     upper_band = diag_bench.widened_upper_band
     upper_band_paise = to_paise(upper_band)
 
+    # Ground truth registration for diagnosis benchmarks (unconditional)
     computed["diagnosis_code"] = diag_bench.diagnosis_code
     computed["diagnosis_benchmark_level"] = diag_bench.fallback_level
     computed["diagnosis_benchmark_sample_count"] = diag_bench.sample_count
+    computed["diagnosis_sample_count"] = diag_bench.sample_count
     computed["diagnosis_p50"] = diag_bench.p50
     computed["diagnosis_p75"] = diag_bench.p75
     computed["diagnosis_p90"] = diag_bench.p90
     computed["diagnosis_p95"] = diag_bench.p95
     computed["diagnosis_widened_upper_band"] = upper_band
     computed["total_claimed_paise"] = total_paise
+    computed["total_claimed_rupees"] = total_rupees
+    computed["benchmark_p50"] = diag_bench.p50
+    computed["benchmark_p75"] = diag_bench.p75
+    computed["benchmark_p90"] = diag_bench.p90
+    computed["benchmark_p95"] = diag_bench.p95
+    computed["benchmark_widened_upper_band"] = upper_band
+    computed["benchmark_sample_count"] = diag_bench.sample_count
 
     # 1. TOTAL_ABOVE_DIAGNOSIS_BENCHMARK
     # No finding at or below the widened upper band reflecting regional variation
@@ -445,16 +446,12 @@ def check_price_benchmarks(
         chip_txt = f"Total vs p95: {ratio_p95:.2f}x"
         chips.append(chip_txt)
 
-        computed["total_claimed_rupees"] = total_rupees
-        computed["benchmark_p95"] = diag_bench.p95
-        computed["benchmark_p50"] = diag_bench.p50
-        computed["benchmark_p75"] = diag_bench.p75
-        computed["benchmark_p90"] = diag_bench.p90
-        computed["benchmark_widened_upper_band"] = upper_band
         computed["benchmark_ratio_p95"] = round(ratio_p95, 3)
+        computed["benchmark_ratio_p95_2dec"] = round(ratio_p95, 2)
         computed["benchmark_pct_above_p95"] = round(pct_diff, 1)
         computed["benchmark_pct_above_p95_int"] = pct_int
         computed["benchmark_excess_rupees"] = to_rupees(diff_paise)
+        computed["benchmark_excess_paise"] = diff_paise
 
         findings.append(Finding(
             finding_id="F-BENCH-TOTAL-P95",
@@ -482,8 +479,14 @@ def check_price_benchmarks(
                 "benchmark_p50": diag_bench.p50,
                 "benchmark_p75": diag_bench.p75,
                 "benchmark_p90": diag_bench.p90,
+                "diagnosis_p50": diag_bench.p50,
+                "diagnosis_p75": diag_bench.p75,
+                "diagnosis_p90": diag_bench.p90,
+                "diagnosis_p95": diag_bench.p95,
                 "widened_upper_band": upper_band,
+                "diagnosis_widened_upper_band": upper_band,
                 "ratio_vs_p95": round(ratio_p95, 3),
+                "ratio_vs_p95_2dec": round(ratio_p95, 2),
                 "ratio_vs_band": round(ratio_band, 3),
                 "pct_above_p95": round(pct_diff, 1),
                 "pct_above_p95_int": pct_int,
@@ -511,6 +514,17 @@ def check_price_benchmarks(
         cat_p95_unit_paise = to_paise(cat_bench.unit_price_p95)
         unit_upper_band = cat_bench.widened_unit_price_upper_band
         unit_upper_paise = to_paise(unit_upper_band)
+
+        # Unconditionally register category benchmarks and item figures in computed store
+        computed[f"line_{idx+1}_unit_price"] = unit_price
+        computed[f"line_{idx+1}_unit_p50"] = cat_bench.unit_price_p50
+        computed[f"line_{idx+1}_unit_p75"] = cat_bench.unit_price_p75
+        computed[f"line_{idx+1}_unit_p90"] = cat_bench.unit_price_p90
+        computed[f"line_{idx+1}_unit_p95"] = cat_bench.unit_price_p95
+        computed[f"line_{idx+1}_unit_upper_band"] = unit_upper_band
+        computed[f"line_{idx+1}_sample_count"] = cat_bench.sample_count
+        computed[f"line_{idx+1}_qty"] = qty
+        computed[f"line_{idx+1}_amount"] = amt
 
         # Track true ancillary / consumable items only (exclude diagnostics, labs, imaging, rehab, physio, consultations, room rent)
         desc_lower = desc.lower()
@@ -562,13 +576,13 @@ def check_price_benchmarks(
             chip_item = f"{cat.title()} rate {ratio_p95:.1f}x p95"
             chips.append(chip_item)
 
-            computed[f"line_{idx+1}_unit_price"] = unit_price
-            computed[f"line_{idx+1}_unit_p95"] = cat_bench.unit_price_p95
-            computed[f"line_{idx+1}_unit_p50"] = cat_bench.unit_price_p50
-            computed[f"line_{idx+1}_unit_p90"] = cat_bench.unit_price_p90
-            computed[f"line_{idx+1}_unit_upper_band"] = unit_upper_band
             computed[f"line_{idx+1}_ratio"] = round(ratio_p95, 2)
+            computed[f"line_{idx+1}_ratio_1dec"] = round(ratio_p95, 1)
+            computed[f"line_{idx+1}_ratio_3dec"] = round(ratio_p95, 3)
             computed[f"line_{idx+1}_pct"] = pct_int
+            computed[f"line_{idx+1}_pct_diff"] = round(pct_diff, 1)
+            computed[f"line_{idx+1}_excess_rupees"] = line_excess_rupees
+            computed[f"line_{idx+1}_excess_share_pct"] = round(excess_share * 100, 1)
 
             findings.append(Finding(
                 finding_id=f"F-BENCH-ITEM-{idx+1}",
@@ -600,11 +614,16 @@ def check_price_benchmarks(
                     "benchmark_unit_p95": cat_bench.unit_price_p95,
                     "widened_unit_upper_band": unit_upper_band,
                     "ratio_vs_p95": round(ratio_p95, 3),
+                    "ratio_vs_p95_1dec": round(ratio_p95, 1),
                     "ratio_vs_band": round(ratio_band, 3),
                     "pct_above_p95": pct_int,
+                    "pct_above_p95_diff": round(pct_diff, 1),
                     "fallback_level": cat_bench.fallback_level,
                     "sample_count": cat_bench.sample_count,
-                    "line_excess_rupees": line_excess_rupees
+                    "line_excess_rupees": line_excess_rupees,
+                    "excess_share_pct": round(excess_share * 100, 1),
+                    "qty": qty,
+                    "amount": amt
                 }
             ))
 
@@ -620,9 +639,12 @@ def check_price_benchmarks(
     computed["ancillary_total_rupees"] = to_rupees(ancillary_paise)
     computed["ancillary_share_pct"] = round(ancillary_share * 100, 1)
     computed["ancillary_share_pct_int"] = round(ancillary_share * 100)
-    computed["ancillary_p95_rupees"] = ancillary_bench.amount_p95
     computed["ancillary_p50_rupees"] = ancillary_bench.amount_p50
+    computed["ancillary_p75_rupees"] = ancillary_bench.amount_p75
+    computed["ancillary_p90_rupees"] = ancillary_bench.amount_p90
+    computed["ancillary_p95_rupees"] = ancillary_bench.amount_p95
     computed["ancillary_widened_upper_band"] = to_rupees(ancillary_upper_paise)
+    computed["ancillary_sample_count"] = ancillary_bench.sample_count
     computed["ancillary_item_count"] = len(ancillary_items)
 
     if ancillary_paise > ancillary_upper_paise and ancillary_share >= 0.30 and len(ancillary_items) >= 3:
@@ -660,11 +682,14 @@ def check_price_benchmarks(
             computed_chip=chip_anc,
             computed_details={
                 "ancillary_total": to_rupees(ancillary_paise),
+                "ancillary_total_rupees": to_rupees(ancillary_paise),
                 "ancillary_item_count": len(ancillary_items),
                 "ancillary_share": round(ancillary_share, 4),
                 "ancillary_share_pct": round(ancillary_share * 100, 1),
                 "ancillary_share_pct_int": round(ancillary_share * 100),
                 "benchmark_amount_p50": ancillary_bench.amount_p50,
+                "benchmark_amount_p75": ancillary_bench.amount_p75,
+                "benchmark_amount_p90": ancillary_bench.amount_p90,
                 "benchmark_amount_p95": ancillary_bench.amount_p95,
                 "benchmark_widened_upper_band": to_rupees(ancillary_upper_paise),
                 "ratio_vs_band": round(ratio_band, 3),

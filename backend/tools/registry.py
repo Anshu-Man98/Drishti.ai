@@ -472,17 +472,30 @@ def check_room_days_vs_stay(
             "chip": "Stay duration unverified (dates missing)"
         }
 
-    # Documented rule: calendar day difference (nights), minimum 1 day for same-day
+    # Documented rule: Base length of stay in nights = max(1, (dis_dt.date() - adm_dt.date()).days).
+    # Partial days tolerance: In Indian hospital billing, hospitals often bill both admission day and
+    # discharge day (calendar day convention). Therefore, billed room days up to (allowed_stay_days + 1)
+    # represent standard partial-day admission/discharge overlap and are not treated as fraudulent excess.
+    # When billed room days exceed this tolerance, the excess is computed against allowed_stay_days.
     allowed_stay_days = max(1, (dis_dt.date() - adm_dt.date()).days)
+    max_tolerated_room_days = allowed_stay_days + 1
 
-    room_keywords = ["room", "bed", "ward", "icu", "nursing", "twin sharing", "single private", "deluxe", "general ward", "stay charge"]
+    room_keywords = ["room", "bed", "ward", "icu", "twin sharing", "single private", "deluxe", "general ward", "stay charge"]
     room_items = []
     total_billed_room_days = 0.0
     room_charges_paise = 0
 
     for it in line_items:
+        cat = (it.get("category") or "").lower().strip()
         desc = (it.get("description", "") or "").lower()
-        if any(k in desc for k in room_keywords):
+        is_room = False
+        if cat == "room_rent":
+            is_room = True
+        elif not cat:
+            if any(k in desc for k in room_keywords) and "nursing" not in desc and "attendant" not in desc:
+                is_room = True
+
+        if is_room:
             qty = float(it.get("qty", 1.0) or 1.0)
             rate = float(it.get("unit_price", 0.0) or 0.0)
             amt = float(it.get("amount", 0.0) or 0.0)
@@ -502,7 +515,7 @@ def check_room_days_vs_stay(
     findings: List[Finding] = []
     chip = f"Room stay: {total_billed_room_days:g}d / {allowed_stay_days}d"
 
-    if total_billed_room_days > allowed_stay_days:
+    if total_billed_room_days > max_tolerated_room_days:
         excess_days = total_billed_room_days - allowed_stay_days
         avg_rate_paise = room_charges_paise // max(1, int(round(total_billed_room_days)))
         excess_amount_paise = int(round(excess_days * avg_rate_paise))

@@ -144,3 +144,36 @@ Evaluated on the 20% holdout split grouped by `hospital_id` ($N=600$ claims):
 | `[0.50, 0.70)` | 28 | 18 | **64.29%** | 0.598 | Well-calibrated high risk |
 | `[0.70, 1.00]` | 23 | 21 | **91.30%** | 0.854 | High confidence fraud detection |
 
+---
+
+## 7. QA Fix 3: Verdict Severity Scaling, Document Type Gating & Diminishing Returns
+
+To ensure proportional adjudications and eliminate disproportionate rejections, the scoring engine was updated with multi-tier scaling, extraction-incompleteness isolation, and sublinear aggregation:
+
+### A. Arithmetic Mismatch Severity Scaling
+Arithmetic discrepancy severity is calibrated across rupee magnitude and percentage of the total claimed amount:
+- **Small Rounding / Discrepancy ($\le \text{₹}1,000$ or $\le 5\%$)**: Emits `Severity.LOW` ($> \text{₹}200 \to \text{Severity.MEDIUM}$). Verdict floor is `REVIEW` with calibrated risk in the ~35–55 range. Does not trigger automatic claim rejection.
+- **Large Inflation / Severe Discrepancy ($> \text{₹}5,000$ or $> 10\%$)**: Emits `Severity.CRITICAL` (e.g. G2 with ₹17,475 discrepancy). Triggers deceptive fraud handling with verdict `REJECT` and risk $\ge 85$.
+- **Intermediate Discrepancy**: Emits `Severity.HIGH` with verdict floor `REVIEW` and risk $\ge 55$.
+
+### B. Missing Printed Total Policy (Incompleteness vs. Fraud)
+- Invoices lacking a printed or extracted total amount payable emit `EXTRACTION_INCOMPLETE` with status `"incomplete"` and a verdict floor of `REVIEW` (minimum risk 45).
+- **Strict Guardrail**: The engine **never** emits `TOTAL_PAYABLE_MISMATCH` unless a total is explicitly printed on the document and mathematically deviates from the subtotal + tax sum.
+
+### C. Suspicious Producer Metadata Isolation
+- Software metadata alone (e.g. PDF `/Producer` indicating Canva or Photoshop on clean billing amounts with an authentic hospital) routes to human adjuster `REVIEW` with risk capped at $\le 65$.
+- Suspicious producer metadata only escalates to `REJECT` ($\ge 85$) when corroborated by font tampering (`FONT_INCONSISTENCY_TAMPERING`), document alteration (`issued_doc_tampered`), date inversions (`REVERSED_HOSPITALIZATION_DATES`), or critical arithmetic mismatch.
+
+### D. Document Type Gate (`NOT_A_MEDICAL_BILL`)
+- Inbound documents are evaluated prior to line-item audit for non-medical commercial receipt indicators (e.g., dining, bistro, cafe, restaurant, grocery items without medical diagnosis, hospital, or clinical services).
+- Non-medical documents emit `NOT_A_MEDICAL_BILL` with status `"incomplete"` and a verdict floor of `REVIEW`.
+- Policy and arithmetic audits (subtotal checks, room rent caps, price benchmarks) are skipped on non-medical documents to prevent nonsensical fraud violations.
+
+### E. Diminishing Returns Finding Aggregation
+When combining multiple findings, weights are sorted in descending order ($w_1 \ge w_2 \ge w_3 \ge \dots$) and combined sublinearly:
+$$\text{Score} = w_1 + 0.8 w_2 + 0.6 w_3 + 0.4 \sum_{i \ge 4} w_i$$
+- **Monotonicity**: Adding findings or increasing finding severity strictly preserves or increases the score ($r_{next} \ge r_{curr}$).
+- **Proportionality**: Multiple minor observations (e.g. five medium findings of weight 15) combine to 48 (REVIEW), preventing artificial escalation to 75 (REJECT).
+- **Incomplete Analysis Guarantee**: Any unreadable document, extraction incompleteness, or non-medical document maintains a verdict floor of `REVIEW` with risk $\ge 45$, preventing automated approval.
+
+

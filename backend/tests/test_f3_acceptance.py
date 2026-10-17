@@ -157,8 +157,9 @@ def test_deterministic_hybrid_scoring_formula():
         confidence=0.9
     )
     score4, verdict4 = score_findings([finding_crit, finding_high], ml_probability=0.90)
-    # 0.6 * 80 + 40 * 0.90 = 48 + 36 = 84
-    assert score4 == 84
+    # Diminishing returns: agent_score = 50 + 0.8 * 30 = 74
+    # 0.6 * 74 + 40 * 0.90 = 44.4 + 36 = 80.4 -> 80
+    assert score4 == 80
     assert verdict4 == Verdict.REJECT
 
     # Case 5: Cap at 100

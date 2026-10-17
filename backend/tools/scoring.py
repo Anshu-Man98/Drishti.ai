@@ -26,10 +26,32 @@ SEVERITY_WEIGHTS = {
 }
 
 
+def calculate_diminishing_score(weights: List[float]) -> float:
+    """
+    Combines finding weights using diminishing returns / decaying weights:
+      w_1 + 0.8 * w_2 + 0.6 * w_3 + 0.4 * sum_{i >= 4} w_i
+    where weights are sorted in descending order.
+    """
+    if not weights:
+        return 0.0
+    sorted_w = sorted(weights, reverse=True)
+    total = 0.0
+    for idx, w in enumerate(sorted_w):
+        if idx == 0:
+            total += w
+        elif idx == 1:
+            total += 0.8 * w
+        elif idx == 2:
+            total += 0.6 * w
+        else:
+            total += 0.4 * w
+    return total
+
+
 def is_incomplete_analysis_condition(f: Union[Finding, dict, Any]) -> bool:
     """
     Returns True if finding indicates document unreadability, extraction failure,
-    hidden-text classification failure, or pipeline agent failure/timeout.
+    hidden-text classification failure, non-medical bill, or pipeline agent failure/timeout.
     If any such condition exists, dossier status is 'incomplete' and the final verdict
     floor is REVIEW (never APPROVE), with risk score reflecting unanalysed risk (min 45).
     """
@@ -82,6 +104,15 @@ def is_incomplete_analysis_condition(f: Union[Finding, dict, Any]) -> bool:
     ):
         return True
 
+    # 5. Non-medical document submitted (e.g. dining / restaurant receipt)
+    if (
+        "not_a_medical_bill" in cid
+        or "not a medical bill" in title
+        or "non-medical" in title
+        or "non_medical" in cid
+    ):
+        return True
+
     return False
 
 
@@ -114,22 +145,25 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         f for f in findings
         if f.agent not in (AgentName.ML, AgentName.RAG)
     ]
-    raw_non_rag_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in non_rag_findings)
-    baseline_agent_score = min(100, max(0, raw_non_rag_score))
+    non_rag_weights = [SEVERITY_WEIGHTS.get(f.severity, 0) for f in non_rag_findings]
+    raw_non_rag_score = calculate_diminishing_score(non_rag_weights)
+    baseline_agent_score = min(100, max(0, round(raw_non_rag_score)))
 
     # Compute specialist agent score excluding ML finding to prevent double-counting
-    raw_agent_score = sum(
+    agent_weights = [
         SEVERITY_WEIGHTS.get(f.severity, 0)
         for f in findings
         if f.agent != AgentName.ML
-    )
-    agent_score = min(100, max(0, raw_agent_score))
+    ]
+    raw_agent_score = calculate_diminishing_score(agent_weights)
+    agent_score = min(100, max(0, round(raw_agent_score)))
 
     if ml_probability is not None:
         risk_score = min(100, max(0, round(0.6 * agent_score + 40 * float(ml_probability))))
     else:
-        total_score = sum(SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings)
-        risk_score = min(100, max(0, total_score))
+        all_weights = [SEVERITY_WEIGHTS.get(f.severity, 0) for f in findings]
+        total_score = calculate_diminishing_score(all_weights)
+        risk_score = min(100, max(0, round(total_score)))
 
     # Intent to deceive: prompt injection, provenance tampering, duplicate claim, or impossible travel triggers REJECT
     has_critical_injection = any(
@@ -155,11 +189,51 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     )
     has_critical_arithmetic = any(
         f.severity == Severity.CRITICAL and (
-            f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH")
+            f.check_id in ("SUBTOTAL_SUM_MISMATCH", "TOTAL_PAYABLE_MISMATCH", "LINE_ITEM_ARITHMETIC_MISMATCH", "LINE_ITEM_MATH_MISMATCH")
             or (f.agent == AgentName.POLICY and "ARITHMETIC" in f.check_id)
         )
         for f in findings
     )
+    has_high_arithmetic = any(
+        f.severity == Severity.HIGH and f.check_id in (
+            "SUBTOTAL_SUM_MISMATCH",
+            "TOTAL_PAYABLE_MISMATCH",
+            "LINE_ITEM_ARITHMETIC_MISMATCH",
+            "LINE_ITEM_MATH_MISMATCH"
+        )
+        for f in findings
+    )
+    has_medium_arithmetic = any(
+        f.severity in (Severity.LOW, Severity.MEDIUM) and f.check_id in (
+            "SUBTOTAL_SUM_MISMATCH",
+            "TOTAL_PAYABLE_MISMATCH",
+            "LINE_ITEM_ARITHMETIC_MISMATCH",
+            "LINE_ITEM_MATH_MISMATCH"
+        )
+        for f in findings
+    )
+
+    has_suspicious_producer = any(
+        f.check_id == "SUSPICIOUS_PRODUCER_METADATA" for f in findings
+    )
+    has_producer_corroboration = any(
+        f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+            "FONT_INCONSISTENCY_TAMPERING",
+            "issued_doc_tampered",
+            "REVERSED_HOSPITALIZATION_DATES",
+            "FUTURE_OR_IMPLAUSIBLE_DATE",
+            "EXACT_DUPLICATE_BILL",
+            "CROSS_INSURER_DUPLICATE_CLAIM",
+            "DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL",
+            "IMPOSSIBLE_TRAVEL_VELOCITY",
+            "SUBTOTAL_SUM_MISMATCH",
+            "TOTAL_PAYABLE_MISMATCH",
+            "LINE_ITEM_ARITHMETIC_MISMATCH",
+            "LINE_ITEM_MATH_MISMATCH"
+        )
+        for f in findings
+    )
+    has_producer_deception = has_suspicious_producer and has_producer_corroboration
 
     has_incomplete_condition = any(
         is_incomplete_analysis_condition(f) for f in findings
@@ -174,13 +248,19 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         )
         for f in findings
     )
-    has_high_inflation = any(
-        f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
-            "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
-            "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
-            "UNBUNDLED_OR_PADDED_ANCILLARY"
-        )
-        for f in findings
+    benchmark_inflation_count = sum(
+        1 for f in findings
+        if f.check_id in ("TOTAL_ABOVE_DIAGNOSIS_BENCHMARK", "LINE_ITEM_PRICE_ABOVE_BENCHMARK", "UNBUNDLED_OR_PADDED_ANCILLARY")
+    )
+    has_high_inflation = (
+        any(
+            f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+                "TOTAL_ABOVE_DIAGNOSIS_BENCHMARK",
+                "LINE_ITEM_PRICE_ABOVE_BENCHMARK",
+                "UNBUNDLED_OR_PADDED_ANCILLARY"
+            )
+            for f in findings
+        ) or benchmark_inflation_count >= 2
     )
     has_benchmark_inflation = any(
         f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL) and f.check_id in (
@@ -211,18 +291,15 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         has_critical_duplicate or
         has_impossible_travel or
         has_critical_arithmetic or
+        has_producer_deception or
         any(
             f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
                 "EXACT_DUPLICATE_BILL",
                 "CROSS_INSURER_DUPLICATE_CLAIM",
                 "issued_doc_tampered",
                 "FONT_INCONSISTENCY_TAMPERING",
-                "SUSPICIOUS_PRODUCER_METADATA",
                 "DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL",
                 "IMPOSSIBLE_TRAVEL_VELOCITY",
-                "SUBTOTAL_SUM_MISMATCH",
-                "TOTAL_PAYABLE_MISMATCH",
-                "LINE_ITEM_ARITHMETIC_MISMATCH",
                 "REVERSED_HOSPITALIZATION_DATES",
                 "FUTURE_OR_IMPLAUSIBLE_DATE"
             )
@@ -276,6 +353,15 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         elif has_billing_irregularity:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 40)
+        elif has_high_arithmetic:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 55)
+        elif has_medium_arithmetic:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 35)
+        elif has_suspicious_producer:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 45)
         else:
             verdict = Verdict.APPROVE
     elif risk_score < 70:
@@ -286,6 +372,9 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
         # If the claim is purely a policy clause tariff cap overrun (e.g. room rent cap breach)
         # without deceptive fraud, route to adjuster REVIEW for line-item deduction.
         if has_policy_clause_only:
+            verdict = Verdict.REVIEW
+            risk_score = min(risk_score, 65)
+        elif has_suspicious_producer and not has_producer_corroboration:
             verdict = Verdict.REVIEW
             risk_score = min(risk_score, 65)
         else:
@@ -306,20 +395,41 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
             verdict = Verdict.REVIEW
         risk_score = max(risk_score, 65)
 
-    # Inflation guardrail: benchmark inflation findings cannot leave a claim at APPROVE
-    if has_high_inflation and verdict == Verdict.APPROVE:
-        verdict = Verdict.REVIEW
+    # Inflation guardrail: benchmark inflation findings floor risk score appropriately
+    if has_high_inflation:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
         risk_score = max(risk_score, 45)
-    elif has_benchmark_inflation and verdict == Verdict.APPROVE:
-        verdict = Verdict.REVIEW
+    elif has_benchmark_inflation:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
         risk_score = max(risk_score, 40)
-    elif has_billing_irregularity and verdict == Verdict.APPROVE:
-        verdict = Verdict.REVIEW
+    elif has_billing_irregularity:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
         risk_score = max(risk_score, 40)
+
+    # Arithmetic discrepancy guardrails (scale with problem severity)
+    if has_high_arithmetic:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 55)
+    elif has_medium_arithmetic:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 35)
+
+    # Suspicious producer metadata alone guardrail:
+    # verdict floor REVIEW, risk score <= 65
+    if has_suspicious_producer and not has_producer_corroboration and not has_deception_fraud:
+        if verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+        risk_score = max(risk_score, 45)
+        risk_score = min(risk_score, 65)
 
     # Incomplete analysis guardrail:
     # If any unreadable document, extraction incomplete, hidden-text unavailable,
-    # or agent failure/timeout condition exists, the verdict CANNOT be APPROVE —
+    # non-medical document, or agent failure/timeout condition exists, the verdict CANNOT be APPROVE —
     # the floor is REVIEW (with risk score reflecting unanalysed risk, minimum 45).
     if has_incomplete_condition:
         if verdict == Verdict.APPROVE:

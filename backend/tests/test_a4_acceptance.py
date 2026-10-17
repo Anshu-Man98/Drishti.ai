@@ -273,7 +273,7 @@ def test_retrieved_pattern_guardrail_cannot_force_reject():
         evidence=[]
     )
     score, verdict = score_findings([mild_finding, rogue_rag_finding])
-    assert score == 20  # 15 + 5
+    assert score == 19  # 15 + 0.8 * 5 (diminishing returns)
     assert verdict == Verdict.APPROVE
 
     # 3. Even with a HIGH finding (baseline score = 30), total is 35 -> REVIEW, not REJECT
@@ -288,8 +288,8 @@ def test_retrieved_pattern_guardrail_cannot_force_reject():
         evidence=[]
     )
     score, verdict = score_findings([high_finding, rogue_rag_finding])
-    assert score == 35  # 30 + 5
-    assert verdict == Verdict.REVIEW, "Score 35 is REVIEW (30-69), not REJECT"
+    assert score == 34  # 30 + 0.8 * 5 (diminishing returns)
+    assert verdict == Verdict.REVIEW, "Score 34 is REVIEW (30-69), not REJECT"
 
 
 # ==============================================================================

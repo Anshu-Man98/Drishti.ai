@@ -4,11 +4,11 @@ Audits line item arithmetic, dates, policy caps, and sub-limits.
 Calls deterministic tools for all math and policy clause grounding.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from pydantic import BaseModel
 from google.adk.agents import LlmAgent
 
-from backend.app.schemas import Finding, Claim
+from backend.app.schemas import Finding, Claim, Severity, AgentName, Evidence
 from backend.app.config import settings
 from backend.tools.registry import (
     call_tool,
@@ -26,6 +26,56 @@ POLICY_SYSTEM_PROMPT = """You are a claims auditor. You NEVER compute numbers yo
 violation, cite the policy clause id and text returned by search_policy. Emit Findings in JSON only."""
 
 
+DINING_MERCHANT_KEYWORDS = {
+    "restaurant", "bistro", "cafe", "café", "diner", "bakery", "pizzeria",
+    "dhaba", "bar & grill", "eatery", "kitchen", "catering", "dining",
+    "food", "supermarket", "grocery", "sweets", "fast food"
+}
+
+DINING_ITEM_KEYWORDS = {
+    "tikka", "naan", "roti", "biryani", "curry", "paneer", "pizza", "burger",
+    "sandwich", "pasta", "fries", "tandoori", "thali", "rice", "dal", "masala",
+    "beverage", "mocktail", "cocktail", "beer", "wine", "soda", "coke", "pepsi",
+    "soup", "salad", "dessert", "ice cream", "platter", "buffet", "starters",
+    "main course", "noodles", "chilli", "fried rice", "spring roll", "coffee",
+    "espresso", "latte", "cappuccino", "tea", "chai", "dosa", "idli", "vada",
+    "paratha", "kulcha", "lassi", "kebab", "chowmein", "manchurian"
+}
+
+CLINICAL_KEYWORDS = {
+    "consultation", "doctor", "surgeon", "physician", "medicine", "pharmacy",
+    "ward", "bed", "icu", "ot", "surgery", "lab", "test", "injection", "iv",
+    "insulin", "hba1c", "lipid", "dressing", "anesthesia", "infusion",
+    "hospitalization", "operation", "radiology", "ct", "mri", "x-ray", "usg",
+    "blood", "urine", "dialysis", "biopsy", "chemotherapy", "physiotherapy",
+    "nursing", "admission", "discharge", "hospital", "clinic"
+}
+
+
+def is_non_medical_bill(claim: Claim) -> Tuple[bool, str, List[str]]:
+    """
+    Document type gate:
+    Detects whether a submitted invoice is a dining, restaurant, or retail commercial receipt
+    rather than an institutional medical bill.
+    """
+    provider_name = (claim.provider.name if claim.provider else "") or getattr(claim, "hospital_name", "") or ""
+    p_lower = provider_name.lower()
+    has_dining_merchant = any(kw in p_lower for kw in DINING_MERCHANT_KEYWORDS)
+
+    item_descs = [it.description.lower() for it in (claim.line_items or []) if it.description]
+    dining_items = [desc for desc in item_descs if any(kw in desc for kw in DINING_ITEM_KEYWORDS)]
+    clinical_items = [desc for desc in item_descs if any(kw in desc for kw in CLINICAL_KEYWORDS)]
+
+    diag = (claim.diagnosis_code or "").strip().upper()
+    has_medical_diag = bool(diag and diag not in ("NONE", "UNKNOWN", "N/A", "-") and len(diag) >= 3)
+
+    if has_dining_merchant or (len(dining_items) > 0 and len(clinical_items) == 0):
+        if len(clinical_items) == 0 and (not has_medical_diag or has_dining_merchant):
+            return True, provider_name, dining_items
+
+    return False, provider_name, []
+
+
 class PolicyOutput(BaseModel):
     findings: List[Finding]
 
@@ -37,6 +87,37 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     """
     findings: List[Finding] = []
     doc_id = claim.documents[0].doc_id if claim.documents else "doc_main"
+
+    # Document type gate: non-medical documents (e.g. restaurant receipts)
+    is_non_medical, prov_name, matched_items = is_non_medical_bill(claim)
+    if is_non_medical:
+        items_str = ", ".join(matched_items[:3]) if matched_items else "dining charges"
+        return [Finding(
+            finding_id="F-DOC-NOT-MEDICAL",
+            agent=AgentName.POLICY,
+            check_id="NOT_A_MEDICAL_BILL",
+            severity=Severity.HIGH,
+            title="Non-Medical Document Submitted: Document is not a medical bill",
+            explanation=(
+                f"The submitted invoice from '{prov_name or 'Commercial Merchant'}' contains non-medical dining items "
+                f"({items_str}) rather than healthcare line items. No patient, hospital, clinical services, or "
+                "institutional medical diagnosis were identified."
+            ),
+            evidence=[Evidence(
+                doc_id=doc_id,
+                page=1,
+                quote=f"Commercial receipt detected with items: {items_str}",
+                layer="extracted"
+            )],
+            confidence=0.99,
+            computed_chip="Document Type: NOT_A_MEDICAL_BILL",
+            computed_details={
+                "status": "incomplete",
+                "doc_type": "NOT_A_MEDICAL_BILL",
+                "provider": prov_name,
+                "dining_items": matched_items
+            }
+        )]
 
     from backend.tools.docai import locate_field
 

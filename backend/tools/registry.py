@@ -48,6 +48,22 @@ def to_rupees(paise: int) -> float:
     return round(paise / 100.0, 2)
 
 
+def calculate_arithmetic_severity(diff_rupees: float, pct_of_base: float) -> Severity:
+    """
+    Scale finding severity with rupee amount and percentage of total:
+      - <= 1000 rupees or <= 5% -> LOW or MEDIUM (verdict floor REVIEW, risk ~35-55)
+      - > 5000 rupees or > 10% -> CRITICAL (verdict REJECT, risk >= 85)
+      - in-between -> HIGH
+    """
+    if diff_rupees <= 1000.0 or pct_of_base <= 5.0:
+        if diff_rupees > 200.0 or pct_of_base > 2.0:
+            return Severity.MEDIUM
+        return Severity.LOW
+    if diff_rupees > 5000.0 or pct_of_base > 10.0:
+        return Severity.CRITICAL
+    return Severity.HIGH
+
+
 # ==============================================================================
 # DETERMINISTIC TOOL IMPLEMENTATIONS (PAISE ACCURATE)
 # ==============================================================================
@@ -133,11 +149,15 @@ def validate_arithmetic(
         diff_item_paise = abs(expected_amount_paise - claimed_amount_paise)
 
         if diff_item_paise > tolerance_paise:
+            diff_item_val = to_rupees(diff_item_paise)
+            pct_item = (diff_item_val / max(1.0, amount)) * 100.0
+            item_sev = calculate_arithmetic_severity(diff_item_val, pct_item)
+
             findings.append(Finding(
                 finding_id=f"F-MATH-ITEM-{idx+1}",
                 agent=AgentName.POLICY,
                 check_id="LINE_ITEM_MATH_MISMATCH",
-                severity=Severity.HIGH,
+                severity=item_sev,
                 title=f"Calculation mismatch in line item: {desc}",
                 explanation=(
                     f"Line item '{desc}' claims ₹{amount:,.2f}, but {qty} × ₹{unit_price:,.2f} "
@@ -162,10 +182,43 @@ def validate_arithmetic(
 
         calculated_subtotal_paise += claimed_amount_paise
 
-    # 2. Validate sum(line_items) == subtotal
-    subtotal_diff_paise = abs(calculated_subtotal_paise - stated_subtotal_paise)
-    expected_total_paise = stated_subtotal_paise + stated_tax_paise
-    total_diff_paise = abs(expected_total_paise - stated_total_paise)
+    # Check whether printed subtotal and total exist
+    has_printed_subtotal = (subtotal is not None and float(subtotal) > 0)
+    has_printed_total = (total is not None and float(total) > 0)
+
+    # 2. Check for missing printed totals (extraction / incompleteness issue)
+    if not has_printed_total:
+        findings.append(Finding(
+            finding_id="F-MATH-MISSING-TOTAL",
+            agent=AgentName.POLICY,
+            check_id="EXTRACTION_INCOMPLETE",
+            severity=Severity.MEDIUM,
+            title="Extraction Incomplete: Missing printed total on invoice",
+            explanation="The submitted invoice does not contain a recognizable printed total amount payable.",
+            evidence=[Evidence(doc_id=doc_id, page=page, quote="Missing printed total amount on invoice")],
+            confidence=0.95,
+            computed_chip="Missing Total Line",
+            computed_details={"status": "incomplete", "missing_field": "total"}
+        ))
+
+    if not has_printed_subtotal and len(line_items) == 0:
+        findings.append(Finding(
+            finding_id="F-MATH-MISSING-SUBTOTAL",
+            agent=AgentName.POLICY,
+            check_id="EXTRACTION_INCOMPLETE",
+            severity=Severity.MEDIUM,
+            title="Extraction Incomplete: Missing itemized subtotal on invoice",
+            explanation="The submitted invoice does not contain an extracted subtotal or line items.",
+            evidence=[Evidence(doc_id=doc_id, page=page, quote="Missing printed subtotal on invoice")],
+            confidence=0.95,
+            computed_chip="Missing Subtotal Line",
+            computed_details={"status": "incomplete", "missing_field": "subtotal"}
+        ))
+
+    # 3. Validate sum(line_items) == subtotal when subtotal is present
+    subtotal_diff_paise = abs(calculated_subtotal_paise - stated_subtotal_paise) if has_printed_subtotal else 0
+    expected_total_paise = stated_subtotal_paise + stated_tax_paise if has_printed_subtotal else calculated_subtotal_paise + stated_tax_paise
+    total_diff_paise = abs(expected_total_paise - stated_total_paise) if (has_printed_total and has_printed_subtotal) else 0
     max_diff_paise = max(subtotal_diff_paise, total_diff_paise)
 
     # Compute formatting chip
@@ -175,15 +228,19 @@ def validate_arithmetic(
     tax_rupees = tax if tax is not None else 0.0
     tot_rupees = total if total is not None else 0.0
 
-    if subtotal_diff_paise > tolerance_paise or total_diff_paise > tolerance_paise:
+    if not has_printed_total or not has_printed_subtotal:
+        chip = f"Extraction incomplete: ₹{calc_sub_rupees:,.0f} calculated"
+    elif subtotal_diff_paise > tolerance_paise or total_diff_paise > tolerance_paise:
         chip = f"₹{calc_sub_rupees:,.0f} + ₹{tax_rupees:,.0f} ≠ ₹{tot_rupees:,.0f} (Δ ₹{diff_rupees:,.0f})"
     else:
         chip = f"₹{sub_rupees:,.0f} + ₹{tax_rupees:,.0f} = ₹{tot_rupees:,.0f} (Exact match)"
 
-    if subtotal_diff_paise > tolerance_paise:
+    # Subtotal mismatch finding (only if subtotal was printed and does not match sum)
+    if has_printed_subtotal and subtotal_diff_paise > tolerance_paise:
         diff_val = to_rupees(subtotal_diff_paise)
-        is_large = (diff_val > 5000.0 or (subtotal_diff_paise / max(1, to_paise(sub_rupees))) > 0.05)
-        severity = Severity.CRITICAL if is_large else Severity.HIGH
+        pct_of_subtotal = (diff_val / max(1.0, sub_rupees)) * 100.0
+        severity = calculate_arithmetic_severity(diff_val, pct_of_subtotal)
+
         findings.append(Finding(
             finding_id="F-MATH-SUBTOTAL",
             agent=AgentName.POLICY,
@@ -192,7 +249,7 @@ def validate_arithmetic(
             title="Subtotal does not match sum of itemized charges",
             explanation=(
                 f"The sum of all line items is ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "
-                f"₹{sub_rupees:,.2f} (Discrepancy: ₹{to_rupees(subtotal_diff_paise):,.2f})."
+                f"₹{sub_rupees:,.2f} (Discrepancy: ₹{diff_val:,.2f}, {pct_of_subtotal:.1f}% of subtotal)."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,
@@ -205,22 +262,26 @@ def validate_arithmetic(
             computed_details={
                 "line_item_sum": calc_sub_rupees,
                 "stated_subtotal": sub_rupees,
-                "subtotal_diff": to_rupees(subtotal_diff_paise),
+                "subtotal_diff": diff_val,
                 "tolerance_paise": tolerance_paise
             }
         ))
 
-    # 3. Validate subtotal + tax == total
-    if total_diff_paise > tolerance_paise:
+    # 4. Validate subtotal + tax == total (only if total was actually printed and wrong)
+    if has_printed_total and has_printed_subtotal and total_diff_paise > tolerance_paise:
+        diff_val = to_rupees(total_diff_paise)
+        pct_of_total = (diff_val / max(1.0, tot_rupees)) * 100.0
+        severity = calculate_arithmetic_severity(diff_val, pct_of_total)
+
         findings.append(Finding(
             finding_id="F-MATH-TOTAL",
             agent=AgentName.POLICY,
             check_id="TOTAL_PAYABLE_MISMATCH",
-            severity=Severity.CRITICAL,
+            severity=severity,
             title="Total claimed does not match subtotal plus tax",
             explanation=(
                 f"The invoice claims total payable of ₹{tot_rupees:,.2f}, but subtotal (₹{sub_rupees:,.2f}) + "
-                f"tax (₹{tax_rupees:,.2f}) equals ₹{to_rupees(expected_total_paise):,.2f} (Unjustified inflation: ₹{to_rupees(total_diff_paise):,.2f})."
+                f"tax (₹{tax_rupees:,.2f}) equals ₹{to_rupees(expected_total_paise):,.2f} (Discrepancy: ₹{diff_val:,.2f}, {pct_of_total:.1f}%)."
             ),
             evidence=[Evidence(
                 doc_id=doc_id,
@@ -233,12 +294,14 @@ def validate_arithmetic(
             computed_details={
                 "stated_total": total,
                 "expected_total": to_rupees(expected_total_paise),
-                "total_diff": to_rupees(total_diff_paise),
+                "total_diff": diff_val,
                 "tolerance_paise": tolerance_paise
             }
         ))
 
-    match = (subtotal_diff_paise <= tolerance_paise) and (total_diff_paise <= tolerance_paise)
+    match = has_printed_subtotal and has_printed_total and (subtotal_diff_paise <= tolerance_paise) and (total_diff_paise <= tolerance_paise)
+    is_incomplete = extraction_incomplete or (not has_printed_total) or (not has_printed_subtotal and len(line_items) == 0)
+    status_str = "incomplete" if is_incomplete else ("valid" if len(findings) == 0 else "mismatch")
 
     computed = {
         "line_item_sum": calc_sub_rupees,
@@ -251,12 +314,14 @@ def validate_arithmetic(
         "total_diff": to_rupees(total_diff_paise),
         "line_item_sum_paise": calculated_subtotal_paise,
         "stated_total_paise": stated_total_paise,
-        "difference_paise": max_diff_paise
+        "difference_paise": max_diff_paise,
+        "status": status_str
     }
 
     return {
         "valid": match,
         "match": match,
+        "status": status_str,
         "findings": findings,
         "computed": computed,
         "tolerance_paise": tolerance_paise,

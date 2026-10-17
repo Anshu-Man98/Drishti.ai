@@ -198,6 +198,78 @@ EVAL_CASES = {
             LineItem(description="Ward bed charges", qty=2, unit_price=2500.0, amount=5000.0, page=1, source="form"),
         ]
     ),
+    "subtle_arithmetic_mismatch": Claim(
+        claim_id="CLM-EVAL-SUBTLE-MATH",
+        diagnosis_code="E11.9",
+        policy_id="POL-CARE-PLUS-001",
+        claimant=Claimant(claimant_id="CLMNT-KOCH-1", name="Kavita Menon", phone="9876543210", bank_account_hash="h1"),
+        provider=Provider(hospital_id="HOSP-KOCH-1", name="Lotus Care Hospital", city="Kochi"),
+        admission_ts="2026-09-10T09:00:00",
+        discharge_ts="2026-09-12T12:00:00",
+        subtotal=11850.0,  # ₹500 mismatch with sum of line items (11350)
+        tax=567.5,
+        total_claimed=12417.5,
+        line_items=[
+            LineItem(description="Consultation charges", qty=2, unit_price=800.0, amount=1600.0, page=1, source="form"),
+            LineItem(description="HbA1c test", qty=1, unit_price=450.0, amount=450.0, page=1, source="form"),
+            LineItem(description="Lipid profile", qty=1, unit_price=700.0, amount=700.0, page=1, source="form"),
+            LineItem(description="Insulin therapy 3x1200", qty=3, unit_price=1200.0, amount=3600.0, page=1, source="form"),
+            LineItem(description="Ward bed charges", qty=2, unit_price=2500.0, amount=5000.0, page=1, source="form"),
+        ]
+    ),
+    "canva_clean_amounts": Claim(
+        claim_id="CLM-EVAL-CANVA-CLEAN",
+        diagnosis_code="E11.9",
+        policy_id="POL-CARE-PLUS-001",
+        claimant=Claimant(claimant_id="CLMNT-KOCH-1", name="Kavita Menon", phone="9876543210", bank_account_hash="h1"),
+        provider=Provider(hospital_id="HOSP-KOCH-1", name="Lotus Care Hospital", city="Kochi"),
+        admission_ts="2026-09-10T09:00:00",
+        discharge_ts="2026-09-12T12:00:00",
+        subtotal=11350.0,
+        tax=567.5,
+        total_claimed=11917.5,
+        line_items=[
+            LineItem(description="Consultation charges", qty=2, unit_price=800.0, amount=1600.0, page=1, source="form"),
+            LineItem(description="HbA1c test", qty=1, unit_price=450.0, amount=450.0, page=1, source="form"),
+            LineItem(description="Lipid profile", qty=1, unit_price=700.0, amount=700.0, page=1, source="form"),
+            LineItem(description="Insulin therapy 3x1200", qty=3, unit_price=1200.0, amount=3600.0, page=1, source="form"),
+            LineItem(description="Ward bed charges", qty=2, unit_price=2500.0, amount=5000.0, page=1, source="form"),
+        ]
+    ),
+    "missing_total_bill": Claim(
+        claim_id="CLM-EVAL-MISSING-TOTAL",
+        diagnosis_code="E11.9",
+        policy_id="POL-CARE-PLUS-001",
+        claimant=Claimant(claimant_id="CLMNT-KOCH-1", name="Kavita Menon", phone="9876543210", bank_account_hash="h1"),
+        provider=Provider(hospital_id="HOSP-KOCH-1", name="Lotus Care Hospital", city="Kochi"),
+        admission_ts="2026-09-10T09:00:00",
+        discharge_ts="2026-09-12T12:00:00",
+        subtotal=11350.0,
+        tax=567.5,
+        total_claimed=None,
+        line_items=[
+            LineItem(description="Consultation charges", qty=2, unit_price=800.0, amount=1600.0, page=1, source="form"),
+            LineItem(description="HbA1c test", qty=1, unit_price=450.0, amount=450.0, page=1, source="form"),
+            LineItem(description="Lipid profile", qty=1, unit_price=700.0, amount=700.0, page=1, source="form"),
+            LineItem(description="Insulin therapy 3x1200", qty=3, unit_price=1200.0, amount=3600.0, page=1, source="form"),
+            LineItem(description="Ward bed charges", qty=2, unit_price=2500.0, amount=5000.0, page=1, source="form"),
+        ]
+    ),
+    "restaurant_invoice": Claim(
+        claim_id="CLM-EVAL-RESTAURANT",
+        diagnosis_code=None,
+        policy_id="POL-CARE-PLUS-001",
+        claimant=Claimant(claimant_id="CLMNT-KOCH-1", name="Kavita Menon", phone="9876543210", bank_account_hash="h1"),
+        provider=Provider(hospital_id="HOSP-REST-1", name="Spice Garden Bistro", city="Kochi"),
+        subtotal=1780.0,
+        tax=89.0,
+        total_claimed=1869.0,
+        line_items=[
+            LineItem(description="Paneer Tikka Platter", qty=2, unit_price=350.0, amount=700.0, page=1, source="form"),
+            LineItem(description="Butter Garlic Naan", qty=4, unit_price=70.0, amount=280.0, page=1, source="form"),
+            LineItem(description="Special Veg Dum Biryani", qty=2, unit_price=400.0, amount=800.0, page=1, source="form"),
+        ]
+    ),
 }
 
 
@@ -211,7 +283,7 @@ def main():
         ground_truth = json.load(f)
 
     print("\n" + "=" * 98)
-    print("FINSHIELD / DRISHTI.AI — QA FIX 2 DETECTOR EVALUATION (9 Eval Bills)")
+    print("FINSHIELD / DRISHTI.AI — QA FIX 2 & 3 EVALUATION (13 Eval Bills)")
     print("=" * 98)
     print(f"{'Case Name':<28} | {'Exp Verdict':<11} | {'Act Verdict':<11} | {'Risk':<5} | {'Status':<6} | Findings")
     print("-" * 98)
@@ -226,8 +298,18 @@ def main():
         forb_findings = gt.get("forbidden_findings", [])
         exp_risk_min = gt.get("expected_risk_min", 0)
         exp_risk_max = gt.get("expected_risk_max", 100)
+        exp_status = gt.get("expected_status")
 
         findings = analyze_policy_and_arithmetic(claim)
+
+        # Include forensic metadata check for canva test case
+        if case_name == "canva_clean_amounts":
+            from backend.tools.forensics_tools import pdf_metadata_check
+            pdf_path = ROOT_DIR / "data" / "eval_bills_v2" / "canva_clean_amounts.pdf"
+            if pdf_path.exists():
+                _, meta_f = pdf_metadata_check(pdf_path.read_bytes(), doc_id="DOC-CANVA")
+                findings.extend(meta_f)
+
         finding_ids = [f.check_id for f in findings]
 
         # Use baseline ml probability unless claim has deception
@@ -244,7 +326,14 @@ def main():
         forb_ok = not any(ff in finding_ids for ff in forb_findings)
         risk_ok = (exp_risk_min <= risk_score <= exp_risk_max)
 
-        case_ok = verdict_ok and req_ok and forb_ok and risk_ok
+        if exp_status:
+            from backend.tools.scoring import is_incomplete_analysis_condition
+            act_status = "incomplete" if any(is_incomplete_analysis_condition(f) for f in findings) else "complete"
+            status_ok = (act_status == exp_status)
+        else:
+            status_ok = True
+
+        case_ok = verdict_ok and req_ok and forb_ok and risk_ok and status_ok
         if case_ok:
             passed_count += 1
             status_str = "PASS"

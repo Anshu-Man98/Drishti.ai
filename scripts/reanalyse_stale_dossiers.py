@@ -121,7 +121,7 @@ def main():
         cid = item["claim_id"]
         print(f"  -> Triggering POST /api/claims/{cid}/analyze ...", end=" ", flush=True)
         try:
-            resp = requests.post(f"{args.api_url}/api/claims/{cid}/analyze?force_refresh=true", headers=headers, timeout=120)
+            resp = requests.post(f"{args.api_url}/api/claims/{cid}/analyze?force=true", headers=headers, timeout=120)
             if resp.status_code == 200:
                 res_json = resp.json()
                 print(f"SUCCESS [Status: {res_json.get('status')}, Verdict: {res_json.get('verdict')}]")

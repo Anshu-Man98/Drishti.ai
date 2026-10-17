@@ -505,6 +505,7 @@ def analyze_claim(
     background_tasks: BackgroundTasks,
     request: Request,
     force: bool = False,
+    force_refresh: bool = False,
     async_mode: bool = Query(default=False, alias="async"),
     rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_ANALYSES_PER_MIN, "analyze")),
 ):
@@ -519,7 +520,8 @@ def analyze_claim(
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
 
-    if not force:
+    effective_force = force or force_refresh
+    if not effective_force:
         existing_dossier = db_service.get_dossier(claim_id)
         if existing_dossier and existing_dossier.findings:
             return existing_dossier

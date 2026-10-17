@@ -851,7 +851,7 @@ def run_claims_fraud_pipeline(
                 if is_learned and is_duel_claim:
                     sev = Severity.HIGH
                 elif has_independent_findings and (is_learned or best_pattern.get("typical_severity") in ("HIGH", "CRITICAL")):
-                    sev = Severity.HIGH
+                    sev = Severity.MEDIUM
                 else:
                     sev = Severity.LOW
 

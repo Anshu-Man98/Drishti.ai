@@ -163,13 +163,27 @@ def build_claim_fingerprint(
     fingerprint_parts.append(f"total_claimed:{total_val:.0f}")
     fingerprint_parts.append(f"length_of_stay:{los_days}")
 
-    # Check for room rent rates
+    # Check for room rent rates and room rate ratio vs cap
     room_items = [it for it in (claim.line_items or []) if any(k in (getattr(it, "description", "") or "").lower() for k in ["room", "ward", "suite", "bed"])]
     if room_items:
         max_rate = max(getattr(it, "unit_price", 0.0) or 0.0 for it in room_items)
         fingerprint_parts.append(f"max_room_rent_rate:{max_rate:.0f}")
         if max_rate > 5000:
             fingerprint_parts.append("room_rent_vs_cap_ratio_exceeded")
+            fingerprint_parts.append(f"room_rate_ratio:{max_rate / 5000.0:.2f}")
+
+    # Check for padded ancillary share (e.g. implants, consumables, pharmacy >= 30%)
+    ancillary_keywords = ["consumable", "implant", "plate", "screws", "pharmacy", "investigation", "ancillary", "supplies", "telemetry"]
+    ancillary_sum = sum(
+        float(getattr(it, "amount", 0.0) or 0.0) for it in (claim.line_items or [])
+        if any(k in (getattr(it, "description", "") or "").lower() for k in ancillary_keywords)
+    )
+    if total_val > 0:
+        ancillary_share = ancillary_sum / total_val
+        fingerprint_parts.append(f"ancillary_share:{ancillary_share:.2f}")
+        if ancillary_share >= 0.35:
+            fingerprint_parts.append(f"padded_ancillary_share:{ancillary_share:.2f}")
+            fingerprint_parts.append("unbundled_or_padded_ancillary")
 
     # 2. Entity link indicators (from claim metadata or bank hash)
     bank_hash = getattr(claim.claimant, "bank_account_hash", "") if claim.claimant else ""
@@ -190,6 +204,16 @@ def build_claim_fingerprint(
         for f in findings:
             cid = f.check_id.lower()
             fingerprint_parts.append(f"finding_check:{cid}")
+            if getattr(f, "computed_details", None) and isinstance(f.computed_details, dict):
+                ratio = f.computed_details.get("ratio") or f.computed_details.get("inflation_ratio")
+                if ratio:
+                    try:
+                        r_flt = float(ratio)
+                        if r_flt >= 1.15:
+                            fingerprint_parts.append(f"inflation_ratio:{r_flt:.2f}")
+                            fingerprint_parts.append("inflation_ratio_exceeded")
+                    except (ValueError, TypeError):
+                        pass
             if ("mismatch" in cid or "subtotal_sum" in cid or "total_payable" in cid or "arithmetic" in cid) and "benchmark" not in cid:
                 fingerprint_parts.append("arithmetic_mismatch total_payable_discrepancy printed_total")
             elif "room" in cid or "cap" in cid:
@@ -208,8 +232,9 @@ def build_claim_fingerprint(
 
 def _clean_text_for_tokens(text: str) -> List[str]:
     """Helper to tokenize and filter query and pattern strings."""
-    # Bind decimal subcodes in alphanumeric codes like K35.8 -> k35_8, S82.8 -> s82_8
-    text_bound = re.sub(r"\b([a-zA-Z]\d{2,3})\.(\d{1,2})\b", r"\1_\2", text)
+    # Bind decimal numbers like 1.26 -> 1_26 and alphanumeric codes like K35.8 -> k35_8, S82.8 -> s82_8
+    text_bound = re.sub(r"(\d+)\.(\d+)", r"\1_\2", text)
+    text_bound = re.sub(r"\b([a-zA-Z]\d{2,3})[_\.](\d{1,2})\b", r"\1_\2", text_bound)
     tokens = re.findall(r"\w+", text_bound.lower())
     stop_words = {
         "the", "and", "or", "in", "on", "at", "to", "for", "of", "with", "is", "a", "an", "this", "that",
@@ -264,49 +289,71 @@ def _compute_pattern_match_score(query: str, card: Dict[str, Any]) -> float:
     # Boost if signature-specific traits matched directly
     sig_boost = (len(sig_overlap) / max(1, len(sig_tokens))) * 0.4
 
-    # For learned evasion patterns, require a specific match beyond generic claim fields
-    # (diagnosis_code, length_of_stay, max_room_rent_rate, total_claimed).
-    # It must match specific tactic terms, discriminating features, or anomaly findings.
+    # For learned evasion patterns, require:
+    # 1. Match on diagnosis family if pattern targets a diagnosis family
+    # 2. At least one discriminating feature (e.g. inflation ratio, padded ancillary share, room-rate ratio, benchmark anomaly findings)
+    #    rather than only generic fields like diagnosis_code, total_claimed, length_of_stay.
+    # 3. Higher similarity threshold (enforced in search_patterns, min 0.70).
     is_learned_evasion = (
         card.get("fraud_type") == "learned_evasion" or
         "PAT-LEARNED-" in str(card.get("pattern_id", ""))
     )
     if is_learned_evasion:
-        generic_field_names = {
-            "diagnosis_code", "total_claimed", "length_of_stay", "max_room_rent_rate",
-            "bank_account_hash", "diagnosis", "charges", "room", "rent", "rate"
-        }
-        # Specific tokens are signature overlap terms that are not pure digits, generic field names, or ICD codes
-        specific_tokens = {
-            t for t in sig_overlap
-            if t not in generic_field_names
-            and not (t.isdigit() or re.match(r"^[a-z]\d+(_\d+)?$", t))
-        }
+        # A. Diagnosis family match requirement
+        pat_search_text = f"{card.get('title', '')} {card.get('tactic', '')} {card.get('signature', '')} {card.get('narrative', '')}".lower()
+        pat_families = set(re.findall(r"\b([a-z]\d{2})(?:[_\.]\d+)?\b", pat_search_text))
 
+        claim_diag_m = re.search(r"diagnosis_code:([a-z]\d{2})(?:[_\.]\d+)?", query.lower())
+        claim_family = claim_diag_m.group(1) if claim_diag_m else None
+        if not claim_family:
+            cand_fams = re.findall(r"\b([a-z]\d{2})(?:[_\.]\d+)?\b", query.lower())
+            claim_family = cand_fams[0] if cand_fams else None
+
+        if pat_families and claim_family and claim_family not in pat_families:
+            return 0.0
+
+        # B. Discriminating feature requirement:
+        # Must match at least one discriminating feature (inflation ratio vs benchmark,
+        # padded ancillary share, room-rate ratio vs cap, or independent anomaly findings)
         discriminating_features = (
             "inflation_ratio",
+            "inflation_ratio_exceeded",
             "room_rent_vs_cap_ratio_exceeded",
+            "room_rate_ratio",
             "unbundled_or_padded_ancillary",
             "padded_ancillary",
+            "padded_ancillary_share",
+            "telemetry",
+            "continuous hemodynamic",
+            "hemodynamic",
             "finding_check:total_above_diagnosis_benchmark",
             "finding_check:line_item_price_above_benchmark",
             "finding_check:policy_room_rent_cap_exceeded",
+            "finding_check:unbundled_or_padded_ancillary",
             "finding_check:duplicate_line_item",
             "finding_check:room_days_exceed_stay",
+            "finding_check:tariff_arbitrage",
             "finding_check:arithmetic_mismatch",
             "finding_check:tax_rate_mismatch",
         )
         has_discriminating = any(feat in query.lower() for feat in discriminating_features)
-        if not specific_tokens and not has_discriminating:
+
+        # Check if query directly contains specific adversarial tactic keywords (e.g. from duel search queries)
+        tactic_terms = set(_clean_text_for_tokens(card.get("tactic", "") or card.get("title", "")))
+        tactic_overlap = q_meaningful.intersection(tactic_terms)
+        is_direct_tactic_query = len(tactic_overlap) >= 2
+
+        if not has_discriminating and not is_direct_tactic_query:
             return 0.0
 
-    # Boost if fraud_type matched exactly
-    type_boost = 0.3 if card.get("fraud_type", "").lower() in query.lower() else 0.0
+    if is_learned_evasion:
+        sig_match_ratio = len(sig_overlap) / max(1, len(sig_tokens))
+        final_score = min(0.98, sig_match_ratio * 0.75 + base_score * 0.25)
+    else:
+        # Boost if fraud_type matched exactly
+        type_boost = 0.3 if card.get("fraud_type", "").lower() in query.lower() else 0.0
+        final_score = min(0.98, base_score * 0.4 + sig_boost + type_boost)
 
-    # Boost if active learned evasion pattern matches key signature traits
-    learned_boost = 0.25 if (is_learned_evasion and len(sig_overlap) >= 3) else 0.0
-
-    final_score = min(0.98, base_score * 0.4 + sig_boost + type_boost + learned_boost)
     return round(final_score, 3)
 
 
@@ -364,7 +411,12 @@ def search_patterns(
 
     for card in catalog:
         score = _compute_pattern_match_score(claim_summary_or_fingerprint, card)
-        if score >= min_score:
+        is_learned = (
+            card.get("fraud_type") == "learned_evasion" or
+            "PAT-LEARNED-" in str(card.get("pattern_id", ""))
+        )
+        threshold = max(min_score, 0.70) if is_learned else min_score
+        if score >= threshold:
             scored_cards.append({
                 "pattern_id": card["pattern_id"],
                 "fraud_type": card["fraud_type"],

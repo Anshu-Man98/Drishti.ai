@@ -146,11 +146,11 @@ Trained on 3,000 synthetic Indian health insurance claims across 5 major insurer
 ### Model Performance (`ML.EVALUATE`)
 | Metric | Value | Benchmark / Target | Status |
 |---|---|---|---|
-| **ROC AUC** | **{claim_metrics['roc_auc']:.4f}** | $\ge 0.85$ | ✅ Exceptional Discrimination |
-| **Precision** | **{claim_metrics['precision']:.4f}** | $\ge 0.85$ | ✅ Low False Alarm Rate |
-| **Recall** | **{claim_metrics['recall']:.4f}** | $\ge 0.50$ | ✅ High Risk Catch Rate |
-| **F1 Score** | **{claim_metrics['f1']:.4f}** | $\ge 0.60$ | ✅ Robust Balance |
-| **Accuracy** | **{claim_metrics['accuracy']:.4f}** | $\ge 0.88$ | ✅ High Overall Accuracy |
+| **ROC AUC** | **{claim_metrics['roc_auc']:.4f}** | $\\ge 0.85$ | ✅ Exceptional Discrimination |
+| **Precision** | **{claim_metrics['precision']:.4f}** | $\\ge 0.85$ | ✅ Low False Alarm Rate |
+| **Recall** | **{claim_metrics['recall']:.4f}** | $\\ge 0.50$ | ✅ High Risk Catch Rate |
+| **F1 Score** | **{claim_metrics['f1']:.4f}** | $\\ge 0.60$ | ✅ Robust Balance |
+| **Accuracy** | **{claim_metrics['accuracy']:.4f}** | $\\ge 0.88$ | ✅ High Overall Accuracy |
 
 ### Top Driving Features (`ML.GLOBAL_EXPLAIN`)
 | Feature | Importance Weight | Business Rationale |

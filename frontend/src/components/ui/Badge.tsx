@@ -6,6 +6,8 @@ import {
   Sparkles,
   Info,
   Database,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -133,7 +135,7 @@ export const Badge: React.FC<BadgeProps> = ({
             className
           )}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse shrink-0" />
+          {showIcon && <AlertOctagon className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
           <span>{label || 'Critical'}</span>
         </span>
       );
@@ -148,7 +150,7 @@ export const Badge: React.FC<BadgeProps> = ({
             className
           )}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+          {showIcon && <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
           <span>{label || 'High'}</span>
         </span>
       );
@@ -163,7 +165,7 @@ export const Badge: React.FC<BadgeProps> = ({
             className
           )}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-primary shrink-0" />
+          {showIcon && <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-primary" />}
           <span>{label || 'Medium'}</span>
         </span>
       );
@@ -178,7 +180,7 @@ export const Badge: React.FC<BadgeProps> = ({
             className
           )}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-white/40 shrink-0" />
+          {showIcon && <Info className="w-3.5 h-3.5 shrink-0 text-app-muted" />}
           <span>{label || 'Low'}</span>
         </span>
       );

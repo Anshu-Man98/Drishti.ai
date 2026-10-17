@@ -120,7 +120,7 @@
   --brand-border: rgba(183, 121, 31, 0.35);
   --brand-glow: rgba(183, 121, 31, 0.16);
 
-  --risk-approve: #059669;
+  --risk-approve: #047857;
   --risk-approve-bg: #ECFDF5;
   --risk-approve-border: #A7F3D0;
 
@@ -128,7 +128,7 @@
   --risk-review-bg: rgba(227, 154, 27, 0.12);
   --risk-review-border: #FDE68A;
 
-  --risk-reject: #E11D48;
+  --risk-reject: #BE123C;
   --risk-reject-bg: #FFF1F2;
   --risk-reject-border: #FECDD3;
 

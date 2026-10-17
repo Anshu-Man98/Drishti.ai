@@ -70,14 +70,22 @@ def analyze_cross_references(claim: Claim) -> List[Finding]:
             else:
                 bill_no = (claim.metadata or {}).get("bill_no")
 
-    # 1. Exact Duplicate Search
+    # 1. Exact Duplicate Search (Firestore real-time claims + BigQuery warehouse)
+    try:
+        from backend.app.services.db import db_service
+        fs_matches = db_service.find_firestore_duplicates(claim)
+        findings.extend(fs_matches)
+    except Exception as e:
+        logger.warning("Firestore duplicate check failed for claim %s: %s", claim.claim_id, e)
+
     exact_matches = bq_warehouse.find_exact_duplicates(
         sha256=sha256,
         bill_number=bill_no or (claim.documents[0].filename if claim.documents else None),
         hospital_id=claim.provider.hospital_id if claim.provider else "HOSP-UNKNOWN",
         current_claim_id=claim.claim_id
     )
-    findings.extend(exact_matches)
+    if not any(f.check_id == "EXACT_DUPLICATE_BILL" for f in findings):
+        findings.extend(exact_matches)
 
     # 2. Cross-Insurer Duplicate Search
     if claim.claimant and claim.admission_ts:

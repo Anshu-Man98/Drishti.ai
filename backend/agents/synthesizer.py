@@ -199,9 +199,30 @@ def synthesize_dossier(
         for f in all_findings
     )
     dossier_status = "incomplete" if is_incomplete else "complete"
-    if is_incomplete and verdict == Verdict.APPROVE:
-        verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 45)
+    if is_incomplete:
+        has_deception_fraud = any(
+            f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+                "EXACT_DUPLICATE_BILL",
+                "CROSS_INSURER_DUPLICATE_CLAIM",
+                "issued_doc_tampered",
+                "FONT_INCONSISTENCY_TAMPERING",
+                "DOCTOR_IMPOSSIBLE_SPACETIME_TRAVEL",
+                "IMPOSSIBLE_TRAVEL_VELOCITY",
+                "REVERSED_HOSPITALIZATION_DATES",
+                "FUTURE_OR_IMPLAUSIBLE_DATE",
+                "SUBTOTAL_SUM_MISMATCH",
+                "TOTAL_PAYABLE_MISMATCH",
+                "SUSPICIOUS_PRODUCER_METADATA",
+                "PROMPT_INJECTION_DETECTED"
+            )
+            for f in all_findings
+        )
+        if not has_deception_fraud:
+            verdict = Verdict.REVIEW
+            risk_score = min(max(risk_score, 45), 65)
+        elif verdict == Verdict.APPROVE:
+            verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 45)
 
     has_token_budget_finding = any(
         (getattr(f, "check_id", None) or "") == "TOKEN_BUDGET_EXCEEDED"

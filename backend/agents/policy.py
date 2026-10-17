@@ -184,11 +184,15 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     findings.extend(tax_result.get("findings", []))
 
     # 2. Check Dates
+    bill_date = (claim.metadata or {}).get("bill_date") or getattr(claim, "bill_date", None)
+    document_dates = (claim.metadata or {}).get("document_dates", [])
     date_result = call_tool(
         "check_dates",
         {
             "admission_ts": claim.admission_ts,
             "discharge_ts": claim.discharge_ts,
+            "bill_date": bill_date,
+            "document_dates": document_dates,
             "doc_id": doc_id
         },
         claim_id=claim.claim_id,

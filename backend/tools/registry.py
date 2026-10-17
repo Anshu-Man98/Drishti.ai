@@ -13,7 +13,7 @@ import logging
 import math
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from backend.app.schemas import Claim, Evidence, Finding, Severity, AgentName, Verdict
@@ -237,12 +237,12 @@ def validate_arithmetic(
             finding_id="F-MATH-MISSING-TOTAL",
             agent=AgentName.POLICY,
             check_id="EXTRACTION_INCOMPLETE",
-            severity=Severity.MEDIUM,
-            title="Extraction Incomplete: Missing printed total on invoice",
+            severity=Severity.LOW,
+            title="EXTRACTION_INCOMPLETE: no printed total",
             explanation="The submitted invoice does not contain a recognizable printed total amount payable.",
             evidence=[Evidence(doc_id=doc_id, page=page, quote="Missing printed total amount on invoice")],
             confidence=0.95,
-            computed_chip="Missing Total Line",
+            computed_chip="EXTRACTION_INCOMPLETE: no printed total",
             computed_details={"status": "incomplete", "missing_field": "total"}
         ))
 
@@ -1139,63 +1139,110 @@ def check_price_benchmarks(
 
 
 def check_dates(
-    admission_ts: Union[datetime, str],
-    discharge_ts: Union[datetime, str],
-    document_dates: Optional[List[Dict[str, Any]]] = None,
-    doc_id: str = "doc_main"
+    admission_ts: Union[datetime, str, None] = None,
+    discharge_ts: Union[datetime, str, None] = None,
+    document_dates: Optional[List[Any]] = None,
+    bill_date: Optional[Union[datetime, str]] = None,
+    doc_id: str = "doc_main",
+    now: Optional[datetime] = None
 ) -> Dict[str, Any]:
-    """Validates chronological sequence of hospitalization admission and discharge."""
-    admission_ts = normalize_to_utc(admission_ts)
-    discharge_ts = normalize_to_utc(discharge_ts)
+    """
+    Validates chronological sequence of hospitalization admission and discharge,
+    and flags future or implausible dates on medical bills against reference audit date.
+    """
+    from backend.tools.date_utils import parse_flexible_date
 
-    if not admission_ts or not discharge_ts:
-        return {
-            "valid": True,
-            "findings": [],
-            "computed": {},
-            "chip": "Dates missing"
-        }
+    ref_now = now if now is not None else datetime.now(timezone.utc)
+    if ref_now.tzinfo is None:
+        ref_now = ref_now.replace(tzinfo=timezone.utc)
+
+    adm_dt = parse_flexible_date(admission_ts)
+    dis_dt = parse_flexible_date(discharge_ts)
+    bill_dt = parse_flexible_date(bill_date)
 
     findings: List[Finding] = []
-    los_seconds = (discharge_ts - admission_ts).total_seconds()
-    los_days = max(1, math.ceil(los_seconds / 86400.0))
-
-    valid = admission_ts <= discharge_ts
-    chip = f"Length of Stay: {los_days} day{'s' if los_days != 1 else ''}"
-
-    computed = {
-        "length_of_stay_days": los_days,
-        "duration_hours": round(los_seconds / 3600.0, 1),
-        "admission_year": admission_ts.year,
-        "discharge_year": discharge_ts.year
+    computed: Dict[str, Any] = {
+        "reference_date": ref_now.isoformat()
     }
 
-    # Future date check (current system audit year: 2026)
-    current_year = 2026
-    if admission_ts.year > current_year or discharge_ts.year > current_year:
-        future_dt = admission_ts if admission_ts.year > current_year else discharge_ts
-        chip = f"Future date: {future_dt.strftime('%d-%b-%Y')}"
-        findings.append(Finding(
-            finding_id="F-DATE-FUTURE",
-            agent=AgentName.POLICY,
-            check_id="FUTURE_OR_IMPLAUSIBLE_DATE",
-            severity=Severity.CRITICAL if future_dt.year >= 2030 else Severity.HIGH,
-            title="Future or Implausible Date on Medical Bill",
-            explanation=(
-                f"Hospitalization date ({future_dt.strftime('%d-%b-%Y')}) is dated in the future, "
-                f"which represents an impossible timeline for an actual healthcare reimbursement claim."
-            ),
-            evidence=[Evidence(doc_id=doc_id, page=1, quote=f"Future timestamp: {future_dt.isoformat()}")],
-            confidence=1.0,
-            computed_chip=chip,
-            computed_details={
-                "future_year": future_dt.year,
-                "current_year": current_year,
-                "future_date": future_dt.isoformat()
-            }
-        ))
+    # 1. Check all candidate dates against reference audit date
+    dates_to_check = []
+    if adm_dt:
+        dates_to_check.append(("admission_date", adm_dt))
+    if dis_dt:
+        dates_to_check.append(("discharge_date", dis_dt))
+    if bill_dt:
+        dates_to_check.append(("bill_date", bill_dt))
 
-    if not valid:
+    for d_item in (document_dates or []):
+        if isinstance(d_item, dict):
+            dt_cand = parse_flexible_date(d_item.get("date") or d_item.get("ts"))
+            label = d_item.get("type", "document_date")
+        else:
+            dt_cand = parse_flexible_date(d_item)
+            label = "document_date"
+        if dt_cand:
+            dates_to_check.append((label, dt_cand))
+
+    future_finding_emitted = False
+    for label, dt_val in dates_to_check:
+        if dt_val > ref_now and not future_finding_emitted:
+            future_finding_emitted = True
+            days_ahead = (dt_val - ref_now).days
+            is_extreme_future = dt_val.year >= 2030 or days_ahead > 365
+            sev = Severity.CRITICAL if is_extreme_future else Severity.HIGH
+            chip = f"Future date: {dt_val.strftime('%d-%b-%Y')}"
+
+            findings.append(Finding(
+                finding_id="F-DATE-FUTURE",
+                agent=AgentName.POLICY,
+                check_id="FUTURE_OR_IMPLAUSIBLE_DATE",
+                severity=sev,
+                title="Future or Implausible Date on Medical Bill",
+                explanation=(
+                    f"Medical bill {label.replace('_', ' ')} ({dt_val.strftime('%d-%b-%Y')}) "
+                    f"is dated in the future relative to server reference audit date ({ref_now.strftime('%d-%b-%Y')}). "
+                    f"Hospitalization or bill dates occurring in the future represent an impossible timeline for an authentic claim."
+                ),
+                evidence=[Evidence(
+                    doc_id=doc_id,
+                    page=1,
+                    quote=f"Parsed date: {dt_val.isoformat()} | Reference date: {ref_now.isoformat()}"
+                )],
+                confidence=1.0,
+                computed_chip=chip,
+                computed_details={
+                    "parsed_date": dt_val.isoformat(),
+                    "reference_date": ref_now.isoformat(),
+                    "diff_days": days_ahead,
+                    "field": label
+                }
+            ))
+
+    if not adm_dt or not dis_dt:
+        chip = "Dates missing" if not adm_dt and not dis_dt else "Partial dates"
+        return {
+            "valid": not future_finding_emitted,
+            "findings": findings,
+            "computed": computed,
+            "chip": chip
+        }
+
+    los_seconds = (dis_dt - adm_dt).total_seconds()
+    los_days = max(1, math.ceil(los_seconds / 86400.0))
+    valid_order = adm_dt <= dis_dt
+    chip = f"Length of Stay: {los_days} day{'s' if los_days != 1 else ''}"
+
+    computed.update({
+        "length_of_stay_days": los_days,
+        "duration_hours": round(los_seconds / 3600.0, 1),
+        "admission_year": adm_dt.year,
+        "discharge_year": dis_dt.year,
+        "admission_date": adm_dt.isoformat(),
+        "discharge_date": dis_dt.isoformat(),
+    })
+
+    if not valid_order:
         findings.append(Finding(
             finding_id="F-DATE-REVERSED",
             agent=AgentName.POLICY,
@@ -1203,17 +1250,17 @@ def check_dates(
             severity=Severity.CRITICAL,
             title="Admission date occurs after discharge date",
             explanation=(
-                f"Admission timestamp ({admission_ts.isoformat()}) is later than discharge "
-                f"timestamp ({discharge_ts.isoformat()}). This represents a temporal impossibility."
+                f"Admission timestamp ({adm_dt.strftime('%d-%b-%Y %H:%M')}) is later than discharge "
+                f"timestamp ({dis_dt.strftime('%d-%b-%Y %H:%M')}). This represents a temporal impossibility."
             ),
-            evidence=[Evidence(doc_id=doc_id, page=1, quote=f"Admission: {admission_ts}, Discharge: {discharge_ts}")],
+            evidence=[Evidence(doc_id=doc_id, page=1, quote=f"Admission: {adm_dt}, Discharge: {dis_dt}")],
             confidence=1.0,
             computed_chip="Temporal Impossibility",
             computed_details=computed
         ))
 
     return {
-        "valid": valid,
+        "valid": valid_order and not future_finding_emitted,
         "findings": findings,
         "computed": computed,
         "chip": chip
@@ -1465,14 +1512,16 @@ FUNCTION_DECLARATIONS = [
     },
     {
         "name": "check_dates",
-        "description": "Validates chronological order of admission and discharge timestamps.",
+        "description": "Validates chronological order of admission and discharge timestamps, and flags future or implausible dates.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "admission_ts": {"type": "STRING", "description": "Admission ISO timestamp"},
-                "discharge_ts": {"type": "STRING", "description": "Discharge ISO timestamp"}
+                "discharge_ts": {"type": "STRING", "description": "Discharge ISO timestamp"},
+                "bill_date": {"type": "STRING", "description": "Printed bill or invoice date"},
+                "document_dates": {"type": "ARRAY", "items": {"type": "OBJECT"}, "description": "Additional document dates"}
             },
-            "required": ["admission_ts", "discharge_ts"]
+            "required": []
         }
     },
     {

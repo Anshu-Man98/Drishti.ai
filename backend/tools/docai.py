@@ -111,6 +111,8 @@ class GeminiExtractedBill(BaseModel):
     insurer_name: Optional[str] = Field(default=None, description="Insurance company name if visible, else null")
     admission_date: Optional[str] = Field(default=None, description="Date of admission if visible, else null")
     discharge_date: Optional[str] = Field(default=None, description="Date of discharge if visible, else null")
+    bill_date: Optional[str] = Field(default=None, description="Printed invoice or bill date if visible, else null")
+    invoice_number: Optional[str] = Field(default=None, description="Printed invoice or bill number if visible, else null")
     diagnosis_code: Optional[str] = Field(default=None, description="Primary ICD code (e.g. M54.5, I21.9) if visible, else null")
     diagnosis_description: Optional[str] = Field(default=None, description="Description of diagnosis if visible, else null")
     subtotal: Optional[float] = Field(default=None, description="Subtotal before taxes if visible, else null")
@@ -143,53 +145,8 @@ def _parse_amount(val: Any) -> Optional[float]:
 
 
 def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
-    if not date_str:
-        return None
-    date_str = date_str.strip()
-    clean_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
-    formats = (
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-        "%d-%b-%Y %I:%M %p",
-        "%d-%b-%Y %H:%M",
-        "%d-%b-%Y",
-        "%d/%m/%Y %I:%M %p",
-        "%d/%m/%Y %H:%M",
-        "%d/%m/%Y",
-        "%d-%m-%Y %I:%M %p",
-        "%d-%m-%Y %H:%M",
-        "%d-%m-%Y",
-        "%d.%m.%Y",
-        "%b %d, %Y",
-        "%B %d, %Y",
-        "%d %b %Y",
-        "%d %B %Y",
-    )
-    for fmt in formats:
-        try:
-            return datetime.strptime(clean_str, fmt)
-        except ValueError:
-            pass
-    m_iso = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", clean_str)
-    if m_iso:
-        try:
-            return datetime.strptime(m_iso.group(1), "%Y-%m-%d")
-        except ValueError:
-            pass
-    m_dmy = re.search(r"\b(\d{1,2}-[A-Za-z]{3}-\d{4})\b", clean_str)
-    if m_dmy:
-        try:
-            return datetime.strptime(m_dmy.group(1), "%d-%b-%Y")
-        except ValueError:
-            pass
-    m_slash = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", clean_str)
-    if m_slash:
-        try:
-            return datetime.strptime(m_slash.group(1), "%d/%m/%Y")
-        except ValueError:
-            pass
-    return None
+    from backend.tools.date_utils import parse_flexible_date
+    return parse_flexible_date(date_str)
 
 
 def render_document_to_images(
@@ -550,6 +507,10 @@ def _map_docai_result_to_claim(
     docai_total_bbox = None
     docai_total_page = 1
 
+    docai_supplier_address: Optional[str] = None
+    docai_invoice_date: Optional[str] = None
+    docai_invoice_id: Optional[str] = None
+
     docai_line_items: List[LineItem] = []
 
     for entity in getattr(doc, "entities", []):
@@ -641,6 +602,42 @@ def _map_docai_result_to_claim(
                     bbox=bbox,
                     page=page,
                     confidence=docai_total_conf,
+                    source="docai"
+                ))
+        elif etype in ("invoice_date", "bill_date", "service_date"):
+            cand = text.strip()
+            if cand:
+                docai_invoice_date = cand
+                extracted_entities.append(ExtractedEntity(
+                    field_name="invoice_date",
+                    text=docai_invoice_date,
+                    bbox=bbox,
+                    page=page,
+                    confidence=float(entity.confidence or 0.95),
+                    source="docai"
+                ))
+        elif etype in ("invoice_id", "invoice_number", "bill_id"):
+            cand = text.strip()
+            if cand:
+                docai_invoice_id = cand
+                extracted_entities.append(ExtractedEntity(
+                    field_name="invoice_id",
+                    text=docai_invoice_id,
+                    bbox=bbox,
+                    page=page,
+                    confidence=float(entity.confidence or 0.95),
+                    source="docai"
+                ))
+        elif etype in ("supplier_address", "vendor_address"):
+            cand = text.strip()
+            if cand:
+                docai_supplier_address = cand
+                extracted_entities.append(ExtractedEntity(
+                    field_name="supplier_address",
+                    text=docai_supplier_address,
+                    bbox=bbox,
+                    page=page,
+                    confidence=float(entity.confidence or 0.95),
                     source="docai"
                 ))
         elif etype == "line_item":
@@ -746,20 +743,21 @@ def _map_docai_result_to_claim(
     elif gemini_result and gemini_result.hospital_address:
         city_candidate = gemini_result.hospital_address
 
-    text_to_search = f"{city_candidate or ''} {hospital_name or ''} {doc_text}".lower()
+    text_to_search = f"{city_candidate or ''} {docai_supplier_address or ''} {hospital_name or ''} {doc_text}".lower()
     for city_key, (c_name, c_lat, c_lng) in CITY_COORDS.items():
         if re.search(r"\b" + re.escape(city_key) + r"\b", text_to_search):
             city = c_name
             lat, lng = c_lat, c_lng
-            field_sources["city"] = "gemini" if (gemini_result and gemini_result.city) else "docai"
+            field_sources["city"] = "gemini" if (gemini_result and gemini_result.city) else ("docai" if docai_supplier_address else "layout")
             break
 
     if not city and gemini_result and gemini_result.city and len(gemini_result.city.strip()) > 1:
         city = gemini_result.city.strip().title()
         field_sources["city"] = "gemini"
-    elif not city and city_candidate and len(city_candidate.strip()) > 1:
+    elif not city and (city_candidate or docai_supplier_address):
+        addr_str = f"{city_candidate or ''} {docai_supplier_address or ''}"
         # Check if address contains a city before state/pin
-        m_city = re.search(r"([A-Za-z\s]+),\s*(?:Uttarakhand|Madhya Pradesh|Maharashtra|Karnataka|Tamil Nadu|Delhi|Rajasthan|Kerala|Gujarat|West Bengal|Uttar Pradesh)", city_candidate, re.IGNORECASE)
+        m_city = re.search(r"([A-Za-z\s]+),\s*(?:Uttarakhand|Madhya Pradesh|Maharashtra|Karnataka|Tamil Nadu|Delhi|Rajasthan|Kerala|Gujarat|West Bengal|Uttar Pradesh)", addr_str, re.IGNORECASE)
         if m_city:
             city = m_city.group(1).strip().title()
             field_sources["city"] = "docai_address"
@@ -832,6 +830,28 @@ def _map_docai_result_to_claim(
         if m_dis:
             discharge_ts = _parse_date(m_dis.group(1).strip())
             field_sources["discharge_date"] = "layout"
+
+    # Bill / Invoice Date
+    bill_date_str = None
+    if gemini_result and gemini_result.bill_date:
+        bill_date_str = gemini_result.bill_date.strip()
+    elif docai_invoice_date:
+        bill_date_str = docai_invoice_date.strip()
+    else:
+        m_bdate = re.search(r"(?:Bill|Invoice)?\s*Date:\s*([0-9]{1,4}[-/][A-Za-z0-9]{1,4}[-/][0-9]{1,4}(?:\s+[0-9]{1,2}:[0-9]{2}(?:\s*[APap][Mm])?)?)", doc_text, re.IGNORECASE)
+        if m_bdate:
+            bill_date_str = m_bdate.group(1).strip()
+
+    # Invoice / Bill Number
+    invoice_number = None
+    if gemini_result and gemini_result.invoice_number:
+        invoice_number = gemini_result.invoice_number.strip()
+    elif docai_invoice_id:
+        invoice_number = docai_invoice_id.strip()
+    else:
+        m_inv = re.search(r"(?:Invoice|Bill)\s*(?:No\.?|#|Number)?:\s*([A-Za-z0-9\-_/]+)", doc_text, re.IGNORECASE)
+        if m_inv:
+            invoice_number = m_inv.group(1).strip()
 
     # Merge Step 7: Policy & Insurer
     policy_id = None
@@ -1168,7 +1188,11 @@ def _map_docai_result_to_claim(
         ],
         extracted_entities=extracted_entities,
         field_sources=field_sources,
-        metadata={"extraction_incomplete": extraction_incomplete},
+        metadata={
+            "extraction_incomplete": extraction_incomplete,
+            **({"bill_date": bill_date_str, "document_dates": [{"type": "bill_date", "date": bill_date_str}]} if bill_date_str else {}),
+            **({"bill_no": invoice_number, "invoice_number": invoice_number} if invoice_number else {})
+        },
         created_at=datetime.utcnow()
     ), extracted_entities
 
@@ -1202,6 +1226,8 @@ def _parse_invoice_layout(
     admission_ts = None
     discharge_ts = None
     diagnosis_code = None
+    bill_date_str = None
+    invoice_number = None
 
     subtotal = None
     tax = None
@@ -1390,6 +1416,34 @@ def _parse_invoice_layout(
                             source="layout"
                         ))
 
+            # Invoice Date / Bill Date
+            if ("Bill Date:" in t or "Invoice Date:" in t or "Date:" in t) and not bill_date_str:
+                m_bdate = re.search(r"(?:Bill|Invoice)?\s*Date:\s*([0-9]{1,4}[-/][A-Za-z0-9]{1,4}[-/][0-9]{1,4}(?:\s+[0-9]{1,2}:[0-9]{2}(?:\s*[APap][Mm])?)?)", t, re.IGNORECASE)
+                if m_bdate:
+                    bill_date_str = m_bdate.group(1).strip()
+                    extracted_entities.append(ExtractedEntity(
+                        field_name="invoice_date",
+                        text=bill_date_str,
+                        bbox=t_bbox,
+                        page=page_idx,
+                        confidence=0.95,
+                        source="layout"
+                    ))
+
+            # Invoice Number / Bill Number
+            if ("Invoice No" in t or "Bill No" in t or "Invoice #" in t) and not invoice_number:
+                m_inv = re.search(r"(?:Invoice|Bill)\s*(?:No\.?|#|Number)?:\s*([A-Za-z0-9\-_/]+)", t, re.IGNORECASE)
+                if m_inv:
+                    invoice_number = m_inv.group(1).strip()
+                    extracted_entities.append(ExtractedEntity(
+                        field_name="invoice_id",
+                        text=invoice_number,
+                        bbox=t_bbox,
+                        page=page_idx,
+                        confidence=0.95,
+                        source="layout"
+                    ))
+
             # Table row line item regex
             m_item = re.match(r"^\s*(\d+)\s+([A-Za-z0-9\s,&/()-]+?)\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$", t)
             if m_item:
@@ -1529,6 +1583,10 @@ def _parse_invoice_layout(
                 "tax": "layout" if tax else None,
                 "total_claimed": "layout" if total_claimed else None
             }.items() if v is not None
+        },
+        metadata={
+            **({"bill_date": bill_date_str, "document_dates": [{"type": "bill_date", "date": bill_date_str}]} if bill_date_str else {}),
+            **({"bill_no": invoice_number, "invoice_number": invoice_number} if invoice_number else {})
         },
         created_at=datetime.utcnow()
     )

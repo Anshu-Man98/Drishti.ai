@@ -455,9 +455,13 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     # non-medical document, or agent failure/timeout condition exists, the verdict CANNOT be APPROVE —
     # the floor is REVIEW (with risk score reflecting unanalysed risk, minimum 45).
     if has_incomplete_condition:
-        if verdict == Verdict.APPROVE:
+        if not has_deception_fraud:
             verdict = Verdict.REVIEW
-        risk_score = max(risk_score, 45)
+            risk_score = min(max(risk_score, 45), 65)
+        else:
+            if verdict == Verdict.APPROVE:
+                verdict = Verdict.REVIEW
+            risk_score = max(risk_score, 45)
 
     return risk_score, verdict
 

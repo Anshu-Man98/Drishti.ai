@@ -1,11 +1,14 @@
 import json
 import logging
+import re
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from backend.app.config import settings
 from backend.app.exceptions import CloudServiceError
-from backend.app.schemas import Claim, Dossier, ClaimSummary, ChatMessage
+from backend.app.schemas import (
+    Claim, Dossier, ClaimSummary, ChatMessage, Finding, Severity, Evidence, AgentName
+)
 
 logger = logging.getLogger("finshield.services.db")
 
@@ -526,6 +529,201 @@ class DatabaseService:
                 message=f"Failed to get learned patterns from Firestore: {e}",
                 retryable=True
             )
+
+    def find_firestore_duplicates(self, claim: Claim) -> List[Finding]:
+        """
+        Cross-claim duplicate detector for claims stored in Firestore.
+        Detects:
+        1. Exact document SHA-256 match -> EXACT_DUPLICATE_BILL (CRITICAL)
+        2. Same bill/invoice number + hospital + total + patient -> EXACT_DUPLICATE_BILL (CRITICAL)
+        3. Same patient + hospital + overlapping admission dates (+-3d) + similar total (+-5%) -> EXACT_DUPLICATE_BILL (HIGH)
+
+        Excludes the claim itself and respects the `source` marker:
+        - Duel claims are adversarial learning mutations; a duel mutation of a base claim is not a duplicate.
+        """
+        from backend.app.schemas import Finding, Severity, AgentName, Evidence
+        from backend.tools.date_utils import parse_flexible_date
+
+        findings: List[Finding] = []
+        if not claim or not claim.claim_id:
+            return findings
+
+        # Source marker rule: duel claims are adversarial simulations mutating a base claim.
+        if getattr(claim, "source", "") == "duel":
+            return findings
+
+        current_sha256s = {
+            d.sha256.lower().strip() for d in (claim.documents or [])
+            if getattr(d, "sha256", None)
+        }
+
+        current_bill_no = (
+            (claim.metadata or {}).get("bill_no") or
+            (claim.metadata or {}).get("invoice_number") or
+            (claim.metadata or {}).get("bill_number")
+        )
+        if not current_bill_no and claim.documents:
+            for cd in claim.documents:
+                fn = getattr(cd, "filename", "") or ""
+                if fn:
+                    m_inv = re.search(r"(?:INV|BILL)-[A-Za-z0-9\-]+", fn, re.IGNORECASE)
+                    if m_inv:
+                        current_bill_no = m_inv.group(0)
+                        break
+
+        current_hospital = claim.provider.name.strip().lower() if claim.provider and claim.provider.name else ""
+        current_patient = claim.claimant.name.strip().lower() if claim.claimant and claim.claimant.name else ""
+        current_total = float(claim.total_claimed or 0.0)
+        current_adm = parse_flexible_date(claim.admission_ts)
+        curr_created = parse_flexible_date(getattr(claim, "created_at", None))
+
+        try:
+            docs = self._call_fs(lambda: list(self.client.collection("claims").stream()), timeout=15.0)
+        except Exception as e:
+            logger.warning("Failed to stream Firestore claims for duplicate check: %s", e)
+            return findings
+
+        for d_doc in docs:
+            c_dict = d_doc.to_dict()
+            if not isinstance(c_dict, dict):
+                continue
+            existing_id = c_dict.get("claim_id", d_doc.id)
+
+            # 1. Self-exclusion
+            if existing_id == claim.claim_id:
+                continue
+
+            # 2. Source marker rules:
+            # - Duel claims are adversarial simulations mutating a base claim. They do not flag duplicates.
+            existing_source = c_dict.get("source", "")
+            if existing_source == "duel":
+                continue
+
+            # - Demo claims are ground-truth benchmark claims. A demo claim cannot be a duplicate of a user upload.
+            if getattr(claim, "source", "") == "demo" and existing_source != "demo":
+                continue
+
+            # - Temporal order: an earlier claim cannot be a duplicate of a claim submitted later.
+            exist_created = parse_flexible_date(c_dict.get("created_at"))
+            if curr_created and exist_created and exist_created > curr_created:
+                continue
+
+            existing_docs = c_dict.get("documents", []) or []
+            existing_sha256s = {
+                doc_item.get("sha256", "").lower().strip() for doc_item in existing_docs
+                if isinstance(doc_item, dict) and doc_item.get("sha256")
+            }
+
+            existing_claimant = c_dict.get("claimant") or {}
+            existing_patient = (existing_claimant.get("name") or "").strip().lower()
+
+            existing_provider = c_dict.get("provider") or {}
+            existing_hospital = (existing_provider.get("name") or "").strip().lower()
+
+            existing_meta = c_dict.get("metadata") or {}
+            existing_bill_no = (
+                existing_meta.get("bill_no") or
+                existing_meta.get("invoice_number") or
+                existing_meta.get("bill_number")
+            )
+            if not existing_bill_no and existing_docs:
+                for ed in existing_docs:
+                    fn = (ed.get("filename") or "") if isinstance(ed, dict) else (getattr(ed, "filename", "") or "")
+                    if fn:
+                        m_ex = re.search(r"(?:INV|BILL)-[A-Za-z0-9\-]+", fn, re.IGNORECASE)
+                        if m_ex:
+                            existing_bill_no = m_ex.group(0)
+                            break
+
+            existing_total = float(c_dict.get("total_claimed") or 0.0)
+            existing_adm = parse_flexible_date(c_dict.get("admission_ts"))
+
+            # Case A: Same document SHA-256 -> EXACT_DUPLICATE_BILL (CRITICAL)
+            matched_shas = current_sha256s & existing_sha256s
+            if matched_shas and any(s for s in matched_shas):
+                matched_sha = next(iter(matched_shas))
+                findings.append(Finding(
+                    finding_id="F-XREF-FS-EXACT-DUP",
+                    agent=AgentName.CROSSREF,
+                    check_id="EXACT_DUPLICATE_BILL",
+                    severity=Severity.CRITICAL,
+                    title=f"Exact duplicate bill resubmitted: matches {existing_id}",
+                    explanation=(
+                        f"Uploaded bill file matches identical document (SHA-256: {matched_sha[:12]}...) "
+                        f"previously submitted under claim '{existing_id}'. Resubmitting the identical document constitutes double-billing."
+                    ),
+                    evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Matching SHA-256: {matched_sha[:16]} under claim {existing_id}")],
+                    confidence=1.0,
+                    computed_chip=f"Duplicate: {existing_id}",
+                    computed_details={
+                        "matching_claim_id": existing_id,
+                        "matched_sha256": matched_sha,
+                        "duplicate_type": "exact_document_sha256"
+                    }
+                ))
+                return findings
+
+            # Case B: Same bill/invoice number + hospital + total + patient -> near-exact duplicate (CRITICAL)
+            if current_bill_no and existing_bill_no:
+                norm_curr = re.sub(r"[^A-Za-z0-9]", "", current_bill_no.lower())
+                norm_exist = re.sub(r"[^A-Za-z0-9]", "", existing_bill_no.lower())
+                if norm_curr and norm_curr == norm_exist:
+                    hosp_match = not current_hospital or not existing_hospital or (current_hospital in existing_hospital or existing_hospital in current_hospital)
+                    tot_match = abs(current_total - existing_total) <= 1.0 or abs(current_total - existing_total) <= max(1.0, current_total * 0.01)
+                    pat_match = not current_patient or not existing_patient or (current_patient in existing_patient or existing_patient in current_patient)
+                    if hosp_match and tot_match and pat_match:
+                        findings.append(Finding(
+                            finding_id="F-XREF-FS-INVOICE-DUP",
+                            agent=AgentName.CROSSREF,
+                            check_id="EXACT_DUPLICATE_BILL",
+                            severity=Severity.CRITICAL,
+                            title=f"Duplicate invoice number resubmitted: {current_bill_no} (matches {existing_id})",
+                            explanation=(
+                                f"Invoice number '{current_bill_no}' was already claimed under '{existing_id}' "
+                                f"for patient '{existing_patient.title() or 'Unknown'}' at '{existing_hospital.title() or 'the same facility'}' "
+                                f"for ₹{existing_total:,.2f}. Resubmitting the same invoice number is double-billing."
+                            ),
+                            evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Duplicate invoice {current_bill_no} in claim {existing_id}")],
+                            confidence=1.0,
+                            computed_chip=f"Duplicate Inv: {current_bill_no}",
+                            computed_details={
+                                "matching_claim_id": existing_id,
+                                "invoice_number": current_bill_no,
+                                "duplicate_type": "invoice_number_match"
+                            }
+                        ))
+                        return findings
+
+            # Case C: Same patient + hospital + overlapping admission dates + similar total -> possible duplicate (HIGH)
+            if current_patient and existing_patient and current_adm and existing_adm:
+                if (current_patient in existing_patient or existing_patient in current_patient):
+                    if (current_hospital in existing_hospital or existing_hospital in current_hospital):
+                        adm_diff_days = abs((current_adm - existing_adm).total_seconds())
+                        if adm_diff_days <= 3 * 86400:  # within 3 days admission
+                            tot_ratio = current_total / max(1.0, existing_total)
+                            if 0.95 <= tot_ratio <= 1.05:  # within +/- 5% range
+                                findings.append(Finding(
+                                    finding_id="F-XREF-FS-OVERLAP-DUP",
+                                    agent=AgentName.CROSSREF,
+                                    check_id="EXACT_DUPLICATE_BILL",
+                                    severity=Severity.HIGH,
+                                    title=f"Possible duplicate claim with overlapping dates: matches {existing_id}",
+                                    explanation=(
+                                        f"Existing claim '{existing_id}' for patient '{existing_patient.title()}' at "
+                                        f"'{existing_hospital.title()}' has overlapping hospitalization dates and similar claimed amount "
+                                        f"(₹{existing_total:,.2f} vs ₹{current_total:,.2f})."
+                                    ),
+                                    evidence=[Evidence(doc_id="doc_main", page=1, quote=f"Overlapping claim {existing_id}: {existing_adm.strftime('%d-%b-%Y')} / ₹{existing_total:,.2f}")],
+                                    confidence=0.90,
+                                    computed_chip=f"Overlap: {existing_id}",
+                                    computed_details={
+                                        "matching_claim_id": existing_id,
+                                        "duplicate_type": "patient_hospital_date_overlap"
+                                    }
+                                ))
+                                return findings
+
+        return findings
 
 
 db_service = DatabaseService()

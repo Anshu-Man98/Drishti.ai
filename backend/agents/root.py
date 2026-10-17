@@ -467,16 +467,30 @@ def run_claims_fraud_pipeline(
 
             if matched_patterns:
                 best_pattern = matched_patterns[0]
+                is_learned = (
+                    best_pattern.get("fraud_type") == "learned_evasion" or
+                    "PAT-LEARNED-" in best_pattern.get("pattern_id", "")
+                )
+                sev = Severity.HIGH if is_learned or best_pattern.get("typical_severity") in ("HIGH", "CRITICAL") else Severity.LOW
+                pat_title = (
+                    f"Learned Adversarial Evasion Match ({best_pattern['pattern_id']})"
+                    if is_learned else
+                    f"Corroborating Historical Fraud Pattern ({best_pattern['pattern_id']})"
+                )
+                pat_exp = (
+                    f"Claim matches active adversarial evasion pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
+                    f"Observed signature: {best_pattern['signature']}. Caught by newly updated FinShield pattern intelligence."
+                    if is_learned else
+                    f"Claim matches historical fraud pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
+                    f"Observed signature: {best_pattern['signature']}. Corroborating context only, not primary proof."
+                )
                 all_findings.append(Finding(
                     finding_id="F-RAG-PATTERN-1",
                     agent=AgentName.RAG,
                     check_id="matches_known_pattern",
-                    severity=Severity.LOW,
-                    title=f"Corroborating Historical Fraud Pattern ({best_pattern['pattern_id']})",
-                    explanation=(
-                        f"Claim matches historical fraud pattern '{best_pattern['title']}' (similarity: {int(best_pattern['score']*100)}%). "
-                        f"Observed signature: {best_pattern['signature']}. Corroborating context only, not primary proof."
-                    ),
+                    severity=sev,
+                    title=pat_title,
+                    explanation=pat_exp,
                     evidence=[Evidence(
                         doc_id=best_pattern["pattern_id"],
                         quote=best_pattern["narrative"],
@@ -487,7 +501,8 @@ def run_claims_fraud_pipeline(
                     computed_details={
                         "pattern_id": best_pattern["pattern_id"],
                         "fraud_type": best_pattern["fraud_type"],
-                        "match_score": best_pattern["score"]
+                        "match_score": best_pattern["score"],
+                        "is_learned_evasion": is_learned
                     }
                 ))
             db_service.set_agent_status(claim_id, "rag", "done")

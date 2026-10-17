@@ -487,18 +487,50 @@ class FakeGenAIModels:
     def generate_content(self, model=None, contents=None, config=None):
         prompt_str = str(contents)
         if "Fraudster" in prompt_str or "adversarial" in prompt_str.lower() or "mutation" in prompt_str.lower():
-            mutation_data = {
-                "tactic": "Subtle Line-Item Padding with Integer Arithmetic Balancing",
-                "rationale": "Increases unit prices uniformly across services",
-                "target_multiplier": 1.25,
-                "manipulation_type": "subtle_padding",
-                "line_item_mutations": [
-                    {"description": "Specialist Consult", "qty": 2.0, "unit_price": 2500.0, "amount": 5000.0, "category": "consultation"},
-                    {"description": "Room Rent", "qty": 2.0, "unit_price": 4375.0, "amount": 8750.0, "category": "room_rent"},
-                    {"description": "Diagnostic Panel", "qty": 1.0, "unit_price": 4375.0, "amount": 4375.0, "category": "investigations"},
-                    {"description": "Pharmacy & Fluids", "qty": 1.0, "unit_price": 5625.0, "amount": 5625.0, "category": "pharmacy"}
-                ]
-            }
+            m_rnd = re.search(r"Simulator in round (\d+)", prompt_str)
+            current_rnd = int(m_rnd.group(1)) if m_rnd else 1
+
+            if current_rnd == 2:
+                mutation_data = {
+                    "tactic": "Tariff Arbitrage and Upcoding to S82.8 with Clean Tariff Compliance",
+                    "rationale": "Upcode diagnosis to S82.8 which has an upper benchmark band of ₹160,000, keeping item rates within category norms",
+                    "target_multiplier": 1.26,
+                    "diagnosis_code": "S82.8",
+                    "manipulation_type": "tariff_arbitrage",
+                    "line_item_mutations": [
+                        {"description": "Specialist Consultation", "qty": 2.0, "unit_price": 2000.0, "amount": 4000.0, "category": "consultation"},
+                        {"description": "General Ward Bed", "qty": 3.0, "unit_price": 3000.0, "amount": 9000.0, "category": "room_rent"},
+                        {"description": "Lower Limb Digital X-Ray & CT Scan", "qty": 1.0, "unit_price": 5000.0, "amount": 5000.0, "category": "investigations"},
+                        {"description": "Surgical Immobilization & Orthopedic Consumables", "qty": 1.0, "unit_price": 6000.0, "amount": 6000.0, "category": "pharmacy"}
+                    ]
+                }
+            elif current_rnd >= 3:
+                mutation_data = {
+                    "tactic": "Tariff Arbitrage and Upcoding to S82.8 with Clean Tariff Compliance",
+                    "rationale": "Exploiting S82.8 tariff corridor with compliant category unit prices",
+                    "target_multiplier": 1.26,
+                    "diagnosis_code": "S82.8",
+                    "manipulation_type": "tariff_arbitrage",
+                    "line_item_mutations": [
+                        {"description": "Specialist Consultation", "qty": 2.0, "unit_price": 2000.0, "amount": 4000.0, "category": "consultation"},
+                        {"description": "General Ward Bed", "qty": 3.0, "unit_price": 3000.0, "amount": 9000.0, "category": "room_rent"},
+                        {"description": "Lower Limb Digital X-Ray & CT Scan", "qty": 1.0, "unit_price": 5000.0, "amount": 5000.0, "category": "investigations"},
+                        {"description": "Surgical Immobilization & Orthopedic Consumables", "qty": 1.0, "unit_price": 6000.0, "amount": 6000.0, "category": "pharmacy"}
+                    ]
+                }
+            else:
+                mutation_data = {
+                    "tactic": "Subtle Line-Item Padding with Integer Arithmetic Balancing",
+                    "rationale": "Increases unit prices uniformly across services",
+                    "target_multiplier": 1.35,
+                    "manipulation_type": "subtle_padding",
+                    "line_item_mutations": [
+                        {"description": "Specialist Consult", "qty": 2.0, "unit_price": 4500.0, "amount": 9000.0, "category": "consultation"},
+                        {"description": "Room Rent", "qty": 2.0, "unit_price": 7500.0, "amount": 15000.0, "category": "room_rent"},
+                        {"description": "Diagnostic Panel", "qty": 1.0, "unit_price": 8000.0, "amount": 8000.0, "category": "investigations"},
+                        {"description": "Pharmacy & Fluids", "qty": 1.0, "unit_price": 9500.0, "amount": 9500.0, "category": "pharmacy"}
+                    ]
+                }
             return type("GenAIResp", (), {"text": json.dumps(mutation_data)})()
         elif "forensic" in prompt_str.lower() or "visual" in prompt_str.lower():
             return type("GenAIResp", (), {"text": "Visual review of region: Confirmed noticeable font family and weight disparity compared to surrounding tabular text."})()
@@ -700,13 +732,16 @@ def setup_test_boundary_fakes():
 def isolated_test_environment():
     """Ensures test database, storage, and Gemini client are isolated and reset before and after each test."""
     from backend.app.services.gemini_client import reset_gemini_client
+    from backend.tools.pattern_tools import clear_learned_patterns_cache
     reset_gemini_client()
     fake_fs.clear()
     fake_storage.clear()
+    clear_learned_patterns_cache()
     yield
     reset_gemini_client()
     fake_fs.clear()
     fake_storage.clear()
+    clear_learned_patterns_cache()
 
 
 @pytest.fixture

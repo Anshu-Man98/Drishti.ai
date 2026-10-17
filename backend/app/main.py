@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.routers import claims, provenance, duel
+from backend.app.routers import claims, provenance, duel, analytics, reference, graph
 from backend.app.config import settings
 from backend.app.dependencies import get_current_user
 
@@ -178,12 +178,18 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(claims.router, dependencies=[Depends(get_current_user)])
 api_router.include_router(provenance.router, dependencies=[Depends(get_current_user)])
 api_router.include_router(duel.router, dependencies=[Depends(get_current_user)])
+api_router.include_router(analytics.router, dependencies=[Depends(get_current_user)])
+api_router.include_router(reference.router, dependencies=[Depends(get_current_user)])
+api_router.include_router(graph.router, dependencies=[Depends(get_current_user)])
 
 # Mount both /api and root prefixed routers for seamless local dev & Cloud Run production
 app.include_router(api_router)
 app.include_router(claims.router, dependencies=[Depends(get_current_user)])
 app.include_router(provenance.router, dependencies=[Depends(get_current_user)])
 app.include_router(duel.router, dependencies=[Depends(get_current_user)])
+app.include_router(analytics.router, dependencies=[Depends(get_current_user)])
+app.include_router(reference.router, dependencies=[Depends(get_current_user)])
+app.include_router(graph.router, dependencies=[Depends(get_current_user)])
 
 
 @api_router.get("/health")

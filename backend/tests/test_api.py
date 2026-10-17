@@ -148,3 +148,39 @@ def test_claims_crud_flow():
     dossier_resp = client.get(f"/claims/{claim_id}/dossier")
     assert dossier_resp.status_code == 200
     assert dossier_resp.json()["claim_id"] == claim_id
+
+
+def test_fraud_rings_graph_endpoint():
+    """Validates that GET /graph/rings queries BigQuery and returns nodes, edges, and real claims."""
+    headers = {"Authorization": "Bearer test-token"}
+    response = client.get("/graph/rings", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "rings" in data
+    assert len(data["rings"]) > 0
+    first_ring = data["rings"][0]
+    assert "ring_id" in first_ring
+    assert "title" in first_ring
+    assert "claim_count" in first_ring
+    assert "total_amount" in first_ring
+
+    assert "selected_ring" in data
+    sel = data["selected_ring"]
+    assert sel is not None
+    assert "nodes" in sel
+    assert "edges" in sel
+    assert "claims" in sel
+    assert len(sel["nodes"]) > 0
+    assert len(sel["edges"]) > 0
+    assert len(sel["claims"]) > 0
+
+    first_node = sel["nodes"][0]
+    assert "id" in first_node
+    assert "label" in first_node
+    assert "type" in first_node
+
+    first_edge = sel["edges"][0]
+    assert "source" in first_edge
+    assert "target" in first_edge
+    assert "type" in first_edge

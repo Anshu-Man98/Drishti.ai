@@ -60,6 +60,16 @@ jobs:
           cd frontend
           npm ci
 
+      - name: Lint frontend
+        run: |
+          cd frontend
+          npm run lint
+
+      - name: Run frontend unit tests
+        run: |
+          cd frontend
+          npm test
+
       - name: Build frontend
         run: |
           cd frontend

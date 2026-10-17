@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, Header, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.app.schemas import (
@@ -286,8 +286,27 @@ def create_claim_direct(claim: Claim):
 
 
 @router.get("", response_model=List[ClaimSummary])
-def list_claims(limit: int = 50, offset: int = 0):
-    return db_service.list_claims(limit=limit, offset=offset)
+def list_claims(
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    verdict: Optional[str] = Query(default=None),
+    sort_by: Optional[str] = Query(default="created_at"),
+    sort_order: Optional[str] = Query(default="desc"),
+    search: Optional[str] = Query(default=None),
+    exclude_synthetic: bool = Query(default=False),
+):
+    claims, total_count = db_service.list_claims_paged(
+        limit=limit,
+        offset=offset,
+        verdict=verdict,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        search=search,
+        exclude_synthetic=exclude_synthetic,
+    )
+    response.headers["X-Total-Count"] = str(total_count)
+    return claims
 
 
 @router.get("/{claim_id}", response_model=Claim)

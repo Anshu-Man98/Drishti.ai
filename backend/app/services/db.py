@@ -1,10 +1,13 @@
 import json
+import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from backend.app.config import settings
 from backend.app.exceptions import CloudServiceError
 from backend.app.schemas import Claim, Dossier, ClaimSummary, ChatMessage
+
+logger = logging.getLogger("finshield.services.db")
 
 try:
     from google.cloud import firestore
@@ -77,11 +80,20 @@ class DatabaseService:
                 retryable=True
             )
 
-    def list_claims(self, limit: int = 50, offset: int = 0) -> List[ClaimSummary]:
+    def list_claims_paged(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        verdict: Optional[str] = None,
+        sort_by: Optional[str] = "created_at",
+        sort_order: Optional[str] = "desc",
+        search: Optional[str] = None,
+        exclude_synthetic: bool = False,
+    ) -> tuple[List[ClaimSummary], int]:
         try:
-            docs = list(self.client.collection("claims").limit(limit).offset(offset).stream())
+            docs = list(self.client.collection("claims").stream())
             if not docs:
-                return []
+                return [], 0
 
             dossier_refs = [self.client.collection("dossiers").document(d.to_dict().get("claim_id", d.id)) for d in docs]
             dossiers_map: Dict[str, Dict[str, Any]] = {}
@@ -103,7 +115,7 @@ class DatabaseService:
                 c = doc.to_dict()
                 cid = c.get("claim_id", doc.id)
                 d_data = dossiers_map.get(cid)
-                verdict = d_data.get("verdict") if d_data else None
+                verdict_val = d_data.get("verdict") if d_data else None
                 risk_score = d_data.get("risk_score") if d_data else None
                 summaries.append(ClaimSummary(
                     claim_id=cid,
@@ -118,16 +130,74 @@ class DatabaseService:
                     diagnosis_code=c.get("diagnosis_code") or "Z00.0",
                     doc_count=len(c.get("documents", [])),
                     created_at=c.get("created_at") or datetime.utcnow(),
-                    verdict=verdict,
+                    verdict=verdict_val,
                     risk_score=risk_score
                 ))
-            return summaries
+
+            # Exclude synthetic/demo claims if requested
+            if exclude_synthetic:
+                summaries = [
+                    s for s in summaries
+                    if "-DEMO" not in s.claim_id
+                    and "-SYNTH" not in s.claim_id
+                    and not s.claim_id.startswith("SYNTH-")
+                ]
+
+            # Filter by search string
+            if search:
+                s_lower = search.strip().lower()
+                summaries = [
+                    s for s in summaries
+                    if s_lower in s.claim_id.lower()
+                    or s_lower in s.claimant_name.lower()
+                    or s_lower in s.hospital_name.lower()
+                    or s_lower in s.city.lower()
+                    or s_lower in s.diagnosis_code.lower()
+                    or s_lower in s.policy_id.lower()
+                    or s_lower in s.insurer_id.lower()
+                ]
+
+            # Filter by verdict
+            if verdict and verdict.lower() != "all":
+                v_target = verdict.lower()
+                if v_target == "unreviewed":
+                    summaries = [s for s in summaries if not s.verdict]
+                else:
+                    summaries = [
+                        s for s in summaries
+                        if s.verdict and (s.verdict.value.lower() if hasattr(s.verdict, "value") else str(s.verdict).lower()) == v_target
+                    ]
+
+            # Sort records
+            is_desc = (sort_order or "desc").lower() == "desc"
+            if sort_by == "total_claimed":
+                summaries.sort(key=lambda x: x.total_claimed or 0.0, reverse=is_desc)
+            elif sort_by == "risk_score":
+                summaries.sort(key=lambda x: x.risk_score or 0, reverse=is_desc)
+            elif sort_by == "claimant_name":
+                summaries.sort(key=lambda x: (x.claimant_name or "").lower(), reverse=is_desc)
+            elif sort_by == "hospital_name":
+                summaries.sort(key=lambda x: (x.hospital_name or "").lower(), reverse=is_desc)
+            elif sort_by == "diagnosis_code":
+                summaries.sort(key=lambda x: (x.diagnosis_code or "").lower(), reverse=is_desc)
+            elif sort_by == "claim_id":
+                summaries.sort(key=lambda x: x.claim_id, reverse=is_desc)
+            else: # Default: created_at
+                summaries.sort(key=lambda x: str(x.created_at or ""), reverse=is_desc)
+
+            total_count = len(summaries)
+            paged = summaries[offset : offset + limit]
+            return paged, total_count
         except Exception as e:
             raise CloudServiceError(
                 service="firestore",
                 message=f"Failed to list claims from Firestore: {e}",
                 retryable=True
             )
+
+    def list_claims(self, limit: int = 50, offset: int = 0) -> List[ClaimSummary]:
+        paged, _ = self.list_claims_paged(limit=limit, offset=offset)
+        return paged
 
     def save_dossier(self, dossier: Dossier) -> None:
         dossier_dict = json.loads(dossier.model_dump_json())
@@ -337,6 +407,25 @@ class DatabaseService:
                 message=f"Failed to get duel rounds for '{duel_id}' from Firestore: {e}",
                 retryable=True
             )
+
+    def save_duel_meta(self, duel_id: str, meta_data: Dict[str, Any]) -> None:
+        try:
+            self.client.collection("duels").document(duel_id).set(meta_data, merge=True)
+        except TypeError:
+            try:
+                self.client.collection("duels").document(duel_id).set(meta_data)
+            except Exception as e:
+                logger.error("Failed to save duel meta for '%s': %s", duel_id, e)
+        except Exception as e:
+            logger.error("Failed to save duel meta for '%s': %s", duel_id, e)
+
+    def get_duel_meta(self, duel_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            doc = self.client.collection("duels").document(duel_id).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error("Failed to get duel meta for '%s': %s", duel_id, e)
+            return None
 
     def save_learned_pattern(self, pattern: Dict[str, Any]) -> None:
         pid = pattern.get("pattern_id") or f"PAT-LEARNED-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"

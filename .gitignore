@@ -64,3 +64,4 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo
+.playwright-mcp/

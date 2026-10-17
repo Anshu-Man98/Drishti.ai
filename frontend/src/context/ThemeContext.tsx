@@ -12,9 +12,14 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem('finshield-theme') as Theme | null;
-    if (saved === 'light' || saved === 'dark') {
-      return saved;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('finshield-theme') as Theme | null;
+      if (saved === 'light' || saved === 'dark') {
+        return saved;
+      }
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        return 'light';
+      }
     }
     // Primary theme is Dark (Warm Amber + Black)
     return 'dark';

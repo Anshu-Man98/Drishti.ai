@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
@@ -31,65 +33,12 @@
 }
 
 /* =========================================================================
-   1. Theme Variables (Dark default, Light paper alternative)
+   1. Theme Variables (Light defaults first, Dark primary overrides second)
    ========================================================================= */
 
-.dark {
-  /* Surfaces: 3 elevation steps on near-black with warm tone (#050505 - #0A0A09) */
-  --bg-base: #060605;
-  --bg-surface: #0E0E0D;
-  --bg-elevated: #131312;
-  --bg-subtle: #1A1A18;
-  --bg-glass: rgba(14, 14, 13, 0.85);
-
-  /* 1px borders around rgba(255, 255, 255, 0.06 - 0.10) */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  --border-amber-tint: rgba(245, 165, 36, 0.25);
-
-  /* Inner top highlight for large surfaces */
-  --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
-
-  /* Typography: warm off-white, muted, faint */
-  --text-primary: #F3EFE6;
-  --text-secondary: #C5C0B4;
-  --text-muted: #8F8A7E;
-  --text-faint: #5F5B52;
-
-  /* Brand AMBER (warm gold, matching Nexa reference) */
-  --brand-primary: #F5A524;
-  --brand-bright: #FFC15A;
-  --brand-deep: #B8741A;
-  --brand-hover: #FFB338;
-  --brand-subtle: rgba(245, 165, 36, 0.12);
-  --brand-border: rgba(245, 165, 36, 0.30);
-  --brand-glow: rgba(245, 165, 36, 0.25);
-
-  /* Semantic Verdicts (paired with distinct shapes & icons) */
-  --risk-approve: #10B981;
-  --risk-approve-bg: rgba(16, 185, 129, 0.12);
-  --risk-approve-border: rgba(16, 185, 129, 0.32);
-
-  --risk-review: #F5A524;
-  --risk-review-bg: rgba(245, 165, 36, 0.14);
-  --risk-review-border: rgba(245, 165, 36, 0.35);
-
-  --risk-reject: #F43F5E;
-  --risk-reject-bg: rgba(244, 63, 94, 0.14);
-  --risk-reject-border: rgba(244, 63, 94, 0.35);
-
-  --risk-info: #8F8A7E;
-  --risk-info-bg: rgba(143, 138, 126, 0.14);
-  --risk-info-border: rgba(143, 138, 126, 0.30);
-
-  /* Light beam colors */
-  --beam-center: rgba(255, 193, 90, 0.24);
-  --beam-mid: rgba(245, 165, 36, 0.14);
-  --beam-faint: rgba(184, 116, 26, 0.04);
-}
-
-:root {
+:root,
+[data-theme="light"],
+html.light {
   /* Light theme: warm paper background (#FAF7F0), intentional ink design */
   --bg-base: #FAF7F0;
   --bg-surface: #FFFFFF;
@@ -139,6 +88,65 @@
   --beam-center: rgba(227, 154, 27, 0.08);
   --beam-mid: rgba(183, 121, 31, 0.05);
   --beam-faint: rgba(140, 86, 13, 0.02);
+}
+
+/* Dark theme overrides (High specificity and defined AFTER light) */
+html.dark,
+:root.dark,
+:root[data-theme="dark"],
+[data-theme="dark"] {
+  /* Surfaces: 3 elevation steps on near-black with warm tone (#050505 - #0A0A09) */
+  --bg-base: #060605;
+  --bg-surface: #0E0E0D;
+  --bg-elevated: #131312;
+  --bg-subtle: #1A1A18;
+  --bg-glass: rgba(14, 14, 13, 0.85);
+
+  /* 1px borders around rgba(255, 255, 255, 0.06 - 0.10) */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-amber-tint: rgba(245, 165, 36, 0.25);
+
+  /* Inner top highlight for large surfaces */
+  --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+
+  /* Typography: warm off-white, muted, faint */
+  --text-primary: #F3EFE6;
+  --text-secondary: #C5C0B4;
+  --text-muted: #8F8A7E;
+  --text-faint: #5F5B52;
+
+  /* Brand AMBER (warm gold, matching Nexa reference) */
+  --brand-primary: #F5A524;
+  --brand-bright: #FFC15A;
+  --brand-deep: #B8741A;
+  --brand-hover: #FFB338;
+  --brand-subtle: rgba(245, 165, 36, 0.12);
+  --brand-border: rgba(245, 165, 36, 0.30);
+  --brand-glow: rgba(245, 165, 36, 0.25);
+
+  /* Semantic Verdicts (paired with distinct shapes & icons) */
+  --risk-approve: #10B981;
+  --risk-approve-bg: rgba(16, 185, 129, 0.12);
+  --risk-approve-border: rgba(16, 185, 129, 0.32);
+
+  --risk-review: #F5A524;
+  --risk-review-bg: rgba(245, 165, 36, 0.14);
+  --risk-review-border: rgba(245, 165, 36, 0.35);
+
+  --risk-reject: #F43F5E;
+  --risk-reject-bg: rgba(244, 63, 94, 0.14);
+  --risk-reject-border: rgba(244, 63, 94, 0.35);
+
+  --risk-info: #8F8A7E;
+  --risk-info-bg: rgba(143, 138, 126, 0.14);
+  --risk-info-border: rgba(143, 138, 126, 0.30);
+
+  /* Light beam colors */
+  --beam-center: rgba(255, 193, 90, 0.38);
+  --beam-mid: rgba(245, 165, 36, 0.22);
+  --beam-faint: rgba(184, 116, 26, 0.08);
 }
 
 /* =========================================================================
@@ -212,21 +220,17 @@ body {
 /* The Nexa Top Light Beam (soft warm golden-amber light beam falling from top-center) */
 .light-beam-bg {
   position: absolute;
-  top: -140px;
+  top: -40px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(920px, 94vw);
-  height: 420px;
-  background: radial-gradient(
-    ellipse 65% 55% at 50% 0%,
-    var(--beam-center) 0%,
-    var(--beam-mid) 42%,
-    var(--beam-faint) 68%,
-    transparent 82%
-  );
+  width: min(840px, 92vw);
+  height: 480px;
+  background: 
+    radial-gradient(ellipse 70% 50% at 50% 0%, var(--beam-center) 0%, var(--beam-mid) 35%, var(--beam-faint) 65%, transparent 85%),
+    conic-gradient(from 180deg at 50% 0%, transparent 68deg, var(--beam-mid) 82deg, var(--beam-center) 90deg, var(--beam-mid) 98deg, transparent 112deg);
   pointer-events: none;
   z-index: 0;
-  filter: blur(32px);
+  filter: blur(28px);
   will-change: opacity, transform;
 }
 
@@ -236,13 +240,13 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 320px;
-  opacity: 0.04;
+  height: 380px;
+  opacity: 0.08;
   pointer-events: none;
-  background-image: radial-gradient(var(--brand-primary) 1px, transparent 1px);
+  background-image: radial-gradient(var(--brand-primary) 1.2px, transparent 1.2px);
   background-size: 16px 16px;
-  mask-image: radial-gradient(ellipse 65% 50% at 50% 0%, black 20%, transparent 80%);
-  -webkit-mask-image: radial-gradient(ellipse 65% 50% at 50% 0%, black 20%, transparent 80%);
+  mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, black 25%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, black 25%, transparent 80%);
 }
 
 /* Adfonic-style Hero Card Corner Glow (warm amber radial glow at bottom-right corner) */

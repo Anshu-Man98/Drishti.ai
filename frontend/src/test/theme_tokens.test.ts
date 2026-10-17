@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
@@ -46,6 +46,40 @@ describe('Stage 1: Design Tokens & Theme Context', () => {
     expect(result.current.theme).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(localStorage.getItem('finshield-theme')).toBe('dark');
+  });
+
+  it('resolves correctly when localStorage has stored light theme', () => {
+    localStorage.setItem('finshield-theme', 'light');
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      React.createElement(ThemeProvider, null, children)
+    );
+
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.theme).toBe('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('respects prefers-color-scheme when no stored value exists in localStorage', () => {
+    // Mock matchMedia for light
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-color-scheme: light)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      React.createElement(ThemeProvider, null, children)
+    );
+
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.theme).toBe('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
   });
 
   it('validates WCAG AA contrast for text and amber brand tokens', () => {

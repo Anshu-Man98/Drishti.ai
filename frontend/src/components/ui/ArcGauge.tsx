@@ -52,14 +52,14 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const targetRatio = (clampedValue - min) / range;
   const currentRatio = animate ? targetRatio * progress : targetRatio;
 
-  // Arc configuration: 220 degree sweep (-200 deg to +20 deg)
-  // Center (cx, cy) = (110, 110), Radius R = 80
+  // Arc configuration: 210 degree sweep (from 165 deg to 375 deg)
+  // Center (cx, cy) = (110, 92), Radius R = 70
   const cx = 110;
-  const cy = 105;
-  const r = 74;
+  const cy = 92;
+  const r = 70;
 
-  const startAngle = 160; // deg
-  const endAngle = 380;   // deg (sweep = 220 deg)
+  const startAngle = 165; // deg
+  const endAngle = 375;   // deg (sweep = 210 deg)
   const sweepAngle = endAngle - startAngle;
 
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -79,7 +79,7 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   // Background arc SVG path
   const bgPath = `M ${startPoint.x} ${startPoint.y} A ${r} ${r} 0 1 1 ${endPoint.x} ${endPoint.y}`;
 
-  // Total circumference of 220 deg arc
+  // Total circumference of 210 deg arc
   const arcLength = 2 * Math.PI * r * (sweepAngle / 360);
   const strokeDashoffset = arcLength * (1 - currentRatio);
 
@@ -91,8 +91,8 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const ticksCount = 15;
   const ticks = Array.from({ length: ticksCount }, (_, i) => {
     const angle = startAngle + (sweepAngle / (ticksCount - 1)) * i;
-    const innerPoint = polarToCartesian(cx, cy, r - 14, angle);
-    const outerPoint = polarToCartesian(cx, cy, r - 8, angle);
+    const innerPoint = polarToCartesian(cx, cy, r - 10, angle);
+    const outerPoint = polarToCartesian(cx, cy, r - 5, angle);
     const isMajor = i % 2 === 0;
     return {
       id: i,
@@ -246,22 +246,22 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
         {/* Centered Large Numeric Display */}
         <text
           x={cx}
-          y={cy + 5}
+          y={cy}
           textAnchor="middle"
-          className="fill-app-primary font-light tracking-tight tabular-nums"
-          style={{ fontSize: '30px' }}
+          className="fill-app-primary font-light tracking-tight tabular-nums select-none"
+          style={{ fontSize: '28px' }}
         >
           {Math.round(clampedValue)}
-          {unit && <tspan className="text-base font-normal fill-app-muted ml-1 font-mono"> {unit}</tspan>}
+          {unit && <tspan className="text-sm font-normal fill-app-muted ml-1 font-mono"> {unit}</tspan>}
         </text>
 
-        {/* Centered Subtext / Caption below */}
+        {/* Centered Subtext / Caption below with ample clearance */}
         {caption && (
           <text
             x={cx}
-            y={cy + 25}
+            y={cy + 18}
             textAnchor="middle"
-            className="fill-app-muted font-mono text-[11px]"
+            className="fill-app-muted font-mono text-[10px] select-none"
           >
             {caption}
           </text>

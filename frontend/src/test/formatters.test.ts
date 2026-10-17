@@ -4,6 +4,8 @@ import {
   formatInsurer,
   formatPolicy,
   formatIndianCurrency,
+  formatIndianNumber,
+  formatClaimRef,
   formatAgentName,
 } from '../utils/formatters';
 
@@ -123,5 +125,47 @@ describe('Currency and Agent Formatting', () => {
     expect(formatAgentName('ml')).toBe('BQ ML');
     expect(formatAgentName('injection')).toBe('Prompt Shield');
     expect(formatAgentName('provenance')).toBe('Provenance');
+  });
+
+  describe('formatIndianNumber', () => {
+    it('formats numbers with Indian digit grouping (lakh and crore boundaries)', () => {
+      expect(formatIndianNumber(1000)).toBe('1,000');
+      expect(formatIndianNumber(100000)).toBe('1,00,000');
+      expect(formatIndianNumber(1295940)).toBe('12,95,940');
+      expect(formatIndianNumber(10292124)).toBe('1,02,92,124');
+    });
+
+    it('handles zero, negative, null, and NaN gracefully', () => {
+      expect(formatIndianNumber(0)).toBe('0');
+      expect(formatIndianNumber(null)).toBe('0');
+      expect(formatIndianNumber(undefined)).toBe('0');
+      expect(formatIndianNumber(NaN)).toBe('0');
+    });
+
+    it('respects decimal places argument', () => {
+      expect(formatIndianNumber(123456.789, 2)).toBe('1,23,456.79');
+      expect(formatIndianNumber(1000.5, 0)).toBe('1,001');
+    });
+  });
+
+  describe('formatClaimRef', () => {
+    it('extracts readable suffix in short mode', () => {
+      expect(formatClaimRef('CLM-2024-G582')).toBe('Claim #G582');
+      expect(formatClaimRef('CLM-2024-99812')).toBe('Claim #99812');
+    });
+
+    it('truncates raw long ids without dashes', () => {
+      expect(formatClaimRef('08341982')).toBe('Claim #1982');
+    });
+
+    it('supports full mode', () => {
+      expect(formatClaimRef('CLM-2024-G582', 'full')).toBe('CLM-2024-G582');
+    });
+
+    it('handles null and undefined safely', () => {
+      expect(formatClaimRef(null)).toBe('Claim #—');
+      expect(formatClaimRef(undefined)).toBe('Claim #—');
+      expect(formatClaimRef('')).toBe('Claim #—');
+    });
   });
 });

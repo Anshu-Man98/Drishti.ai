@@ -327,7 +327,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleResetZoom = () => setZoom(100);
 
   return (
-    <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4 flex flex-col h-full">
+    <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4 flex flex-col">
       {/* Top Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/8 text-xs">
         {/* Left: Title & Page Selector */}

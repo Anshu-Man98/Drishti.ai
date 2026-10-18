@@ -329,7 +329,7 @@ export const ClaimDetail: React.FC = () => {
 
       {/* Desktop Content Area (>= 768px): Multi-column Side-by-side or Selected Layout Mode */}
       <div
-        className={`hidden md:grid gap-6 ${
+        className={`hidden md:grid gap-6 items-start ${
           layoutMode === 'split' ? 'grid-cols-1 lg:grid-cols-12' : 'grid-cols-1'
         }`}
       >
@@ -338,7 +338,7 @@ export const ClaimDetail: React.FC = () => {
           <div
             className={`${
               layoutMode === 'split' ? 'lg:col-span-6 xl:col-span-6 min-w-0' : 'w-full min-w-0'
-            } space-y-6`}
+            } space-y-6 self-start`}
           >
             <DocumentViewer
               claimId={claim.claim_id}

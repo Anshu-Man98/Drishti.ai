@@ -10,6 +10,7 @@ service-account*.json
 finshield.db
 *.db
 data/uploads/
+demo_uploads/
 
 # Operating System
 .DS_Store

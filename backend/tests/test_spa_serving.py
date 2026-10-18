@@ -16,8 +16,19 @@ from starlette.testclient import TestClient
 from backend.app.main import app, get_frontend_dist_dir
 
 
-def test_spa_serving_when_dist_exists():
+def test_spa_serving_when_dist_exists(tmp_path, monkeypatch):
     """Verify SPA serves index.html and routes when dist exists."""
+    if get_frontend_dist_dir() is None:
+        dist_dir = tmp_path / "dist"
+        assets_dir = dist_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (dist_dir / "index.html").write_text(
+            "<!doctype html><html><head><title>FinShield</title></head><body><div id='root'></div></body></html>",
+            encoding="utf-8",
+        )
+        (assets_dir / "app-test.js").write_text("console.log('finshield');", encoding="utf-8")
+        monkeypatch.setenv("FRONTEND_DIST_DIR", str(dist_dir))
+
     client = TestClient(app)
 
     # 1. GET / returns index.html with no-cache header
@@ -63,3 +74,9 @@ def test_app_starts_when_dist_is_absent(monkeypatch):
 
     dist = get_frontend_dist_dir()
     assert dist is None
+
+    client = TestClient(app)
+    res_root = client.get("/")
+    assert res_root.status_code == 200
+    assert "application/json" in res_root.headers.get("content-type", "")
+    assert "Welcome to Drishti.ai API" in res_root.json().get("message", "")

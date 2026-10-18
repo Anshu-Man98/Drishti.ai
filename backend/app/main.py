@@ -258,16 +258,7 @@ def get_metrics_endpoint():
 
 
 from pathlib import Path
-from starlette.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
-
-
-class CachedStaticFiles(StaticFiles):
-    """StaticFiles subclass applying long immutable cache-control to hashed bundles."""
-    def file_response(self, *args, **kwargs) -> Response:
-        resp = super().file_response(*args, **kwargs)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return resp
 
 
 def get_frontend_dist_dir() -> Optional[Path]:
@@ -290,56 +281,60 @@ def get_frontend_dist_dir() -> Optional[Path]:
 
 
 frontend_dist = get_frontend_dist_dir()
-
 if frontend_dist:
     logger.info("Serving frontend SPA from %s", frontend_dist)
-    assets_dir = frontend_dist / "assets"
-    if assets_dir.is_dir():
-        app.mount("/assets", CachedStaticFiles(directory=str(assets_dir)), name="assets")
-
-    @app.get("/", include_in_schema=False)
-    async def serve_spa_index():
-        return FileResponse(
-            frontend_dist / "index.html",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
-        )
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa_or_static(full_path: str, request: Request):
-        # API routes: do not intercept unknown /api paths — return JSON 404
-        if full_path == "api" or full_path.startswith("api/"):
-            return JSONResponse(status_code=404, content={"detail": "Not Found"})
-
-        # If a request arrives with an Authorization header or explicitly asks for JSON
-        # (and not HTML), it is an API request targeting a non-existent / non-prefixed endpoint.
-        auth_hdr = request.headers.get("authorization")
-        accept_hdr = request.headers.get("accept", "")
-        if auth_hdr or ("application/json" in accept_hdr and "text/html" not in accept_hdr):
-            return JSONResponse(status_code=404, content={"detail": "Not Found"})
-
-        # Specific static file directly in dist (e.g. favicon.ico, vite.svg)
-        if full_path:
-            file_path = (frontend_dist / full_path).resolve()
-            if file_path.is_file() and str(file_path).startswith(str(frontend_dist)):
-                return FileResponse(file_path)
-
-        # SPA client-side route fallback (e.g. /claims, /claims/CLM-101, /network, /duel)
-        return FileResponse(
-            frontend_dist / "index.html",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
-        )
 else:
-    logger.info("Frontend dist directory not found; serving API-only fallback on /")
+    logger.info("Frontend dist directory not found at startup; serving API-only fallback on / unless built later")
 
-    @app.get("/")
-    def root():
-        return {
-            "message": "Welcome to Drishti.ai API",
-            "docs_url": "/docs",
-            "health_url": "/health",
-            "metrics_url": "/metrics",
-            "version": settings.VERSION
-        }
+
+@app.get("/", include_in_schema=False)
+async def serve_spa_index():
+    dist = get_frontend_dist_dir()
+    if dist:
+        return FileResponse(
+            dist / "index.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
+    return {
+        "message": "Welcome to Drishti.ai API",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "metrics_url": "/metrics",
+        "version": settings.VERSION
+    }
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa_or_static(full_path: str, request: Request):
+    # API routes: do not intercept unknown /api paths — return JSON 404
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+    dist = get_frontend_dist_dir()
+    if not dist:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+    # If a request arrives with an Authorization header or explicitly asks for JSON
+    # (and not HTML), it is an API request targeting a non-existent / non-prefixed endpoint.
+    auth_hdr = request.headers.get("authorization")
+    accept_hdr = request.headers.get("accept", "")
+    if auth_hdr or ("application/json" in accept_hdr and "text/html" not in accept_hdr):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+    # Specific static file directly in dist (e.g. favicon.ico, vite.svg, assets/*)
+    if full_path:
+        file_path = (dist / full_path).resolve()
+        if file_path.is_file() and str(file_path).startswith(str(dist.resolve())):
+            headers = {}
+            if full_path.startswith("assets/"):
+                headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return FileResponse(file_path, headers=headers)
+
+    # SPA client-side route fallback (e.g. /claims, /claims/CLM-101, /network, /duel)
+    return FileResponse(
+        dist / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 if __name__ == "__main__":

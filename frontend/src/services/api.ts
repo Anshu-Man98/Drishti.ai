@@ -109,9 +109,19 @@ export function getClaimPageImageUrl(claimId: string, pageNum: number = 1): stri
 }
 
 export async function fetchAuthenticatedBlob(urlOrPath: string): Promise<Blob> {
-  const fullUrl = urlOrPath.startsWith('http')
-    ? urlOrPath
-    : `${API_BASE_URL}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
+  let fullUrl: string;
+  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) {
+    fullUrl = urlOrPath;
+  } else {
+    const cleanPath = urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
+    if (API_BASE_URL && cleanPath.startsWith(`${API_BASE_URL}/`)) {
+      fullUrl = cleanPath;
+    } else if (cleanPath.startsWith('/api/')) {
+      fullUrl = cleanPath;
+    } else {
+      fullUrl = `${API_BASE_URL}${cleanPath}`;
+    }
+  }
   const resp = await fetch(fullUrl, {
     headers: getAuthHeaders(),
   });

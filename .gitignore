@@ -11,6 +11,7 @@ finshield.db
 *.db
 data/uploads/
 demo_uploads/
+demo_uploads2/
 
 # Operating System
 .DS_Store

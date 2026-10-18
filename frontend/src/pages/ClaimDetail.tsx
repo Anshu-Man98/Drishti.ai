@@ -148,10 +148,14 @@ export const ClaimDetail: React.FC = () => {
       }
       const amountPaise = Math.round(amtNum * 100);
       const res = await issueApprovalLetter(id, amountPaise, sanctionNotes);
-      setIssueSuccess(`Successfully issued Sanction Note ${res.doc_id}! Initiating download...`);
+      setIssueSuccess(`Signed and Issued Sanction Note ${res.doc_id}! Initiating download...`);
 
-      // Trigger authenticated PDF download
-      await downloadAuthenticatedFile(res.download_url, `Sanction_${res.doc_id}.pdf`);
+      // Trigger authenticated PDF download safely without failing the whole flow if browser blocks download
+      try {
+        await downloadAuthenticatedFile(res.download_url, `Sanction_${res.doc_id}.pdf`);
+      } catch (dlErr) {
+        console.warn('Auto-download failed after sanction issuance:', dlErr);
+      }
 
       // Refresh claim documents
       await loadClaimData();

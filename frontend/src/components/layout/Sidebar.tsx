@@ -72,11 +72,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         `}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.06] shrink-0">
+        <div
+          className={`border-b border-white/[0.06] shrink-0 transition-all duration-300 ease-in-out ${
+            collapsed
+              ? 'h-20 py-2.5 px-2 flex flex-col items-center justify-center gap-1.5'
+              : 'h-16 px-4 flex items-center justify-between'
+          }`}
+        >
           <NavLink
             to="/"
             onClick={onCloseMobile}
-            className="flex items-center gap-3 overflow-hidden group select-none"
+            className={`flex items-center select-none group transition-all ${
+              collapsed ? 'justify-center p-0' : 'gap-3 overflow-hidden'
+            }`}
           >
             {/* Amber Shield Logo Mark */}
             <div className="w-9 h-9 rounded-xl bg-amber-primary/14 border border-amber-primary/35 flex items-center justify-center text-amber-primary shadow-[0_0_14px_-2px_rgba(245,165,36,0.35)] shrink-0 transition-transform group-hover:scale-105">
@@ -112,11 +120,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Desktop Collapse Toggle */}
           <button
             onClick={onToggleCollapse}
-            className="hidden lg:flex items-center justify-center w-7 h-7 rounded-lg text-app-muted hover:text-app-primary hover:bg-white/[0.06] transition-colors"
+            className={`hidden lg:flex items-center justify-center rounded-lg text-app-muted hover:text-app-primary hover:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-amber-primary/50 transition-all cursor-pointer ${
+              collapsed
+                ? 'w-9 h-5.5 bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] shadow-2xs'
+                : 'w-7 h-7'
+            }`}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            {collapsed ? (
+              <ChevronRight className="w-3.5 h-3.5 text-amber-primary" />
+            ) : (
+              <ChevronLeft className="w-4 h-4" />
+            )}
           </button>
         </div>
 
@@ -165,7 +181,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               title={collapsed ? 'Case Assistant (⌘K or /)' : undefined}
               aria-label="Open Case Assistant"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all select-none text-app-primary hover:bg-stone-200/60 dark:hover:bg-white/[0.04] border border-amber-700/30 dark:border-amber-primary/20 bg-amber-500/10 dark:bg-amber-primary/5 group cursor-pointer"
+              className={`w-full flex items-center py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all select-none text-app-primary hover:bg-stone-200/60 dark:hover:bg-white/[0.04] border border-amber-700/30 dark:border-amber-primary/20 bg-amber-500/10 dark:bg-amber-primary/5 group cursor-pointer ${
+                collapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              }`}
             >
               <Bot className="w-4 h-4 shrink-0 text-amber-800 dark:text-amber-primary group-hover:scale-105 transition-transform" />
               {!collapsed && (

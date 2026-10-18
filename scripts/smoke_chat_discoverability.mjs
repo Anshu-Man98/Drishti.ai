@@ -44,14 +44,14 @@ async function runSmokeCheck() {
         await page.goto(`${TARGET_URL}${pageDef.path}`, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(1000);
 
-        // 1. Check TopBar Assistant Entry
-        const topBarAssistant = await page.$('button[aria-label*="Assistant"], button:has-text("Assistant")');
+        // 1. Check TopBar Assistant Entry (in <header>)
+        const topBarAssistant = await page.$('header button[aria-label*="Assistant"]');
         const hasTopBarAssistant = topBarAssistant !== null;
 
-        // 2. Check Sidebar Assistant Entry (Desktop only)
+        // 2. Check Sidebar Assistant Entry (Desktop only >= 1024px)
         let hasSidebarAssistant = null;
         if (vp.width >= 1024) {
-          const sidebarAssistant = await page.$('nav button:has-text("Case Assistant"), aside button:has-text("Case Assistant")');
+          const sidebarAssistant = await page.$('aside button:has-text("Case Assistant"), nav button:has-text("Case Assistant")');
           hasSidebarAssistant = sidebarAssistant !== null;
         }
 
@@ -80,6 +80,20 @@ async function runSmokeCheck() {
 
             const drawerShot = path.join(SCREENSHOT_DIR, `${vp.name}-${pageSlug}-drawer-open.png`);
             await page.screenshot({ path: drawerShot, fullPage: false });
+
+            // On desktop Claim Detail, test submitting a question and getting an answer!
+            if (vp.width >= 1024) {
+              const input = await page.$('div[role="dialog"][aria-label="Case Assistant Chat"] input');
+              if (input) {
+                await input.fill('What is the verdict on this claim?');
+                await page.keyboard.press('Enter');
+                console.log('    -> Asked question in drawer, waiting for streaming response...');
+                // Wait for bot response to stream in
+                await page.waitForTimeout(8000);
+                const answerShot = path.join(SCREENSHOT_DIR, `${vp.name}-${pageSlug}-chat-answered.png`);
+                await page.screenshot({ path: answerShot, fullPage: false });
+              }
+            }
 
             // Press Escape to test close & focus restoration
             await page.keyboard.press('Escape');

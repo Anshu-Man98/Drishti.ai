@@ -37,8 +37,8 @@ Drishti.ai is deployed in production as a unified container on **Google Cloud Ru
 
 ## ⚡ Executive Overview: Problem, Impact & Solution
 
-### The Problem: ₹10,000 Crore (~$6B Globally) Lost Annually to Coordinated Claims Fraud
-Health insurance ecosystems across India and JAPAC lose **8–10% of gross written premiums** (~₹8,000–10,000 crore annually in India alone) to health-claim fraud, waste, and abuse. Claims officers reviewing 80+ itemized bills per day face coordinated, multi-vector fraud that traditional rule engines and simple LLM wrappers fail to catch:
+### The Problem: $300B+ Globally (₹10,000 Crore / ~$1.05B in India) Lost Annually to Claims Fraud
+Health insurance ecosystems globally lose **8–10% of gross written premiums**—over **$300B+ (~₹28.5 Lakh Crore) worldwide**, **$6B+ (~₹57,000 Crore) across India's total insurance sector**, and **₹8,000–10,000 Crore (~$840M–$1.05B) in Indian health insurance alone**—to claims fraud, waste, and abuse. Claims officers reviewing 80+ itemized bills per day face coordinated, multi-vector fraud that traditional rule engines and simple LLM wrappers fail to catch:
 1. **Desktop-Published & AI Forgeries**: Canva/Photoshop-doctored hospital invoices, mismatched font injections, and altered diagnostic stamps.
 2. **Micro-Arithmetic & Unbundled Padding**: Inflated quantities, unit-rate multiplication discrepancies, and tax/subtotal padding hidden inside multi-page bills.
 3. **Policy & Statutory Cap Breaches**: Room rent and ICU charges billed above regulatory/policy limits (e.g., IRDAI *Arogya Sanjeevani* Clause 3.1 & 3.2) without proportional co-pay deductions.

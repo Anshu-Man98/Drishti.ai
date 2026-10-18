@@ -2,7 +2,7 @@
 
 **Track:** BFSI: Intelligent Risk, Fraud & Financial Experiences
 **One-liner:** A multi-agent claims-fraud copilot that catches forged (including AI-generated) insurance claim documents, explains every flag with evidence on the page, and trains itself against an AI fraudster.
-**Problem size:** India's insurance sector loses about ₹8,000–10,000 crore a year to health-claim fraud, waste and abuse. Industry estimates put total fraud at about $6B a year, roughly 8–10% of premiums. It happens on every claim cycle.
+**Problem size:** Healthcare and insurance ecosystems lose roughly 8–10% of premiums ($300B+ / ~₹28.5 Lakh Crore globally) a year to fraud, waste, and abuse—including ~$6B (~₹57,000 crore) across India's overall insurance sector and ₹8,000–10,000 crore (~$840M–$1.05B USD) in Indian health-claim fraud alone. It happens on every claim cycle.
 
 ---
 

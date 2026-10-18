@@ -141,13 +141,15 @@ export const Dashboard: React.FC = () => {
     });
   }, [data?.fraud_categories]);
 
-  // Prevention Rate for ArcGauge
-  const preventionRate = data && data.total_claims > 0
-    ? Math.round((data.verdicts.reject / data.total_claims) * 100)
-    : 0;
+  // Prevention Rate for ArcGauge - memoized
+  const preventionRate = useMemo(() => {
+    return data && data.total_claims > 0
+      ? Math.round((data.verdicts.reject / data.total_claims) * 100)
+      : 0;
+  }, [data]);
 
-  // Table Columns Definition
-  const statusTableColumns = [
+  // Table Columns Definition - memoized to prevent table re-renders
+  const statusTableColumns = useMemo(() => [
     {
       key: 'created_at',
       header: 'Time',
@@ -273,14 +275,14 @@ export const Dashboard: React.FC = () => {
       className: 'text-right font-mono font-semibold tabular-nums text-app-primary whitespace-nowrap',
       render: (c: RecentCriticalClaim) => formatIndianCurrency(c.total_claimed),
     },
-  ];
+  ], []);
 
-  const verdictTabs = [
+  const verdictTabs = useMemo(() => [
     { id: 'all', label: 'All Claims', badge: data?.total_claims || 0 },
     { id: 'review', label: 'Under Review', badge: data?.verdicts.review || 0 },
     { id: 'reject', label: 'Rejected (Fraud)', badge: data?.verdicts.reject || 0 },
     { id: 'approve', label: 'Approved', badge: data?.verdicts.approve || 0 },
-  ];
+  ], [data?.total_claims, data?.verdicts?.review, data?.verdicts?.reject, data?.verdicts?.approve]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">

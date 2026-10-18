@@ -1,6 +1,6 @@
-import React, { useId } from 'react';
+import React, { useId, useRef, useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
-import { useMotionProgress } from '../../utils/motion';
+import { usePrefersReducedMotion } from '../../utils/motion';
 
 export interface ArcGaugeProps {
   value: number;
@@ -17,6 +17,17 @@ export interface ArcGaugeProps {
   animate?: boolean;
 }
 
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+// Polar to Cartesian helper
+const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+  const angleInRadians = toRad(angleInDegrees);
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  };
+};
+
 /**
  * ArcGauge - The signature Nexa-style meter.
  * Features:
@@ -28,7 +39,7 @@ export interface ArcGaugeProps {
  * - Soft warm ambient glow behind the dial
  * - Fully accessible meter semantics
  */
-export const ArcGauge: React.FC<ArcGaugeProps> = ({
+const ArcGaugeBase: React.FC<ArcGaugeProps> = ({
   value,
   min = 0,
   max = 100,
@@ -44,19 +55,63 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
 }) => {
   const gradientId = useId();
   const filterId = useId();
-
-  const progress = useMotionProgress({ duration: 800, enabled: animate });
+  const prefersReduced = usePrefersReducedMotion();
 
   const clampedValue = Math.min(max, Math.max(min, value));
   const range = max - min || 1;
   const targetRatio = (clampedValue - min) / range;
-  const currentRatio = animate ? targetRatio * progress : targetRatio;
+
+  // Single-run animation on mount or when clampedValue actually changes
+  const isFirstMountRef = useRef(true);
+  const prevValueRef = useRef(clampedValue);
+  const [motionProgress, setMotionProgress] = useState(!animate || prefersReduced ? 1 : 0);
+  const animationFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!animate || prefersReduced) {
+      setMotionProgress(1);
+      return;
+    }
+
+    // If not first mount and value has not changed, do not restart animation
+    if (!isFirstMountRef.current && prevValueRef.current === clampedValue) {
+      return;
+    }
+
+    isFirstMountRef.current = false;
+    prevValueRef.current = clampedValue;
+
+    const startTime = performance.now();
+    const duration = 750;
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const p = Math.min(1, elapsed / duration);
+      // Smooth cubic ease-out
+      const ease = 1 - Math.pow(1 - p, 3);
+      setMotionProgress(ease);
+
+      if (p < 1) {
+        animationFrameRef.current = requestAnimationFrame(step);
+      } else {
+        setMotionProgress(1);
+        animationFrameRef.current = null;
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [clampedValue, animate, prefersReduced]);
+
+  const currentRatio = animate ? targetRatio * motionProgress : targetRatio;
 
   // Arc configuration: 210 degree sweep (from 165 deg to 375 deg)
-  // Center (cx, cy) = (110, 74), Radius R = 62
-  // Value numeral is optical-centered at (110, 74).
-  // Arc lowest point (at 165 deg & 375 deg + 8px dot radius) = 98.05.
-  // Caption at y = 126 provides >= 12px clearance across all sizes (140px - 260px).
   const cx = 110;
   const cy = 74;
   const r = 62;
@@ -64,17 +119,6 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
   const startAngle = 165; // deg
   const endAngle = 375;   // deg (sweep = 210 deg)
   const sweepAngle = endAngle - startAngle;
-
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-  // Polar to Cartesian
-  const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
-    const angleInRadians = toRad(angleInDegrees);
-    return {
-      x: centerX + radius * Math.cos(angleInRadians),
-      y: centerY + radius * Math.sin(angleInRadians),
-    };
-  };
 
   const startPoint = polarToCartesian(cx, cy, r, startAngle);
   const endPoint = polarToCartesian(cx, cy, r, endAngle);
@@ -92,24 +136,26 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
 
   // Lowest point of arc geometry (including 8px dot radius and 5px stroke radius)
   const arcBottom = cy + r * Math.sin(toRad(15)) + 8; // 74 + 16.05 + 8 = 98.05
-  const captionY = 126; // 126 - 98.05 = 27.95 SVG units (> 17.7px screen clearance at 140px width)
+  const captionY = 126;
 
-  // Generate fine tick marks (15 ticks across arc)
-  const ticksCount = 15;
-  const ticks = Array.from({ length: ticksCount }, (_, i) => {
-    const angle = startAngle + (sweepAngle / (ticksCount - 1)) * i;
-    const innerPoint = polarToCartesian(cx, cy, r - 9, angle);
-    const outerPoint = polarToCartesian(cx, cy, r - 4, angle);
-    const isMajor = i % 2 === 0;
-    return {
-      id: i,
-      x1: innerPoint.x,
-      y1: innerPoint.y,
-      x2: outerPoint.x,
-      y2: outerPoint.y,
-      isMajor,
-    };
-  });
+  // Generate fine tick marks (15 ticks across arc) - memoized
+  const ticks = useMemo(() => {
+    const ticksCount = 15;
+    return Array.from({ length: ticksCount }, (_, i) => {
+      const angle = startAngle + (sweepAngle / (ticksCount - 1)) * i;
+      const innerPoint = polarToCartesian(cx, cy, r - 9, angle);
+      const outerPoint = polarToCartesian(cx, cy, r - 4, angle);
+      const isMajor = i % 2 === 0;
+      return {
+        id: i,
+        x1: innerPoint.x,
+        y1: innerPoint.y,
+        x2: outerPoint.x,
+        y2: outerPoint.y,
+        isMajor,
+      };
+    });
+  }, [startAngle, sweepAngle, cx, cy, r]);
 
   const sizeClasses = {
     sm: 'w-48 h-36',
@@ -117,26 +163,28 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
     lg: 'w-72 h-52',
   }[size];
 
-  const strokeColors = {
-    amber: {
-      bright: '#FFC15A',
-      primary: '#F5A524',
-      deep: '#B8741A',
-      glow: 'rgba(245, 165, 36, 0.35)',
-    },
-    danger: {
-      bright: '#FB7185',
-      primary: '#F43F5E',
-      deep: '#BE123C',
-      glow: 'rgba(244, 63, 94, 0.40)',
-    },
-    success: {
-      bright: '#34D399',
-      primary: '#10B981',
-      deep: '#047857',
-      glow: 'rgba(16, 185, 129, 0.35)',
-    },
-  }[variant];
+  const strokeColors = useMemo(() => {
+    return {
+      amber: {
+        bright: '#FFC15A',
+        primary: '#F5A524',
+        deep: '#B8741A',
+        glow: 'rgba(245, 165, 36, 0.35)',
+      },
+      danger: {
+        bright: '#FB7185',
+        primary: '#F43F5E',
+        deep: '#BE123C',
+        glow: 'rgba(244, 63, 94, 0.40)',
+      },
+      success: {
+        bright: '#34D399',
+        primary: '#10B981',
+        deep: '#047857',
+        glow: 'rgba(16, 185, 129, 0.35)',
+      },
+    }[variant];
+  }, [variant]);
 
   return (
     <div
@@ -147,10 +195,17 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
       aria-label={label || caption || 'Metric Gauge'}
       className={clsx('relative flex flex-col items-center justify-center select-none', className)}
     >
-      {/* Ambient background glow behind the arc */}
+      {/* Ambient background glow behind the arc - Static, GPU isolated, always-on */}
       <div
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-32 rounded-full pointer-events-none blur-2xl"
-        style={{ background: strokeColors.glow }}
+        data-testid="arc-gauge-glow"
+        className="absolute top-1/2 left-1/2 w-44 h-32 rounded-full pointer-events-none blur-2xl select-none"
+        style={{
+          background: strokeColors.glow,
+          transform: 'translate(-50%, -50%) translateZ(0)',
+          willChange: 'transform',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+        }}
       />
 
       <svg
@@ -220,17 +275,10 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
           strokeLinecap="round"
           strokeDasharray={arcLength}
           strokeDashoffset={strokeDashoffset}
-          className={clsx(
-            animate && 'transition-[stroke-dashoffset] duration-700 ease-out'
-          )}
         />
 
         {/* Glowing Indicator End-Dot */}
-        <g
-          className={clsx(
-            animate && 'transition-transform duration-700 ease-out'
-          )}
-        >
+        <g>
           {/* Outer Ring */}
           <circle
             cx={dotCoord.x}
@@ -294,6 +342,27 @@ export const ArcGauge: React.FC<ArcGaugeProps> = ({
     </div>
   );
 };
+
+export const ArcGauge = React.memo<ArcGaugeProps>(ArcGaugeBase, (prevProps, nextProps) => {
+  return (
+    prevProps.value === nextProps.value &&
+    prevProps.min === nextProps.min &&
+    prevProps.max === nextProps.max &&
+    prevProps.unit === nextProps.unit &&
+    prevProps.label === nextProps.label &&
+    prevProps.caption === nextProps.caption &&
+    prevProps.variant === nextProps.variant &&
+    prevProps.size === nextProps.size &&
+    prevProps.showTicks === nextProps.showTicks &&
+    prevProps.className === nextProps.className &&
+    prevProps.animate === nextProps.animate &&
+    prevProps.referenceMarkers?.length === nextProps.referenceMarkers?.length &&
+    (prevProps.referenceMarkers || []).every((m, idx) => {
+      const n = nextProps.referenceMarkers?.[idx];
+      return n && m.value === n.value && m.label === n.label && m.color === n.color;
+    })
+  );
+});
 
 /**
  * Geometric layout validator for ArcGauge at arbitrary rendering widths.

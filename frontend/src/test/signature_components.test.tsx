@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import {
@@ -100,6 +101,37 @@ describe('Stage 2: Signature UI Components Suite', () => {
         // Value numeral is above arc bottom
         expect(layout.valueCenterPx).toBeLessThan(layout.arcBottomPx);
       }
+    });
+
+    it('does not restart animation on parent re-renders and keeps steady GPU-isolated glow', () => {
+      const Parent = () => {
+        const [count, setCount] = useState(0);
+        return (
+          <div>
+            <button onClick={() => setCount((c) => c + 1)}>Increment {count}</button>
+            <ArcGauge value={75} min={0} max={100} label="Mitigation Ratio" />
+          </div>
+        );
+      };
+
+      const { container } = render(<Parent />);
+      const glow = screen.getByTestId('arc-gauge-glow');
+      expect(glow).toBeInTheDocument();
+      expect(glow).toHaveStyle({ willChange: 'transform' });
+
+      const path = container.querySelector('path[stroke-dasharray]');
+      expect(path).toBeInTheDocument();
+      const initialOffset = path?.getAttribute('stroke-dashoffset');
+
+      // Trigger parent state re-render
+      fireEvent.click(screen.getByRole('button', { name: /Increment 0/i }));
+      expect(screen.getByRole('button', { name: /Increment 1/i })).toBeInTheDocument();
+
+      // Glow is still present and steady
+      expect(screen.getByTestId('arc-gauge-glow')).toBeInTheDocument();
+      // Stroke offset remains steady and does not reset to 0
+      const afterOffset = path?.getAttribute('stroke-dashoffset');
+      expect(afterOffset).toBe(initialOffset);
     });
   });
 

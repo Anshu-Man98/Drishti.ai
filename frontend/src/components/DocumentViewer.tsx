@@ -1,10 +1,86 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import clsx from 'clsx';
 import {
   ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight,
   Eye, AlertTriangle, Layers, FileText, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import { Finding, ExtractedEntity, Severity } from '../types';
 import { fetchClaimPageBlob } from '../services/api';
+
+export interface PaddedBbox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  width: number;
+  height: number;
+  wasExpanded: boolean;
+}
+
+/**
+ * Ensures degenerate, hairline, or tiny bounding boxes from Document AI / PyPDF
+ * are padded to a minimum visible height (>= 14px) and visible width, clamped within [0, 1].
+ */
+export function padHairlineBbox(
+  bbox: [number, number, number, number],
+  pageWidthPx = 1000,
+  pageHeightPx = 1000,
+  minHeightPx = 14,
+  minWidthPx = 120
+): PaddedBbox {
+  let [x0, y0, x1, y1] = bbox;
+  if (x0 > x1) [x0, x1] = [x1, x0];
+  if (y0 > y1) [y0, y1] = [y1, y0];
+
+  const minHeightNorm = minHeightPx / pageHeightPx;
+  const minWidthNorm = minWidthPx / pageWidthPx;
+
+  let heightNorm = y1 - y0;
+  let widthNorm = x1 - x0;
+  let wasExpanded = false;
+
+  if (heightNorm < minHeightNorm) {
+    const pad = (minHeightNorm - heightNorm) / 2;
+    y0 = Math.max(0, y0 - pad);
+    y1 = Math.min(1, y0 + minHeightNorm);
+    if (y1 >= 1) {
+      y0 = Math.max(0, 1 - minHeightNorm);
+    }
+    heightNorm = y1 - y0;
+    wasExpanded = true;
+  }
+
+  if (widthNorm < minWidthNorm) {
+    const pad = (minWidthNorm - widthNorm) / 2;
+    x0 = Math.max(0, x0 - pad);
+    x1 = Math.min(1, x0 + minWidthNorm);
+    if (x1 >= 1) {
+      x0 = Math.max(0, 1 - minWidthNorm);
+    }
+    widthNorm = x1 - x0;
+    wasExpanded = true;
+  }
+
+  return {
+    x0,
+    y0,
+    x1,
+    y1,
+    width: widthNorm,
+    height: heightNorm,
+    wasExpanded,
+  };
+}
+
+export interface HiddenTextRun {
+  id: string;
+  findingId: string;
+  page: number;
+  bbox: [number, number, number, number] | null;
+  quote: string;
+  reason?: string;
+  hasBbox: boolean;
+}
 
 interface DocumentViewerProps {
   claimId: string;
@@ -96,9 +172,70 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const totalPages = Math.max(1, pageCount);
 
-  const hasHiddenInjections = findings.some((f) =>
-    (f.evidence || []).some((ev) => ev.layer === 'hidden')
-  );
+  // Collect all hidden text runs across findings
+  const hiddenRuns = useMemo<HiddenTextRun[]>(() => {
+    return findings.flatMap((f) => {
+      const hiddenEv = (f.evidence || []).filter(
+        (ev) => ev.layer === 'hidden' || f.agent === 'injection' || f.check_id === 'hidden_text_instruction'
+      );
+      if (hiddenEv.length > 0) {
+        return hiddenEv.map((ev, evIdx) => ({
+          id: `${f.finding_id}-${evIdx}`,
+          findingId: f.finding_id,
+          page: ev.page || 1,
+          bbox: ev.bbox && ev.bbox.length === 4 ? (ev.bbox as [number, number, number, number]) : null,
+          quote: ev.quote || f.explanation || f.title,
+          reason: f.computed_details?.reason || (ev.bbox ? 'rendered hidden text' : 'metadata payload'),
+          hasBbox: Boolean(ev.bbox && ev.bbox.length === 4),
+        }));
+      }
+      if (f.agent === 'injection' || f.check_id === 'hidden_text_instruction') {
+        return [{
+          id: `${f.finding_id}-0`,
+          findingId: f.finding_id,
+          page: 1,
+          bbox: null,
+          quote: f.explanation || f.title,
+          reason: f.computed_details?.reason || 'metadata payload',
+          hasBbox: false,
+        }];
+      }
+      return [];
+    });
+  }, [findings]);
+
+  const hasHiddenInjections = hiddenRuns.length > 0;
+  const [pulsingRunId, setPulsingRunId] = useState<string | null>(null);
+
+  const handleJumpToHiddenRun = (run: HiddenTextRun) => {
+    if (run.page !== currentPage) {
+      setCurrentPage(run.page);
+    }
+    setPulsingRunId(run.id);
+
+    setTimeout(() => {
+      const el = document.getElementById(`hidden-overlay-${run.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+
+    setTimeout(() => {
+      setPulsingRunId(null);
+    }, 3000);
+  };
+
+  const handleToggleRevealHidden = () => {
+    if (!hasHiddenInjections) return;
+    const nextVal = !revealHiddenLayer;
+    setRevealHiddenLayer(nextVal);
+    if (nextVal) {
+      const firstWithBbox = hiddenRuns.find((r) => r.hasBbox);
+      if (firstWithBbox) {
+        handleJumpToHiddenRun(firstWithBbox);
+      }
+    }
+  };
 
   // Collect boxes for current page
   // 1. Finding evidence boxes (visible layer)
@@ -117,25 +254,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         isActive: f.finding_id === activeFindingId
       }));
   });
-
-  // 1b. Planted hidden injection boxes (shown only when revealHiddenLayer is toggled)
-  const hiddenBoxes = revealHiddenLayer
-    ? findings.flatMap((f) => {
-        return (f.evidence || [])
-          .filter((ev) => (ev.page || 1) === currentPage && ev.bbox && ev.bbox.length === 4 && ev.layer === 'hidden')
-          .map((ev, evIdx) => ({
-            id: `hidden-${f.finding_id}-${evIdx}`,
-            findingId: f.finding_id,
-            isFinding: true,
-            bbox: ev.bbox as [number, number, number, number],
-            severity: f.severity,
-            title: `Quarantined Injection: ${f.title}`,
-            subtitle: ev.quote || f.explanation,
-            confidence: f.confidence,
-            isActive: f.finding_id === activeFindingId
-          }));
-      })
-    : [];
 
   // 2. Extracted entity boxes (if showAllFields is enabled)
   const entityBoxes = showAllFields
@@ -263,21 +381,22 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
           {/* Reveal Hidden Layer Toggle Button (Feature A1) */}
           <button
-            onClick={() => setRevealHiddenLayer(!revealHiddenLayer)}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all ${
-              revealHiddenLayer
-                ? 'bg-fuchsia-600/25 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/20 ring-1 ring-fuchsia-500'
-                : hasHiddenInjections
-                ? 'bg-fuchsia-950/40 border-fuchsia-800/80 text-fuchsia-400 hover:bg-fuchsia-900/40 animate-pulse'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Toggle revealing hidden text prompt injections buried in document layers"
+            disabled={!hasHiddenInjections}
+            onClick={handleToggleRevealHidden}
+            className={clsx(
+              "flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all",
+              !hasHiddenInjections && "opacity-40 cursor-not-allowed bg-slate-900/30 border-slate-800 text-slate-500",
+              hasHiddenInjections && revealHiddenLayer && "bg-rose-600/25 border-rose-500 text-rose-300 shadow-md shadow-rose-500/20 ring-1 ring-rose-500",
+              hasHiddenInjections && !revealHiddenLayer && "bg-rose-950/40 border-rose-800/80 text-rose-400 hover:bg-rose-900/40 animate-pulse cursor-pointer"
+            )}
+            title={!hasHiddenInjections ? "No hidden text found in this document" : "Toggle revealing hidden text prompt injections buried in document layers"}
+            aria-label={!hasHiddenInjections ? "No hidden text found in this document" : "Reveal Hidden Layer"}
           >
-            <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400" />
+            <ShieldAlert className={clsx("w-3.5 h-3.5", hasHiddenInjections ? "text-rose-400" : "text-slate-500")} />
             <span>{revealHiddenLayer ? 'Hidden Layer Revealed' : 'Reveal Hidden Layer'}</span>
             {hasHiddenInjections && (
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-fuchsia-500/30 text-fuchsia-200 font-mono font-bold">
-                ALERT
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/30 text-rose-200 font-mono font-bold">
+                {hiddenRuns.length}
               </span>
             )}
           </button>
@@ -309,6 +428,66 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Hidden text found (N) Banner */}
+      {revealHiddenLayer && hasHiddenInjections && (
+        <div
+          data-testid="hidden-text-banner"
+          className="bg-rose-950/80 border-2 border-rose-500 rounded-xl p-3.5 space-y-2.5 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-top-1 duration-200"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-rose-500/30 pb-2">
+            <div className="flex items-center space-x-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400 animate-pulse" />
+              <span className="font-bold text-white text-xs tracking-wide">
+                Hidden text found ({hiddenRuns.length})
+              </span>
+            </div>
+            <span className="text-[10px] font-mono uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-500/30 text-rose-200 border border-rose-500/40">
+              Quarantined Injection Layer
+            </span>
+          </div>
+
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {hiddenRuns.map((run, idx) => (
+              <div
+                key={run.id}
+                className="bg-black/75 border border-rose-500/35 rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-1.5 py-0.5 rounded bg-rose-900/60 text-rose-200 font-mono text-[10px] font-bold">
+                      Run #{idx + 1}
+                    </span>
+                    {run.hasBbox ? (
+                      <span className="text-[11px] font-mono text-rose-300">
+                        Page {run.page} • Physical Bounding Box Located
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-mono text-amber-300 font-semibold">
+                        Hidden text detected in document metadata (page {run.page}, location unavailable)
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-mono text-[11px] text-rose-100 bg-rose-950/50 p-2 rounded border border-rose-500/25 break-all select-all font-medium">
+                    "{run.quote}"
+                  </p>
+                </div>
+
+                {run.hasBbox && (
+                  <button
+                    onClick={() => handleJumpToHiddenRun(run)}
+                    className="shrink-0 flex items-center justify-center space-x-1 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs shadow-md transition-colors cursor-pointer"
+                    title={`Jump to hidden text overlay on Page ${run.page}`}
+                  >
+                    <span>Jump to</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Document Display Area */}
       <div
@@ -420,64 +599,56 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 );
               })}
 
-              {/* 3. Planted Hidden Injection Boxes (Magenta at Real Coordinates - Feature A1) */}
-              {hiddenBoxes.map((box) => {
-                const [x0, y0, x1, y1] = box.bbox;
-                const x = x0 * 1000;
-                const y = y0 * 1000;
-                const w = Math.max(90, (x1 - x0) * 1000);
-                const h = Math.max(22, (y1 - y0) * 1000);
-
-                return (
-                  <g key={box.id} className="pointer-events-auto">
-                    <rect
-                      x={x}
-                      y={y}
-                      width={w}
-                      height={h}
-                      fill="rgba(217, 70, 239, 0.32)"
-                      stroke="#d946ef"
-                      strokeWidth="3"
-                      strokeDasharray="6 3"
-                      className="drop-shadow-[0_0_12px_rgba(217,70,239,0.85)] animate-pulse cursor-pointer"
-                      onClick={() => {
-                        if (box.findingId && onSelectFinding) {
-                          onSelectFinding(box.findingId);
-                        }
-                      }}
-                      onMouseEnter={() =>
-                        setHovered({
-                          id: box.id,
-                          title: "🚨 Planted Prompt Injection (Quarantined)",
-                          subtitle: box.subtitle,
-                          severity: "critical",
-                          confidence: 1.0,
-                          source: "injection_detector",
-                          x: x0,
-                          y: y0
-                        })
-                      }
-                      onMouseLeave={() => setHovered(null)}
-                    />
-                    <foreignObject
-                      x={Math.max(10, Math.min(x, 600))}
-                      y={Math.max(10, y - 65)}
-                      width={420}
-                      height={65}
-                      className="overflow-visible pointer-events-none"
-                    >
-                      <div className="bg-fuchsia-950/95 text-fuchsia-100 border-2 border-fuchsia-400 p-2 rounded-lg text-[10px] font-mono leading-tight shadow-2xl backdrop-blur-md">
-                        <span className="text-[9px] font-bold uppercase text-fuchsia-300 block mb-0.5 tracking-wider">
-                          🚨 Planted Instruction Buried at Coordinates:
-                        </span>
-                        <p className="line-clamp-2 font-semibold text-white">"{box.subtitle}"</p>
-                      </div>
-                    </foreignObject>
-                  </g>
-                );
-              })}
             </svg>
           )}
+
+          {/* Hidden Layer Overlays (HTML layer: guaranteed visible, min-height >= 14px, high contrast label) */}
+          {revealHiddenLayer &&
+            hiddenRuns
+              .filter((run) => run.page === currentPage && run.hasBbox && run.bbox)
+              .map((run) => {
+                const padded = padHairlineBbox(run.bbox!, 1000, 1000, 16, 140);
+                const isPulsing = pulsingRunId === run.id;
+
+                return (
+                  <button
+                    type="button"
+                    key={run.id}
+                    id={`hidden-overlay-${run.id}`}
+                    data-testid="hidden-layer-overlay"
+                    aria-label={`Hidden layer text: ${run.quote}`}
+                    className={clsx(
+                      "absolute pointer-events-auto cursor-pointer transition-all duration-300 rounded-xs text-left",
+                      "border-2 border-dashed border-red-500 bg-red-500/20",
+                      "shadow-[0_0_15px_rgba(239,68,68,0.7)]",
+                      isPulsing && "ring-4 ring-rose-400 ring-offset-2 ring-offset-black scale-105"
+                    )}
+                    style={{
+                      left: `${padded.x0 * 100}%`,
+                      top: `${padded.y0 * 100}%`,
+                      width: `${padded.width * 100}%`,
+                      height: `${padded.height * 100}%`,
+                      minHeight: '16px',
+                      minWidth: '90px',
+                      zIndex: 25,
+                    }}
+                    onClick={() => {
+                      if (run.findingId && onSelectFinding) {
+                        onSelectFinding(run.findingId);
+                      }
+                    }}
+                  >
+                    {/* High contrast monospace label chip */}
+                    <div className="absolute -top-7 left-0 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-950 text-white border border-red-500 text-[10px] font-mono font-bold shadow-2xl whitespace-nowrap pointer-events-none select-none">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
+                      <span className="text-red-400 font-extrabold tracking-wide">HIDDEN LAYER:</span>
+                      <span className="max-w-[220px] sm:max-w-[340px] truncate text-white">
+                        {run.quote}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
 
           {/* Hover Tooltip Overlay */}
           {hovered && (

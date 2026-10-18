@@ -156,7 +156,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
 
           {/* AI Case Assistant Button */}
-          <div className="pt-2 mt-2 border-t border-white/[0.06]">
+          <div className="pt-2 mt-2 border-t border-app-border">
             <button
               type="button"
               onClick={() => {
@@ -165,15 +165,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               title={collapsed ? 'Case Assistant (⌘K or /)' : undefined}
               aria-label="Open Case Assistant"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all select-none text-app-muted hover:text-app-primary hover:bg-white/[0.04] border border-amber-primary/20 hover:border-amber-primary/40 bg-amber-primary/5 group cursor-pointer"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all select-none text-app-primary hover:bg-stone-200/60 dark:hover:bg-white/[0.04] border border-amber-700/30 dark:border-amber-primary/20 bg-amber-500/10 dark:bg-amber-primary/5 group cursor-pointer"
             >
-              <Bot className="w-4 h-4 shrink-0 text-amber-primary group-hover:scale-105 transition-transform" />
+              <Bot className="w-4 h-4 shrink-0 text-amber-800 dark:text-amber-primary group-hover:scale-105 transition-transform" />
               {!collapsed && (
                 <div className="flex-1 flex items-center justify-between min-w-0">
-                  <span className="truncate font-semibold text-app-primary group-hover:text-amber-primary transition-colors">
+                  <span className="truncate font-semibold text-app-primary group-hover:text-amber-800 dark:group-hover:text-amber-primary transition-colors">
                     Case Assistant
                   </span>
-                  <kbd className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-app-muted border border-white/10">
+                  <kbd className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-700/10 dark:bg-white/10 text-amber-900 dark:text-app-muted border border-amber-700/20 dark:border-white/10">
                     ⌘K
                   </kbd>
                 </div>

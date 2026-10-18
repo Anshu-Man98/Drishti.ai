@@ -147,15 +147,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
         <button
           type="button"
           onClick={() => openAssistant()}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-primary/14 hover:bg-amber-primary/24 text-amber-primary border border-amber-primary/35 shadow-[0_0_12px_-2px_rgba(245,165,36,0.3)] transition-all cursor-pointer group shrink-0"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white border border-amber-600/50 shadow-sm dark:bg-amber-primary/14 dark:hover:bg-amber-primary/24 dark:text-amber-primary dark:border-amber-primary/35 transition-all cursor-pointer group shrink-0"
           title="Open Case Assistant (/ or ⌘K)"
           aria-label="Open Case Assistant"
         >
-          <Bot className="w-4 h-4 text-amber-primary group-hover:scale-105 transition-transform shrink-0" />
-          <span className="text-xs font-semibold tracking-tight text-app-primary">
+          <Bot className="w-4 h-4 text-amber-400 dark:text-amber-primary group-hover:scale-105 transition-transform shrink-0" />
+          <span className="text-xs font-semibold tracking-tight text-white dark:text-app-primary">
             Assistant
           </span>
-          <kbd className="hidden md:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-amber-primary/20 text-amber-primary border border-amber-primary/30">
+          <kbd className="hidden md:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-stone-800 text-amber-300 border border-stone-700 dark:bg-amber-primary/20 dark:text-amber-primary dark:border-amber-primary/30">
             ⌘K
           </kbd>
         </button>

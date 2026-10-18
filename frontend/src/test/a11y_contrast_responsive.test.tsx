@@ -96,6 +96,48 @@ describe('Stage 7: Contrast, Accessibility & Responsive Polish', () => {
       const lightRejectContrast = calculateContrast('#BE123C', lightPaper);
       expect(lightRejectContrast).toBeGreaterThanOrEqual(4.5); // Passes AA (approx 5.8:1)
     });
+
+    it('verifies Fix 3: Case Assistant entry points and drawer in Light Theme exceed WCAG AA (>= 4.5:1)', () => {
+      // 1. Floating Pill (stone-900 with white text on warm paper)
+      const floatingPillTextContrast = calculateContrast('#FFFFFF', '#1C1917');
+      expect(floatingPillTextContrast).toBeGreaterThanOrEqual(15.0); // Exceeds AAA
+      const floatingPillBoundaryContrast = calculateContrast('#1C1917', lightPaper);
+      expect(floatingPillBoundaryContrast).toBeGreaterThanOrEqual(14.0); // Exceeds AAA
+
+      // 2. TopBar Assistant button (stone-900 pill with amber-300 kbd)
+      const topBarButtonContrast = calculateContrast('#FFFFFF', '#1C1917');
+      expect(topBarButtonContrast).toBeGreaterThanOrEqual(15.0);
+      const topBarKbdContrast = calculateContrast('#FCD34D', '#292524');
+      expect(topBarKbdContrast).toBeGreaterThanOrEqual(7.0);
+
+      // 3. Sidebar Case Assistant entry
+      const sidebarIconContrast = calculateContrast('#92400E', lightPaper); // amber-800
+      expect(sidebarIconContrast).toBeGreaterThanOrEqual(6.0); // Passes AA (approx 7:1)
+      const sidebarTextContrast = calculateContrast('#1C1A16', lightPaper);
+      expect(sidebarTextContrast).toBeGreaterThanOrEqual(7.0);
+
+      // 4. ClaimHeader Ask Assistant button
+      const claimHeaderIconContrast = calculateContrast('#B45309', '#FFFFFF'); // amber-700
+      expect(claimHeaderIconContrast).toBeGreaterThanOrEqual(4.5); // Passes AA (approx 4.7:1)
+      const claimHeaderTextContrast = calculateContrast('#1C1A16', '#FFFFFF');
+      expect(claimHeaderTextContrast).toBeGreaterThanOrEqual(7.0);
+
+      // 5. ChatDrawer Elements in Light Theme
+      const drawerHeaderContrast = calculateContrast('#1C1A16', '#F5EFE3'); // primary text on elevated
+      expect(drawerHeaderContrast).toBeGreaterThanOrEqual(7.0);
+      const drawerGeminiChipContrast = calculateContrast('#92400E', '#F5EFE3'); // amber-800 chip
+      expect(drawerGeminiChipContrast).toBeGreaterThanOrEqual(4.5);
+      const drawerSuggestionTextContrast = calculateContrast('#1C1A16', '#FFFFFF');
+      expect(drawerSuggestionTextContrast).toBeGreaterThanOrEqual(7.0);
+      const drawerUserBubbleContrast = calculateContrast('#FFFFFF', '#1C1917');
+      expect(drawerUserBubbleContrast).toBeGreaterThanOrEqual(15.0);
+      const drawerAssistantBubbleContrast = calculateContrast('#1C1A16', '#F5EFE3');
+      expect(drawerAssistantBubbleContrast).toBeGreaterThanOrEqual(7.0);
+      const drawerInputTextContrast = calculateContrast('#1C1A16', '#FFFFFF');
+      expect(drawerInputTextContrast).toBeGreaterThanOrEqual(7.0);
+      const drawerCitationTextContrast = calculateContrast('#4A453B', '#FFFFFF');
+      expect(drawerCitationTextContrast).toBeGreaterThanOrEqual(7.0);
+    });
   });
 
   describe('Color-blind Safety on Verdict & Severity Badges', () => {

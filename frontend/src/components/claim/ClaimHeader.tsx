@@ -119,10 +119,10 @@ export const ClaimHeader: React.FC<ClaimHeaderProps> = ({
             type="button"
             onClick={onOpenChat}
             aria-label="Ask Case Assistant"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface hover:bg-surface-elevated text-text-primary border border-white/10 text-xs font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-app-surface hover:bg-app-elevated text-app-primary border border-app-border text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
             title="Open Interactive Case Assistant (/ or ⌘K)"
           >
-            <MessageSquare className="w-3.5 h-3.5 text-amber-primary" />
+            <MessageSquare className="w-3.5 h-3.5 text-amber-700 dark:text-amber-primary" />
             <span className="hidden sm:inline">Ask Assistant</span>
           </button>
 

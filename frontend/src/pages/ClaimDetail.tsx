@@ -405,15 +405,16 @@ export const ClaimDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Floating Case Assistant Pill */}
+      {/* Floating Case Assistant Pill (High contrast in both light and dark themes) */}
       {!isChatOpen && (
         <button
           type="button"
           onClick={handleOpenChat}
+          data-testid="floating-case-assistant-pill"
           aria-label="Ask Case Assistant"
-          className={`fixed z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-amber-primary hover:bg-amber-bright text-black font-semibold shadow-xl shadow-amber-primary/25 border border-amber-primary/40 transition-all transform hover:scale-102 cursor-pointer ${
+          className={`fixed z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-stone-900 hover:bg-stone-800 text-white border-2 border-amber-500 shadow-2xl ring-2 ring-amber-400/20 dark:bg-amber-primary dark:hover:bg-amber-bright dark:text-black dark:border-amber-primary/40 transition-all transform hover:scale-102 cursor-pointer ${
             !hasPulsed
-              ? 'ring-2 ring-amber-bright shadow-[0_0_20px_rgba(245,165,36,0.6)] animate-pulse'
+              ? 'ring-2 ring-amber-400 shadow-[0_0_20px_rgba(245,165,36,0.6)] animate-pulse'
               : ''
           }`}
           style={{
@@ -422,9 +423,9 @@ export const ClaimDetail: React.FC = () => {
           }}
           title="Ask Case Assistant (/ or ⌘K)"
         >
-          <MessageSquare className="w-4 h-4 text-black shrink-0" />
-          <span className="text-xs font-bold">Ask Case Assistant</span>
-          <span className="w-2 h-2 rounded-full bg-black animate-pulse" />
+          <MessageSquare className="w-4 h-4 text-amber-400 dark:text-black shrink-0" />
+          <span className="text-xs font-bold text-white dark:text-black">Ask Case Assistant</span>
+          <span className="w-2 h-2 rounded-full bg-amber-400 dark:bg-black animate-pulse" />
         </button>
       )}
 

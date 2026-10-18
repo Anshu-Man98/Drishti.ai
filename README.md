@@ -30,7 +30,7 @@ Drishti.ai is deployed in production as a unified container on **Google Cloud Ru
 | **🔐 Tampered Sanction Note (`G8`)** | **[`.../claims/CLM-G8-ALTERED-DEMO`](https://drishti-app-6lmavyq52q-el.a.run.app/claims/CLM-G8-ALTERED-DEMO)** | Cryptographic Ed25519 signature & dual-watermark verification catching post-issuance payout inflation. |
 | **🕸️ Syndicate Fraud Network** | **[`.../network`](https://drishti-app-6lmavyq52q-el.a.run.app/network)** | Interactive force-directed ring graph exposing shared beneficiary bank accounts and cross-insurer duplicate bills. |
 | **⚔️ Adversarial Duel Arena** | **[`.../duel`](https://drishti-app-6lmavyq52q-el.a.run.app/duel)** | Red-Team `gemini-3.5-flash` mutator vs. 8-Agent Blue-Team Defender with **11 Learned Evasion Patterns** indexed in Two-Corpus RAG. |
-| **📤 Upload & Benchmark Presets** | **[`.../upload`](https://drishti-app-6lmavyq52q-el.a.run.app/upload)** | 1-click **Quick Benchmark Presets (`G1`, `G2`, `G3`, `G6`)** or custom PDF drag-and-drop for live end-to-end 8-agent scrutiny. |
+| **📤 Upload Claim Document** | **[`.../upload`](https://drishti-app-6lmavyq52q-el.a.run.app/upload)** | Direct PDF / image bill drag-and-drop with Cloud Document AI OCR extraction and live end-to-end 8-agent fraud scrutiny. |
 | **🩺 Live Cloud Health Telemetry** | **[`.../health`](https://drishti-app-6lmavyq52q-el.a.run.app/health)** | Live JSON health probe verifying `all_healthy: true` across Firestore, GCS, BigQuery, Document AI, Vertex AI Gemini, and Secret Manager, plus real-time latency and token/cost metrics. |
 
 ---
@@ -99,8 +99,8 @@ Drishti.ai features a high-assurance **Amber & Obsidian** security interface mee
 
 You can explore every capability on our **[Live Cloud Run Application](https://drishti-app-6lmavyq52q-el.a.run.app/)** (or a local instance) using our **9 Pre-Seeded Benchmark Claims (`G1`–`G9`)**:
 
-1. **Test 1-Click Live Adjudication (`/upload`)**:
-   - Visit **[`/upload`](https://drishti-app-6lmavyq52q-el.a.run.app/upload)** $\rightarrow$ select any of the **Quick Benchmark Presets** (`G1: Clean Claim`, `G2: Arithmetic Mismatch`, `G3: Policy Cap Breach`, or `G6: Forged Total & Font Metadata`) and click **"Submit Claim for Multi-Agent Scrutiny"** to watch all 8 specialist agents execute live.
+1. **Upload & Test Live Adjudication (`/upload`)**:
+   - Visit **[`/upload`](https://drishti-app-6lmavyq52q-el.a.run.app/upload)** $\rightarrow$ drag-and-drop any hospital bill PDF / image or enter claim metadata, and click **"Submit Claim for Multi-Agent Scrutiny"** to watch Cloud Document AI and all 8 specialist agents execute live.
 2. **Inspect a Forged Invoice with Visual Grounding (`G6`)**:
    - Open **[`/claims/CLM-G6-FORGERY-DEMO`](https://drishti-app-6lmavyq52q-el.a.run.app/claims/CLM-G6-FORGERY-DEMO)** (Amit Kulkarni · CarePlus Medical Center, Pune).
    - Click any finding chip to snap the document viewer directly to the tampered bounding box. Notice `SUSPICIOUS_PRODUCER_METADATA` (Photoshop/Canva signature) and `FONT_INCONSISTENCY_TAMPERING`.
@@ -411,3 +411,23 @@ Drishti.ai enforces production-grade security headers (`X-Content-Type-Options: 
 - 📈 **[BigQuery ML Evaluation Report (`docs/model_eval.md`)](docs/model_eval.md)**
 - 🔍 **[Document Forensics Evaluation (`docs/forensics_eval.md`)](docs/forensics_eval.md)**
 - 🎨 **[UI Design & WCAG AAA QA Report (`docs/ui-qa/README.md`)](docs/ui-qa/README.md)**
+
+---
+
+## 👨‍💻 Author & Maintainer
+
+**Anshuman**
+- **GitHub**: [@Anshu-Man98](https://github.com/Anshu-Man98)
+- **Role**: Lead Architect & Full-Stack AI Engineer, Drishti.ai
+- **Contact**: `amnshuman98@gmail.com`
+
+---
+
+## 🚀 Recent Platform Updates (October 2026)
+
+- **Direct Ingestion & Document AI OCR**: Streamlined `/upload` flow to focus directly on real hospital PDF/image ingestion with automated Cloud Document AI OCR extraction and zero dummy presets.
+- **Dashboard-to-Queue Cross-Filtering**: 1-click semantic navigation from Dashboard KPI cards (Claims Audited, Loss Prevented, Manual Review, Auto Approved) and Top 4 Anomaly Vectors directly into the Claims Queue with active filters.
+- **Full-Viewport Backdrop & Case Assistant Focus**: Portaled backdrop blur across `100vw` × `100dvh` with dynamic body scroll lock, ensuring a distraction-free, zero-bleed AI copilot experience.
+- **Streamlined Trend Visualizations**: Clean sparklines without placeholder clutter (`--trend n/a--`) across anomaly vectors.
+- **Light Theme High-Contrast Framing**: Enforced border frames and WCAG AAA contrast across all filter controls, syndicate tables, and network views.
+- **Optimized Document AI Split View**: Removed excessive padding in the claim audit viewer to ensure claimant clinical profiles and evidence bounding boxes render seamlessly without artificial scrolling.

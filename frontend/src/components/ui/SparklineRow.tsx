@@ -99,13 +99,7 @@ export const SparklineRow: React.FC<SparklineRowProps> = ({
               strokeLinejoin="round"
             />
           </svg>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-app-muted/60 select-none">
-            <span className="w-3.5 h-[1px] bg-app-muted/40" />
-            <span>trend n/a</span>
-            <span className="w-3.5 h-[1px] bg-app-muted/40" />
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Right: Percentage Value */}

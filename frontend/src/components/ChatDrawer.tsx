@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MessageSquare, Send, X, Bot, User, Crosshair,
   Sparkles, RefreshCw, AlertCircle
@@ -106,6 +107,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       }, 60);
       return () => clearTimeout(t);
     }
+  }, [isOpen]);
+
+  // Lock body scrolling when drawer is open to prevent underlying page peeking
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
   }, [isOpen]);
 
   const handleClose = React.useCallback(() => {
@@ -235,13 +246,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
 
-  return (
+  const drawerContent = (
     <>
       {/* Backdrop with fade transition */}
       <div
-        className={`fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 ${
+        className={`fixed inset-0 min-h-screen min-h-[100dvh] w-screen bg-black/70 backdrop-blur-sm z-[999] transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
+        style={{ top: 0, bottom: 0, left: 0, right: 0, minHeight: '100dvh', width: '100vw' }}
         onClick={handleClose}
         aria-hidden="true"
       />
@@ -251,9 +263,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Case Assistant Chat"
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-app-surface border-l border-app-border shadow-2xl flex flex-col backdrop-blur-md transition-transform duration-300 ease-out will-change-transform ${
+        className={`fixed inset-y-0 right-0 z-[1000] w-full max-w-lg bg-app-surface border-l border-app-border shadow-2xl flex flex-col backdrop-blur-md transition-transform duration-300 ease-out will-change-transform ${
           isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'
         }`}
+        style={{ top: 0, bottom: 0, minHeight: '100dvh' }}
       >
         {/* Header */}
         <div className="p-4 bg-app-elevated border-b border-app-border flex items-center justify-between">
@@ -436,7 +449,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           </button>
         </form>
       </div>
-    </div>
-  </>
-);
+      </div>
+    </>
+  );
+
+  if (typeof document === 'undefined') {
+    return drawerContent;
+  }
+  return createPortal(drawerContent, document.body);
 };

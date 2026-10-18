@@ -998,7 +998,7 @@ def _map_docai_result_to_claim(
         docai_total_diff = abs(docai_total - ((subtotal or 0.0) + (docai_tax or gem_tax or 0.0))) if (docai_total is not None and subtotal is not None) else 0.0
         gem_total_diff = abs(gem_tot - ((subtotal or 0.0) + (gem_tax or docai_tax or 0.0))) if (gem_tot is not None and subtotal is not None) else 999.0
 
-        if docai_total is not None and docai_total_conf >= 0.8 and not (docai_total_diff >= 10.0 and gem_total_diff <= 1.0):
+        if docai_total is not None and docai_total_conf >= 0.8:
             total_claimed = docai_total
             field_sources["total_claimed"] = "docai"
         elif gem_tot is not None:

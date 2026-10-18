@@ -4,7 +4,8 @@ Audits line item arithmetic, dates, policy caps, and sub-limits.
 Calls deterministic tools for all math and policy clause grounding.
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional, Union
+from datetime import datetime
 from pydantic import BaseModel
 from google.adk.agents import LlmAgent
 
@@ -80,7 +81,7 @@ class PolicyOutput(BaseModel):
     findings: List[Finding]
 
 
-def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
+def analyze_policy_and_arithmetic(claim: Claim, now: Optional[Union[datetime, str]] = None) -> List[Finding]:
     """
     Deterministic specialist runner for Arithmetic & Policy verification.
     Wires all tool execution through the central Tool Registry with Cloud Logging.
@@ -202,15 +203,19 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     # 2. Check Dates
     bill_date = (claim.metadata or {}).get("bill_date") or getattr(claim, "bill_date", None)
     document_dates = (claim.metadata or {}).get("document_dates", [])
+    now_ref = now or (claim.metadata or {}).get("now")
+    date_args = {
+        "admission_ts": claim.admission_ts,
+        "discharge_ts": claim.discharge_ts,
+        "bill_date": bill_date,
+        "document_dates": document_dates,
+        "doc_id": doc_id
+    }
+    if now_ref is not None:
+        date_args["now"] = now_ref
     date_result = call_tool(
         "check_dates",
-        {
-            "admission_ts": claim.admission_ts,
-            "discharge_ts": claim.discharge_ts,
-            "bill_date": bill_date,
-            "document_dates": document_dates,
-            "doc_id": doc_id
-        },
+        date_args,
         claim_id=claim.claim_id,
         agent_name="policy"
     )

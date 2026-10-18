@@ -17,6 +17,13 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, Union, Tuple
 
+try:
+    from zoneinfo import ZoneInfo
+    IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    from datetime import timedelta
+    IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
 
 def parse_flexible_date(date_val: Union[str, datetime, None]) -> Optional[datetime]:
     """
@@ -138,21 +145,39 @@ def parse_flexible_date(date_val: Union[str, datetime, None]) -> Optional[dateti
 
 def is_date_after_reference(
     date_val: Union[str, datetime, None],
-    now: Optional[datetime] = None
+    now: Optional[Union[datetime, str]] = None,
+    tolerance_days: int = 1
 ) -> Tuple[bool, Optional[datetime], datetime]:
     """
-    Checks if a given date string or datetime is in the future relative to `now`.
-    If `now` is None, uses current server time in UTC.
+    Checks if a given date string or datetime is in the future relative to `now`
+    by comparing calendar dates in Asia/Kolkata (IST) with a configurable tolerance (default +1 day).
+    If `now` is None, uses current server time in IST.
     Returns: (is_future, parsed_datetime, reference_now)
     """
-    ref_now = now if now is not None else datetime.now(timezone.utc)
+    if now is not None:
+        if isinstance(now, str):
+            ref_parsed = parse_flexible_date(now)
+            ref_now = ref_parsed if ref_parsed is not None else datetime.now(IST)
+        elif isinstance(now, datetime):
+            ref_now = now
+        else:
+            ref_now = datetime.now(IST)
+    else:
+        ref_now = datetime.now(IST)
+
     if ref_now.tzinfo is None:
-        ref_now = ref_now.replace(tzinfo=timezone.utc)
+        ref_now = ref_now.replace(tzinfo=IST)
+    ref_now_ist = ref_now.astimezone(IST)
+    ref_cal = ref_now_ist.date()
 
     parsed = parse_flexible_date(date_val)
     if not parsed:
-        return False, None, ref_now
+        return False, None, ref_now_ist
 
-    # Compare UTC timestamps
-    is_future = parsed > ref_now
-    return is_future, parsed, ref_now
+    parsed_ist = parsed.astimezone(IST)
+    cand_cal = parsed_ist.date()
+
+    diff_days = (cand_cal - ref_cal).days
+    is_future = diff_days > tolerance_days
+
+    return is_future, parsed, ref_now_ist

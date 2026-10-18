@@ -1272,17 +1272,31 @@ def check_dates(
     document_dates: Optional[List[Any]] = None,
     bill_date: Optional[Union[datetime, str]] = None,
     doc_id: str = "doc_main",
-    now: Optional[datetime] = None
+    now: Optional[Union[datetime, str]] = None
 ) -> Dict[str, Any]:
     """
     Validates chronological sequence of hospitalization admission and discharge,
     and flags future or implausible dates on medical bills against reference audit date.
+    Compares calendar dates in Asia/Kolkata (IST), allowing a +1 day tolerance for timezone differences.
+    Never flags same-day dates regardless of the time of day.
     """
-    from backend.tools.date_utils import parse_flexible_date
+    from backend.tools.date_utils import parse_flexible_date, IST
 
-    ref_now = now if now is not None else datetime.now(timezone.utc)
+    if now is not None:
+        if isinstance(now, str):
+            ref_parsed = parse_flexible_date(now)
+            ref_now = ref_parsed if ref_parsed is not None else datetime.now(IST)
+        elif isinstance(now, datetime):
+            ref_now = now
+        else:
+            ref_now = datetime.now(IST)
+    else:
+        ref_now = datetime.now(IST)
+
     if ref_now.tzinfo is None:
-        ref_now = ref_now.replace(tzinfo=timezone.utc)
+        ref_now = ref_now.replace(tzinfo=IST)
+    ref_now_ist = ref_now.astimezone(IST)
+    ref_calendar_date = ref_now_ist.date()
 
     adm_dt = parse_flexible_date(admission_ts)
     dis_dt = parse_flexible_date(discharge_ts)
@@ -1290,7 +1304,9 @@ def check_dates(
 
     findings: List[Finding] = []
     computed: Dict[str, Any] = {
-        "reference_date": ref_now.isoformat()
+        "reference_date": ref_now_ist.isoformat(),
+        "reference_calendar_date": ref_calendar_date.isoformat(),
+        "timezone": "Asia/Kolkata (IST)"
     }
 
     # 1. Check all candidate dates against reference audit date
@@ -1314,12 +1330,31 @@ def check_dates(
 
     future_finding_emitted = False
     for label, dt_val in dates_to_check:
-        if dt_val > ref_now and not future_finding_emitted:
+        dt_val_ist = dt_val.astimezone(IST)
+        cand_calendar_date = dt_val_ist.date()
+        days_ahead = (cand_calendar_date - ref_calendar_date).days
+
+        # Compare CALENDAR DATES in Asia/Kolkata (IST).
+        # Flag only dates strictly after today (allow +1 day tolerance for timezone differences);
+        # never flag a same-day date regardless of time of day (days_ahead <= 1 is allowed).
+        if days_ahead > 1 and not future_finding_emitted:
             future_finding_emitted = True
-            days_ahead = (dt_val - ref_now).days
-            is_extreme_future = dt_val.year >= 2030 or days_ahead > 365
+            is_extreme_future = cand_calendar_date.year >= 2030 or days_ahead > 365
             sev = Severity.CRITICAL if is_extreme_future else Severity.HIGH
-            chip = f"Future date: {dt_val.strftime('%d-%b-%Y')}"
+            chip = f"Future date: {cand_calendar_date.strftime('%d-%b-%Y')}"
+
+            # Format field label: "discharge_date" -> "Discharge date", "bill_date" -> "Bill date"
+            label_pretty = label.replace("_", " ").capitalize()
+            explanation = (
+                f"{label_pretty} {cand_calendar_date.strftime('%d-%b-%Y')} "
+                f"is after today ({ref_calendar_date.strftime('%d-%b-%Y')}, IST). "
+                f"Hospitalization or bill dates occurring in the future represent an impossible timeline for an authentic claim."
+            )
+
+            evidence_quote = (
+                f"Parsed date: {dt_val.isoformat()} ({cand_calendar_date.isoformat()}) | "
+                f"Reference date: {ref_now_ist.isoformat()} ({ref_calendar_date.isoformat()}, IST)"
+            )
 
             findings.append(Finding(
                 finding_id="F-DATE-FUTURE",
@@ -1327,23 +1362,22 @@ def check_dates(
                 check_id="FUTURE_OR_IMPLAUSIBLE_DATE",
                 severity=sev,
                 title="Future or Implausible Date on Medical Bill",
-                explanation=(
-                    f"Medical bill {label.replace('_', ' ')} ({dt_val.strftime('%d-%b-%Y')}) "
-                    f"is dated in the future relative to server reference audit date ({ref_now.strftime('%d-%b-%Y')}). "
-                    f"Hospitalization or bill dates occurring in the future represent an impossible timeline for an authentic claim."
-                ),
+                explanation=explanation,
                 evidence=[Evidence(
                     doc_id=doc_id,
                     page=1,
-                    quote=f"Parsed date: {dt_val.isoformat()} | Reference date: {ref_now.isoformat()}"
+                    quote=evidence_quote
                 )],
                 confidence=1.0,
                 computed_chip=chip,
                 computed_details={
                     "parsed_date": dt_val.isoformat(),
-                    "reference_date": ref_now.isoformat(),
+                    "parsed_calendar_date": cand_calendar_date.isoformat(),
+                    "reference_date": ref_now_ist.isoformat(),
+                    "reference_calendar_date": ref_calendar_date.isoformat(),
                     "diff_days": days_ahead,
-                    "field": label
+                    "field": label,
+                    "timezone": "Asia/Kolkata (IST)"
                 }
             ))
 
@@ -1647,7 +1681,8 @@ FUNCTION_DECLARATIONS = [
                 "admission_ts": {"type": "STRING", "description": "Admission ISO timestamp"},
                 "discharge_ts": {"type": "STRING", "description": "Discharge ISO timestamp"},
                 "bill_date": {"type": "STRING", "description": "Printed bill or invoice date"},
-                "document_dates": {"type": "ARRAY", "items": {"type": "OBJECT"}, "description": "Additional document dates"}
+                "document_dates": {"type": "ARRAY", "items": {"type": "OBJECT"}, "description": "Additional document dates"},
+                "now": {"type": "STRING", "description": "Optional reference audit date (ISO or flexible date string) for deterministic date checking"}
             },
             "required": []
         }

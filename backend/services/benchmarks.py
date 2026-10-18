@@ -66,12 +66,12 @@ class CategoryBenchmark:
         """
         Effective upper band for unit price:
         - For robust category benchmarks (n >= 30, exact): unit_price_p95 * 1.25
-        - For global fallback or thin sample (n < 30): max(unit_price_p95 * 1.35, unit_price_p50 * 2.0)
+        - For global fallback or thin sample (n < 30): max(unit_price_p95 * 1.50, unit_price_p50 * 2.0)
         """
         if self.sample_count >= 30 and self.fallback_level == "exact":
             return round(self.unit_price_p95 * 1.25, 2)
         else:
-            return round(max(self.unit_price_p95 * 1.35, self.unit_price_p50 * 2.0), 2)
+            return round(max(self.unit_price_p95 * 1.50, self.unit_price_p50 * 2.0), 2)
 
     @property
     def widened_amount_upper_band(self) -> float:
@@ -79,7 +79,7 @@ class CategoryBenchmark:
         if self.sample_count >= 30 and self.fallback_level == "exact":
             return round(self.amount_p95 * 1.25, 2)
         else:
-            return round(max(self.amount_p95 * 1.35, self.amount_p50 * 1.60), 2)
+            return round(max(self.amount_p95 * 1.50, self.amount_p50 * 1.60), 2)
 
 
 class BenchmarkService:

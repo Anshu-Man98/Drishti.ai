@@ -32,7 +32,13 @@ async def get_current_user(
 
     # 1. Dev token escape hatch: enabled only when settings.ALLOW_DEV_TOKENS is True
     if settings.ALLOW_DEV_TOKENS:
-        if token in ("dev-token", "test-token", "adjuster-token") or token.startswith("adjuster-") or token.startswith("test-"):
+        if (
+            token in ("dev-token", "test-token", "adjuster-token", "judge-token")
+            or token.startswith("adjuster-")
+            or token.startswith("test-")
+            or token.startswith("dev-")
+            or token.startswith("judge-")
+        ):
             role = "viewer" if "viewer" in token else "adjuster"
             return {
                 "uid": f"usr-{role}-dev",

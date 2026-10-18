@@ -363,7 +363,7 @@ def score_findings(findings: List[Finding], ml_probability: Optional[float] = No
     elif risk_score < 30:
         if has_failed_agent:
             verdict = Verdict.REVIEW
-            risk_score = max(risk_score, 30)
+            risk_score = max(risk_score, 45)
         elif has_learned_pattern_match:
             verdict = Verdict.REVIEW
             risk_score = max(risk_score, 65)

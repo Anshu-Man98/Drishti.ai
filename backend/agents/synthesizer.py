@@ -201,7 +201,8 @@ def synthesize_dossier(
     dossier_status = "incomplete" if is_incomplete else "complete"
     if is_incomplete:
         has_deception_fraud = any(
-            f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
+            (f.agent == AgentName.INJECTION and f.severity == Severity.CRITICAL) or
+            (f.severity in (Severity.HIGH, Severity.CRITICAL) and f.check_id in (
                 "EXACT_DUPLICATE_BILL",
                 "CROSS_INSURER_DUPLICATE_CLAIM",
                 "issued_doc_tampered",
@@ -213,8 +214,9 @@ def synthesize_dossier(
                 "SUBTOTAL_SUM_MISMATCH",
                 "TOTAL_PAYABLE_MISMATCH",
                 "SUSPICIOUS_PRODUCER_METADATA",
-                "PROMPT_INJECTION_DETECTED"
-            )
+                "PROMPT_INJECTION_DETECTED",
+                "hidden_text_instruction"
+            ))
             for f in all_findings
         )
         if not has_deception_fraud:

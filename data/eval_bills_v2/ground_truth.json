@@ -110,5 +110,26 @@
       "SUBTOTAL_SUM_MISMATCH",
       "TOTAL_PAYABLE_MISMATCH"
     ]
+  },
+  "uti_bill_with_total": {
+    "file": "data/eval_bills_v3/bill_01_uti_dehradun.pdf",
+    "expected_verdict": "approve",
+    "expected_risk_max": 29,
+    "forbidden_findings": [
+      "EXTRACTION_INCOMPLETE",
+      "TOTAL_PAYABLE_MISMATCH"
+    ]
+  },
+  "uti_bill_without_total": {
+    "file": "data/eval_bills_v3/bill_01b_uti_no_total.pdf",
+    "expected_verdict": "review",
+    "expected_status": "incomplete",
+    "expected_risk_min": 45,
+    "required_findings": [
+      "EXTRACTION_INCOMPLETE"
+    ],
+    "forbidden_findings": [
+      "TOTAL_PAYABLE_MISMATCH"
+    ]
   }
 }

@@ -270,6 +270,48 @@ EVAL_CASES = {
             LineItem(description="Special Veg Dum Biryani", qty=2, unit_price=400.0, amount=800.0, page=1, source="form"),
         ]
     ),
+    "uti_bill_with_total": Claim(
+        claim_id="CLM-EVAL-UTI-WITH-TOTAL",
+        diagnosis_code="N39.0",
+        policy_id="POL-STAR-88123",
+        claimant=Claimant(claimant_id="CLMNT-DDN-1", name="Amit Sharma", phone="9876543213", bank_account_hash="h4"),
+        provider=Provider(hospital_id="HOSP-DDN-1", name="Doon Valley Hospital", city="Dehradun"),
+        admission_ts="2026-10-15T10:00:00",
+        discharge_ts="2026-10-17T11:00:00",
+        subtotal=9100.0,
+        tax=455.0,
+        total_claimed=9555.0,
+        field_sources={"total_claimed": "form"},
+        metadata={"has_printed_total": True},
+        line_items=[
+            LineItem(description="Ward bed charges", qty=2, unit_price=2200.0, amount=4400.0, page=1, source="form"),
+            LineItem(description="Consultation", qty=2, unit_price=500.0, amount=1000.0, page=1, source="form"),
+            LineItem(description="Urine culture", qty=1, unit_price=700.0, amount=700.0, page=1, source="form"),
+            LineItem(description="IV antibiotics", qty=6, unit_price=300.0, amount=1800.0, page=1, source="form"),
+            LineItem(description="Ultrasound abdomen", qty=1, unit_price=1200.0, amount=1200.0, page=1, source="form"),
+        ]
+    ),
+    "uti_bill_without_total": Claim(
+        claim_id="CLM-EVAL-UTI-NO-TOTAL",
+        diagnosis_code="N39.0",
+        policy_id="POL-STAR-88123",
+        claimant=Claimant(claimant_id="CLMNT-DDN-1", name="Amit Sharma", phone="9876543213", bank_account_hash="h4"),
+        provider=Provider(hospital_id="HOSP-DDN-1", name="Doon Valley Hospital", city="Dehradun"),
+        admission_ts="2026-10-15T10:00:00",
+        discharge_ts="2026-10-17T11:00:00",
+        subtotal=9100.0,
+        tax=455.0,
+        total_claimed=9555.0,
+        field_sources={"total_claimed": "derived"},
+        metadata={"has_printed_total": False, "derived_total": 9555.0, "extraction_incomplete": True},
+        line_items=[
+            LineItem(description="Ward bed charges", qty=2, unit_price=2200.0, amount=4400.0, page=1, source="form"),
+            LineItem(description="Consultation", qty=2, unit_price=500.0, amount=1000.0, page=1, source="form"),
+            LineItem(description="Urine culture", qty=1, unit_price=700.0, amount=700.0, page=1, source="form"),
+            LineItem(description="IV antibiotics", qty=6, unit_price=300.0, amount=1800.0, page=1, source="form"),
+            LineItem(description="Ultrasound abdomen", qty=1, unit_price=1200.0, amount=1200.0, page=1, source="form"),
+        ]
+    ),
 }
 
 

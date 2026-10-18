@@ -15,6 +15,24 @@
     "expected_max_risk": 28,
     "is_photo": false
   },
+  "bill_01b_uti_no_total.pdf": {
+    "claim_id": "CLM-V3-01B-UTI-NO-TOTAL",
+    "hospital_name": "Doon Valley Hospital",
+    "city": "Dehradun",
+    "diagnosis_code": "N39.0",
+    "patient_name": "Amit Sharma",
+    "subtotal": 9100.0,
+    "tax": 455.0,
+    "total_amount": 9555.0,
+    "first_row_qty": 2,
+    "first_row_price": 2200.0,
+    "first_row_amount": 4400.0,
+    "has_printed_total": false,
+    "expected_verdict": "REVIEW",
+    "expected_status": "incomplete",
+    "expected_min_risk": 45,
+    "is_photo": false
+  },
   "bill_02_fracture_indore.pdf": {
     "claim_id": "CLM-V3-02-FRACTURE",
     "hospital_name": "Indore Ortho & Trauma Centre",

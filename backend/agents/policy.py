@@ -126,6 +126,14 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     sub_evidence = locate_field(doc_id, "subtotal", claim)
     tot_evidence = locate_field(doc_id, "total_claimed", claim)
 
+    has_printed_total = claim.metadata.get("has_printed_total") if claim.metadata else None
+    total_source = claim.field_sources.get("total_claimed") if claim.field_sources else None
+    if total_source == "derived":
+        has_printed_total = False
+    elif total_source in ("docai", "gemini", "layout", "form"):
+        if has_printed_total is None:
+            has_printed_total = True
+
     math_result = call_tool(
         "validate_arithmetic",
         {
@@ -136,7 +144,9 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
             "doc_id": doc_id,
             "subtotal_bbox": sub_evidence.bbox if sub_evidence else None,
             "total_bbox": tot_evidence.bbox if tot_evidence else None,
-            "extraction_incomplete": bool(claim.metadata.get("extraction_incomplete", False)) if claim.metadata else False
+            "extraction_incomplete": bool(claim.metadata.get("extraction_incomplete", False)) if claim.metadata else False,
+            "has_printed_total": has_printed_total,
+            "total_source": total_source
         },
         claim_id=claim.claim_id,
         agent_name="policy"

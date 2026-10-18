@@ -77,7 +77,9 @@ def validate_arithmetic(
     page: int = 1,
     subtotal_bbox: Optional[List[float]] = None,
     total_bbox: Optional[List[float]] = None,
-    extraction_incomplete: bool = False
+    extraction_incomplete: bool = False,
+    has_printed_total: Optional[bool] = None,
+    total_source: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Validates line item products, line item sums, and invoice total amount.
@@ -97,47 +99,51 @@ def validate_arithmetic(
         calc_sub_rupees = to_rupees(calc_sub_paise)
         sub_rupees = subtotal if subtotal is not None else 0.0
         diff_rupees = abs(calc_sub_rupees - sub_rupees)
-        findings.append(Finding(
-            finding_id="F-EXTRACTION-INCOMPLETE",
-            agent=AgentName.POLICY,
-            check_id="EXTRACTION_INCOMPLETE",
-            severity=Severity.HIGH,
-            title="Extraction Incomplete: Itemized charges do not reconcile with subtotal",
-            explanation=(
-                f"Extracted line items sum to ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "
-                f"₹{sub_rupees:,.2f}. The document's itemized breakdown could not be completely parsed."
-            ),
-            evidence=[Evidence(
-                doc_id=doc_id,
-                page=page,
-                bbox=subtotal_bbox,
-                quote=f"Extracted sum: ₹{calc_sub_rupees:,.2f}, Printed subtotal: ₹{sub_rupees:,.2f}"
-            )],
-            confidence=0.95,
-            computed_chip=f"Extraction incomplete (Δ ₹{diff_rupees:,.0f})",
-            computed_details={
-                "extracted_sum": calc_sub_rupees,
-                "printed_subtotal": sub_rupees,
-                "discrepancy": diff_rupees
+        if diff_rupees > 1.0:
+            findings.append(Finding(
+                finding_id="F-EXTRACTION-INCOMPLETE",
+                agent=AgentName.POLICY,
+                check_id="EXTRACTION_INCOMPLETE",
+                severity=Severity.HIGH,
+                title="Extraction Incomplete: Itemized charges do not reconcile with subtotal",
+                explanation=(
+                    f"Extracted line items sum to ₹{calc_sub_rupees:,.2f}, but the printed subtotal is "
+                    f"₹{sub_rupees:,.2f}. The document's itemized breakdown could not be completely parsed."
+                ),
+                evidence=[Evidence(
+                    doc_id=doc_id,
+                    page=page,
+                    bbox=subtotal_bbox,
+                    quote=f"Extracted sum: ₹{calc_sub_rupees:,.2f}, Printed subtotal: ₹{sub_rupees:,.2f}"
+                )],
+                confidence=0.95,
+                computed_chip=f"Extraction incomplete (Δ ₹{diff_rupees:,.0f})",
+                computed_details={
+                    "extracted_sum": calc_sub_rupees,
+                    "printed_subtotal": sub_rupees,
+                    "discrepancy": diff_rupees
+                }
+            ))
+            return {
+                "status": "incomplete",
+                "findings": findings,
+                "discrepancy_rupees": diff_rupees,
+                "computed": {
+                    "calculated_subtotal_paise": calc_sub_paise,
+                    "stated_subtotal_paise": stated_subtotal_paise,
+                    "stated_tax_paise": stated_tax_paise,
+                    "stated_total_paise": stated_total_paise,
+                    "extraction_incomplete": True
+                }
             }
-        ))
-        return {
-            "status": "incomplete",
-            "findings": findings,
-            "discrepancy_rupees": diff_rupees,
-            "computed": {
-                "calculated_subtotal_paise": calc_sub_paise,
-                "stated_subtotal_paise": stated_subtotal_paise,
-                "stated_tax_paise": stated_tax_paise,
-                "stated_total_paise": stated_total_paise,
-                "extraction_incomplete": True
-            }
-        }
 
 
     # Check whether printed subtotal and total exist
     has_printed_subtotal = (subtotal is not None and float(subtotal) > 0)
-    has_printed_total = (total is not None and float(total) > 0)
+    if has_printed_total is None:
+        has_printed_total = (total is not None and float(total) > 0 and total_source != "derived")
+    if total_source == "derived":
+        has_printed_total = False
 
     # Calculate sum of claimed line amounts
     calculated_subtotal_paise = sum(to_paise(item.get("amount", 0.0)) for item in line_items)
@@ -232,18 +238,29 @@ def validate_arithmetic(
                 ))
 
     # 2. Check for missing printed totals (extraction / incompleteness issue)
+    derived_total = None
+    derived_total_paise = None
     if not has_printed_total:
+        derived_total_paise = (stated_subtotal_paise + stated_tax_paise) if (has_printed_subtotal or stated_subtotal_paise > 0) else (calculated_subtotal_paise + stated_tax_paise)
+        derived_total = to_rupees(derived_total_paise)
         findings.append(Finding(
             finding_id="F-MATH-MISSING-TOTAL",
             agent=AgentName.POLICY,
             check_id="EXTRACTION_INCOMPLETE",
             severity=Severity.LOW,
-            title="EXTRACTION_INCOMPLETE: no printed total",
-            explanation="The submitted invoice does not contain a recognizable printed total amount payable.",
-            evidence=[Evidence(doc_id=doc_id, page=page, quote="Missing printed total amount on invoice")],
+            title="EXTRACTION_INCOMPLETE: no printed total on invoice",
+            explanation=f"No printed total found; derived total ₹{derived_total:,.2f} from subtotal + tax",
+            evidence=[Evidence(doc_id=doc_id, page=page, bbox=total_bbox, quote=f"Subtotal ₹{to_rupees(stated_subtotal_paise or calculated_subtotal_paise):,.2f} + Tax ₹{to_rupees(stated_tax_paise):,.2f} = Derived ₹{derived_total:,.2f}")],
             confidence=0.95,
-            computed_chip="EXTRACTION_INCOMPLETE: no printed total",
-            computed_details={"status": "incomplete", "missing_field": "total"}
+            computed_chip=f"Derived total: ₹{derived_total:,.0f}",
+            computed_details={
+                "status": "incomplete",
+                "missing_field": "total_claimed",
+                "derived_total": derived_total,
+                "derived_total_paise": derived_total_paise,
+                "subtotal": sub_rupees,
+                "tax": tax_rupees
+            }
         ))
 
     if not has_printed_subtotal and len(line_items) == 0:
@@ -356,6 +373,9 @@ def validate_arithmetic(
         "stated_tax": tax,
         "stated_total": total,
         "expected_total": to_rupees(expected_total_paise),
+        "derived_total": derived_total,
+        "derived_total_paise": derived_total_paise,
+        "has_printed_total": has_printed_total,
         "difference": diff_rupees,
         "subtotal_diff": to_rupees(subtotal_diff_paise),
         "total_diff": to_rupees(total_diff_paise),

@@ -109,10 +109,11 @@ def draw_clean_bill_pdf(
     c.drawString(x_desc, y, tax_label)
     c.drawString(x_total, y, f"{tax_amount:,.2f}")
 
-    y -= 20
-    c.setFont(f"{font_name}-Bold" if f"{font_name}-Bold" in c.getAvailableFonts() else font_name, 11)
-    c.drawString(x_desc, y, total_label)
-    c.drawString(x_total, y, f"{total_amount:,.2f}")
+    if total_label:
+        y -= 20
+        c.setFont(f"{font_name}-Bold" if f"{font_name}-Bold" in c.getAvailableFonts() else font_name, 11)
+        c.drawString(x_desc, y, total_label)
+        c.drawString(x_total, y, f"{total_amount:,.2f}")
 
     # Footer note
     y -= 40
@@ -193,6 +194,52 @@ def main():
         "first_row_amount": 4400.0,
         "expected_verdict": "APPROVE",
         "expected_max_risk": 28,
+        "is_photo": False
+    }
+
+    # 1b. UTI bill with NO printed total line (eval pair: with and without total)
+    p1b = OUT_DIR / "bill_01b_uti_no_total.pdf"
+    draw_clean_bill_pdf(
+        out_path=p1b,
+        hospital_name="Doon Valley Hospital",
+        hospital_address="Rajpur Road, Dehradun, Uttarakhand - 248001",
+        bill_no="INV-DDN-2026-104B",
+        bill_date="17-Oct-2026",
+        patient_name="Amit Sharma",
+        patient_id="UHID-DDN-4012",
+        policy_no="POL-STAR-88123",
+        admission_str="15-Oct-2026 10:00",
+        discharge_str="17-Oct-2026 11:00",
+        diagnosis_code="N39.0",
+        diagnosis_desc="Urinary tract infection, site not specified",
+        line_items=uti_items,
+        subtotal=subtotal_1,
+        tax_rate_pct=5.0,
+        tax_amount=tax_1,
+        total_amount=tot_1,
+        font_name="Helvetica",
+        col_x=(45, 320, 370, 470),
+        col_headers=("Description", "Qty", "Price", "Total"),
+        subtotal_label="Sub-total",
+        tax_label="GST @ 5%",
+        total_label=None,  # NO printed total
+    )
+    bills_meta["bill_01b_uti_no_total.pdf"] = {
+        "claim_id": "CLM-V3-01B-UTI-NO-TOTAL",
+        "hospital_name": "Doon Valley Hospital",
+        "city": "Dehradun",
+        "diagnosis_code": "N39.0",
+        "patient_name": "Amit Sharma",
+        "subtotal": subtotal_1,
+        "tax": tax_1,
+        "total_amount": tot_1,
+        "first_row_qty": 2,
+        "first_row_price": 2200.0,
+        "first_row_amount": 4400.0,
+        "has_printed_total": False,
+        "expected_verdict": "REVIEW",
+        "expected_status": "incomplete",
+        "expected_min_risk": 45,
         "is_photo": False
     }
 

@@ -180,14 +180,20 @@ def analyze_policy_and_arithmetic(claim: Claim) -> List[Finding]:
     findings.extend(stay_result.get("findings", []))
 
     # 4. Validate GST Tax Rates against healthcare rules
+    tax_args = {
+        "subtotal": claim.subtotal or 0.0,
+        "tax": claim.tax or 0.0,
+        "line_items": line_items_dict,
+        "doc_id": doc_id
+    }
+    if claim.metadata and "expected_tax_rates" in claim.metadata:
+        tax_args["expected_rates"] = claim.metadata["expected_tax_rates"]
+    elif claim.metadata and "expected_rate" in claim.metadata:
+        tax_args["expected_rates"] = claim.metadata["expected_rate"]
+
     tax_result = call_tool(
         "validate_tax_rates",
-        {
-            "subtotal": claim.subtotal or 0.0,
-            "tax": claim.tax or 0.0,
-            "line_items": line_items_dict,
-            "doc_id": doc_id
-        },
+        tax_args,
         claim_id=claim.claim_id,
         agent_name="policy"
     )

@@ -629,27 +629,71 @@ def check_room_days_vs_stay(
     }
 
 
+VALID_GST_RATES = {0.0, 0.05, 0.12, 0.18, 0.28}
+DEFAULT_EXPECTED_HEALTHCARE_RATES = {0.05, 0.0}
+
+
 def validate_tax_rates(
     subtotal: float,
     tax: float,
     line_items: Optional[List[Dict[str, Any]]] = None,
-    doc_id: str = "doc_main"
+    doc_id: str = "doc_main",
+    expected_rates: Optional[Union[float, List[float], Set[float]]] = None,
+    valid_rates: Optional[Union[List[float], Set[float]]] = None
 ) -> Dict[str, Any]:
     """
-    Validates printed GST rate against documented healthcare GST category rules.
-    Standard Indian inpatient composite hospital bill rate is 5.0% (or 0.0% exempt).
-    Flags divergent rates (such as 18.0% commercial rate levied on hospital stay).
-    Never flags a bill whose tax matches the configured 5% or 0% rates.
+    Validates printed GST rate against configurable expected GST rate table (standard rates: 0%, 5%, 12%, 18%, 28%).
+    Default expected rate for healthcare is 5.0% (or 0.0% exempt) unless line items or arguments specify otherwise.
+    Severity scales based on excess tax in integer paise:
+      - low if excess < max(₹200, 0.5% of total) -> stays informational
+      - medium if excess >= max(₹200, 0.5% of total)
+      - high if excess >= 5% of total OR if printed rate is not in the valid configured rates table
     """
     sub_paise = to_paise(subtotal)
     tax_paise = to_paise(tax)
+
+    # Normalize valid rates set
+    if valid_rates is not None:
+        if isinstance(valid_rates, (int, float)):
+            valid_set = {float(valid_rates) if valid_rates <= 1.0 else float(valid_rates) / 100.0}
+        else:
+            valid_set = {float(r) if r <= 1.0 else float(r) / 100.0 for r in valid_rates}
+    else:
+        valid_set = set(VALID_GST_RATES)
+
+    # Normalize expected rates set
+    if expected_rates is not None:
+        if isinstance(expected_rates, (int, float)):
+            exp_set = {float(expected_rates) if expected_rates <= 1.0 else float(expected_rates) / 100.0}
+        else:
+            exp_set = {float(r) if r <= 1.0 else float(r) / 100.0 for r in expected_rates}
+        if 0.0 not in exp_set:
+            exp_set.add(0.0)
+    else:
+        # Check if line_items have explicit tax rate annotations
+        item_rates = set()
+        if line_items:
+            for it in line_items:
+                r = it.get("tax_rate") or it.get("gst_rate")
+                if r is not None:
+                    try:
+                        rf = float(r)
+                        item_rates.add(rf if rf <= 1.0 else rf / 100.0)
+                    except (ValueError, TypeError):
+                        pass
+        if item_rates:
+            exp_set = item_rates
+            exp_set.add(0.0)
+        else:
+            exp_set = set(DEFAULT_EXPECTED_HEALTHCARE_RATES)
 
     computed = {
         "stated_subtotal": subtotal,
         "stated_tax": tax,
         "subtotal_paise": sub_paise,
         "tax_paise": tax_paise,
-        "configured_expected_rates": [0.05, 0.00]
+        "configured_expected_rates": [0.05, 0.0] if exp_set == {0.05, 0.0} else sorted(list(exp_set), reverse=True),
+        "configured_valid_rates": sorted(list(valid_set))
     }
 
     if sub_paise <= 0 or tax_paise <= 0:
@@ -657,18 +701,23 @@ def validate_tax_rates(
             "valid": True,
             "findings": [],
             "computed": computed,
-            "chip": "GST: Exempt / Zero"
+            "chip": "GST: Exempt / Zero (Compliant)"
         }
 
     effective_rate = tax_paise / float(sub_paise)
     computed["effective_tax_rate"] = round(effective_rate, 4)
     computed["effective_tax_pct"] = round(effective_rate * 100.0, 2)
 
-    matches_5pct = abs(effective_rate - 0.05) <= 0.005
-    matches_0pct = abs(effective_rate - 0.00) <= 0.005
+    # Check match against configured expected rates (within +-100 paise / +-1.0 INR rounding)
+    matched_exp_rate = None
+    for er in sorted(exp_set):
+        expected_p = int(round(sub_paise * er))
+        if abs(tax_paise - expected_p) <= 100:
+            matched_exp_rate = er
+            break
 
-    if matches_5pct or matches_0pct:
-        matched_str = "5.0%" if matches_5pct else "0.0%"
+    if matched_exp_rate is not None:
+        matched_str = f"{matched_exp_rate * 100:.1f}%"
         return {
             "valid": True,
             "findings": [],
@@ -676,15 +725,79 @@ def validate_tax_rates(
             "chip": f"GST: {matched_str} (Compliant)"
         }
 
-    expected_tax_5pct_paise = int(round(sub_paise * 0.05))
-    discrepancy_paise = abs(tax_paise - expected_tax_5pct_paise)
-    discrepancy_rupees = to_rupees(discrepancy_paise)
+    # Determine primary expected rate to compute excess against
+    non_zero_exp = [r for r in exp_set if r > 0]
+    if 0.05 in exp_set:
+        target_expected_rate = 0.05
+    elif non_zero_exp:
+        target_expected_rate = min(non_zero_exp, key=lambda r: abs(effective_rate - r))
+    else:
+        target_expected_rate = 0.05
 
-    computed["tax_discrepancy_paise"] = discrepancy_paise
-    computed["tax_discrepancy_rupees"] = discrepancy_rupees
+    expected_tax_paise = int(round(sub_paise * target_expected_rate))
+    excess_tax_paise = abs(tax_paise - expected_tax_paise)
+    excess_tax_rupees = to_rupees(excess_tax_paise)
 
-    chip = f"GST mismatch: {effective_rate*100:.1f}% vs 5.0% (Δ ₹{discrepancy_rupees:,.0f})"
-    sev = Severity.MEDIUM if discrepancy_rupees >= 1000.0 else Severity.LOW
+    total_paise = sub_paise + tax_paise
+    total_rupees = to_rupees(total_paise)
+
+    # Is printed rate in the valid standard GST rates table?
+    is_in_valid_rates = any(abs(effective_rate - vr) <= 0.005 for vr in valid_set)
+
+    # Thresholds:
+    # low if excess < max(₹200, 0.5% of total) -> stays informational
+    # medium if excess >= max(₹200, 0.5% of total)
+    # high if excess >= 5% of total OR if printed rate is not in valid configured rates table
+    threshold_low_medium = max(200.0, 0.005 * total_rupees)
+    threshold_high = 0.05 * total_rupees
+
+    if not is_in_valid_rates:
+        sev = Severity.HIGH
+    elif excess_tax_rupees >= threshold_high:
+        sev = Severity.HIGH
+    elif excess_tax_rupees >= threshold_low_medium:
+        sev = Severity.MEDIUM
+    else:
+        sev = Severity.LOW
+
+    computed["expected_tax_rate"] = target_expected_rate
+    computed["expected_tax_pct"] = round(target_expected_rate * 100.0, 2)
+    computed["expected_tax_paise"] = expected_tax_paise
+    computed["expected_tax_rupees"] = to_rupees(expected_tax_paise)
+    computed["excess_tax_paise"] = excess_tax_paise
+    computed["excess_tax_rupees"] = excess_tax_rupees
+    computed["tax_discrepancy_paise"] = excess_tax_paise
+    computed["tax_discrepancy_rupees"] = excess_tax_rupees
+    computed["total_rupees"] = total_rupees
+    computed["total_paise"] = total_paise
+    computed["threshold_low_medium"] = threshold_low_medium
+    computed["threshold_high"] = threshold_high
+    computed["is_in_valid_rates"] = is_in_valid_rates
+
+    chip = f"GST mismatch: {effective_rate*100:.1f}% vs {target_expected_rate*100:.1f}% (Δ ₹{excess_tax_rupees:,.0f})"
+
+    if not is_in_valid_rates:
+        title = "Printed GST Rate Inconsistent with Standard Tax Slabs"
+        exp_text = (
+            f"Printed tax of ₹{tax:,.2f} on subtotal ₹{subtotal:,.2f} represents an effective tax rate of "
+            f"{effective_rate*100:.1f}%. This rate does not correspond to any valid GST slab (0%, 5%, 12%, 18%, 28%). "
+            f"Excess tax amount is ₹{excess_tax_rupees:,.2f}."
+        )
+    elif sev == Severity.LOW:
+        title = "Minor GST Rounding Discrepancy"
+        exp_text = (
+            f"Printed tax of ₹{tax:,.2f} on subtotal ₹{subtotal:,.2f} represents an effective tax rate of "
+            f"{effective_rate*100:.1f}% vs expected {target_expected_rate*100:.1f}%. "
+            f"Excess tax amount is ₹{excess_tax_rupees:,.2f}, within minor rounding threshold < max(₹200, 0.5% of total)."
+        )
+    else:
+        title = "Printed GST Rate Inconsistent with Healthcare Category Rules"
+        exp_text = (
+            f"Printed tax of ₹{tax:,.2f} on subtotal ₹{subtotal:,.2f} represents an effective tax rate of "
+            f"{effective_rate*100:.1f}%. Under Indian GST rules, healthcare inpatient composite hospital supplies "
+            f"are standard-rated at 5.0% (Notification 11/2022-CT(R)) or exempt (0.0%). "
+            f"An applied rate of {effective_rate*100:.1f}% indicates excessive tax levy of ₹{excess_tax_rupees:,.2f}."
+        )
 
     findings = [
         Finding(
@@ -692,13 +805,8 @@ def validate_tax_rates(
             agent=AgentName.POLICY,
             check_id="TAX_RATE_MISMATCH",
             severity=sev,
-            title="Printed GST Rate Inconsistent with Healthcare Category Rules",
-            explanation=(
-                f"Printed tax of ₹{tax:,.2f} on subtotal ₹{subtotal:,.2f} represents an effective tax rate of "
-                f"{effective_rate*100:.1f}%. Under Indian GST rules, healthcare inpatient composite hospital supplies "
-                f"are standard-rated at 5.0% (Notification 11/2022-CT(R)) or exempt (0.0%). "
-                f"An applied rate of {effective_rate*100:.1f}% indicates excessive tax levy or misclassified commercial tariff."
-            ),
+            title=title,
+            explanation=exp_text,
             evidence=[Evidence(
                 doc_id=doc_id,
                 page=1,

@@ -99,6 +99,66 @@ class DatabaseService:
                 retryable=True
             )
 
+    CATEGORY_MAPPINGS = {
+        "Arithmetic & Math Mismatches": ["MATH", "SUBTOTAL", "SUM", "ARITH", "TOTAL_PAYABLE"],
+        "Policy Limit & Benchmark Breaches": ["ROOM_RENT", "CAP", "BENCHMARK", "UNBUNDLE", "CO_PAY"],
+        "Spacetime & Teleportation Anomalies": ["SPACETIME", "TRAVEL", "TELEPORT", "IMPOSSIBLE"],
+        "Cross-Insurer & Syndicate Rings": ["DUPLICATE", "CROSS_INSURER", "FRAUD_RING", "SHARED_BANK"],
+        "Document Forgery & Tampering": ["FONT", "METADATA", "ELA", "COMPRESSION", "TAMPER"],
+        "Prompt Injection Attacks": ["INJECTION", "HIDDEN_TEXT"],
+        "BQML Anomaly Outliers": ["BQML", "ANOMALY", "ML"],
+    }
+
+    @classmethod
+    def _claim_matches_category(cls, dossier_data: Optional[Dict[str, Any]], target_category: str) -> bool:
+        if not dossier_data or not target_category:
+            return False
+        cat_lower = target_category.strip().lower()
+
+        # Match all anomalies (e.g. "all_anomalies", "all anomalies")
+        if cat_lower in ("all_anomalies", "all anomalies", "anomalies", "all-anomalies"):
+            for f in dossier_data.get("findings", []):
+                sev = (f.get("severity") or "").lower()
+                if sev == "info":
+                    continue
+                ch = f"{f.get('check_id') or ''} {f.get('category') or ''} {f.get('title') or ''}".upper()
+                if any(noise in ch for noise in ["UNGROUNDED", "INTERNAL", "DOCUMENT_UNREADABLE"]):
+                    continue
+                for keywords in cls.CATEGORY_MAPPINGS.values():
+                    if any(k in ch for k in keywords):
+                        return True
+            return False
+
+        # Specific category keyword match
+        target_keywords = None
+        for cat_name, keywords in cls.CATEGORY_MAPPINGS.items():
+            if cat_lower == cat_name.lower() or cat_lower in cat_name.lower() or cat_name.lower() in cat_lower:
+                target_keywords = keywords
+                break
+
+        if target_keywords:
+            for f in dossier_data.get("findings", []):
+                sev = (f.get("severity") or "").lower()
+                if sev == "info":
+                    continue
+                ch = f"{f.get('check_id') or ''} {f.get('category') or ''} {f.get('title') or ''}".upper()
+                if any(noise in ch for noise in ["UNGROUNDED", "INTERNAL", "DOCUMENT_UNREADABLE"]):
+                    continue
+                if any(k in ch for k in target_keywords):
+                    return True
+            return False
+
+        # Substring fallback
+        cat_upper = target_category.strip().upper()
+        for f in dossier_data.get("findings", []):
+            sev = (f.get("severity") or "").lower()
+            if sev == "info":
+                continue
+            ch = f"{f.get('check_id') or ''} {f.get('category') or ''} {f.get('title') or ''}".upper()
+            if cat_upper in ch:
+                return True
+        return False
+
     def list_claims_paged(
         self,
         limit: int = 50,
@@ -109,6 +169,7 @@ class DatabaseService:
         search: Optional[str] = None,
         include_synthetic: bool = False,
         exclude_synthetic: Optional[bool] = None,
+        category: Optional[str] = None,
     ) -> tuple[List[ClaimSummary], int]:
         try:
             docs = self._call_fs(lambda: list(self.client.collection("claims").stream()), timeout=20.0)
@@ -195,6 +256,13 @@ class DatabaseService:
                         if s.verdict and (s.verdict.value.lower() if hasattr(s.verdict, "value") else str(s.verdict).lower()) == v_target
                     ]
 
+            # Filter by anomaly category / vector
+            if category and category.strip():
+                summaries = [
+                    s for s in summaries
+                    if self._claim_matches_category(dossiers_map.get(s.claim_id), category)
+                ]
+
             # Sort records
             is_desc = (sort_order or "desc").lower() == "desc"
             if sort_by == "total_claimed":
@@ -222,8 +290,8 @@ class DatabaseService:
                 retryable=True
             )
 
-    def list_claims(self, limit: int = 50, offset: int = 0, include_synthetic: bool = True) -> List[ClaimSummary]:
-        paged, _ = self.list_claims_paged(limit=limit, offset=offset, include_synthetic=include_synthetic)
+    def list_claims(self, limit: int = 50, offset: int = 0, include_synthetic: bool = True, category: Optional[str] = None) -> List[ClaimSummary]:
+        paged, _ = self.list_claims_paged(limit=limit, offset=offset, include_synthetic=include_synthetic, category=category)
         return paged
 
     def save_dossier(self, dossier: Dossier) -> None:

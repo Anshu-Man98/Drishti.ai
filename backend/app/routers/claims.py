@@ -421,7 +421,10 @@ def list_claims(
     search: Optional[str] = Query(default=None),
     include_synthetic: bool = Query(default=False),
     exclude_synthetic: Optional[bool] = Query(default=None),
+    category: Optional[str] = Query(default=None),
+    vector: Optional[str] = Query(default=None),
 ):
+    effective_category = category or vector
     claims, total_count = db_service.list_claims_paged(
         limit=limit,
         offset=offset,
@@ -431,6 +434,7 @@ def list_claims(
         search=search,
         include_synthetic=include_synthetic,
         exclude_synthetic=exclude_synthetic,
+        category=effective_category,
     )
     response.headers["X-Total-Count"] = str(total_count)
     return claims

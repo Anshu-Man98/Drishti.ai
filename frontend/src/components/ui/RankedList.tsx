@@ -17,6 +17,8 @@ export interface RankedListProps {
   items: RankedItem[];
   className?: string;
   emptyMessage?: string;
+  onTitleClick?: () => void;
+  headerAction?: React.ReactNode;
 }
 
 /**
@@ -33,13 +35,31 @@ export const RankedList: React.FC<RankedListProps> = ({
   items,
   className,
   emptyMessage = 'No ranked data available',
+  onTitleClick,
+  headerAction,
 }) => {
   return (
     <div className={clsx('flex flex-col', className)}>
       {title && (
-        <h3 className="text-sm font-semibold tracking-wide text-app-primary mb-3 px-1">
-          {title}
-        </h3>
+        <div className="flex items-center justify-between mb-3 px-1">
+          {onTitleClick ? (
+            <button
+              type="button"
+              onClick={onTitleClick}
+              className="text-left group cursor-pointer focus:outline-none"
+            >
+              <h3 className="text-sm font-semibold tracking-wide text-app-primary group-hover:text-amber-primary transition-colors flex items-center gap-1.5">
+                <span>{title}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-app-muted group-hover:text-amber-primary transition-colors" />
+              </h3>
+            </button>
+          ) : (
+            <h3 className="text-sm font-semibold tracking-wide text-app-primary">
+              {title}
+            </h3>
+          )}
+          {headerAction}
+        </div>
       )}
 
       {items.length === 0 ? (

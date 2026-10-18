@@ -18,6 +18,7 @@ export interface FetchClaimsParams {
   sortOrder?: 'asc' | 'desc';
   search?: string;
   excludeSynthetic?: boolean;
+  category?: string;
 }
 
 export interface FetchClaimsResult {
@@ -33,6 +34,7 @@ export async function fetchClaims(params?: FetchClaimsParams): Promise<FetchClai
   if (params?.sortBy) query.set('sort_by', params.sortBy);
   if (params?.sortOrder) query.set('sort_order', params.sortOrder);
   if (params?.search) query.set('search', params.search);
+  if (params?.category) query.set('category', params.category);
   if (params?.excludeSynthetic !== undefined) {
     query.set('include_synthetic', String(!params.excludeSynthetic));
   }

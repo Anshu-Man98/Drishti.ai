@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ShieldAlert,
   ArrowUpRight,
@@ -13,6 +13,7 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { ClaimSummary } from '../types';
 import { fetchClaims } from '../services/api';
@@ -32,14 +33,22 @@ import {
 type SortField = 'created_at' | 'total_claimed' | 'risk_score' | 'claim_id' | 'claimant_name' | 'hospital_name' | 'diagnosis_code';
 
 export const ClaimsList: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read URL params
+  const urlVerdict = searchParams.get('verdict') || 'all';
+  const urlCategory = searchParams.get('category') || searchParams.get('vector') || '';
+  const urlSearch = searchParams.get('search') || '';
+
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Filter & Pagination States
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeVerdict, setActiveVerdict] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
+  const [activeVerdict, setActiveVerdict] = useState<string>(urlVerdict);
+  const [selectedCategory, setSelectedCategory] = useState<string>(urlCategory);
   const [sortBy, setSortBy] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [pageSize, setPageSize] = useState(10);
@@ -47,6 +56,18 @@ export const ClaimsList: React.FC = () => {
   const [excludeSynthetic, setExcludeSynthetic] = useState<boolean>(() => {
     return localStorage.getItem('finshield_filter_synthetic') === 'true';
   });
+
+  // Keep state in sync if URL searchParams change
+  useEffect(() => {
+    const v = searchParams.get('verdict') || 'all';
+    const cat = searchParams.get('category') || searchParams.get('vector') || '';
+    const s = searchParams.get('search') || '';
+
+    setActiveVerdict((prev) => (prev !== v ? v : prev));
+    setSelectedCategory((prev) => (prev !== cat ? cat : prev));
+    setSearchTerm((prev) => (prev !== s ? s : prev));
+    setCurrentPage(1);
+  }, [searchParams]);
 
   const loadData = useCallback(async () => {
     try {
@@ -57,6 +78,7 @@ export const ClaimsList: React.FC = () => {
         limit: pageSize,
         offset,
         verdict: activeVerdict !== 'all' ? activeVerdict : undefined,
+        category: selectedCategory.trim() || undefined,
         sortBy,
         sortOrder,
         search: searchTerm.trim() || undefined,
@@ -72,7 +94,7 @@ export const ClaimsList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, activeVerdict, sortBy, sortOrder, searchTerm, excludeSynthetic]);
+  }, [currentPage, pageSize, activeVerdict, selectedCategory, sortBy, sortOrder, searchTerm, excludeSynthetic]);
 
   useEffect(() => {
     loadData();
@@ -88,11 +110,48 @@ export const ClaimsList: React.FC = () => {
   const handleSearchChange = (val: string) => {
     setSearchTerm(val);
     setCurrentPage(1);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (val.trim()) {
+        next.set('search', val.trim());
+      } else {
+        next.delete('search');
+      }
+      return next;
+    }, { replace: true });
   };
 
   const handleVerdictChange = (v: string) => {
     setActiveVerdict(v);
     setCurrentPage(1);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (v && v !== 'all') {
+        next.set('verdict', v);
+      } else {
+        next.delete('verdict');
+      }
+      return next;
+    }, { replace: true });
+  };
+
+  const handleCategoryChange = (cat: string) => {
+    setSelectedCategory(cat);
+    setCurrentPage(1);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (cat) {
+        next.set('category', cat);
+      } else {
+        next.delete('category');
+        next.delete('vector');
+      }
+      return next;
+    }, { replace: true });
+  };
+
+  const handleClearCategory = () => {
+    handleCategoryChange('');
   };
 
   const handleSort = (field: SortField) => {
@@ -176,46 +235,121 @@ export const ClaimsList: React.FC = () => {
       </div>
 
       {/* Filter / Search & Pagination Bar */}
-      <GlowCard className="p-3.5 sm:p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-        {/* Search Input */}
-        <div className="flex-1 max-w-md">
-          <SearchBar
-            placeholder="Search claimant, hospital, city, claim ID, or diagnosis..."
-            value={searchTerm}
-            onChange={handleSearchChange}
-          />
-        </div>
+      <div className="space-y-3">
+        <GlowCard className="p-3.5 sm:p-4 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="flex-1 max-w-md">
+            <SearchBar
+              placeholder="Search claimant, hospital, city, claim ID, or diagnosis..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+            />
+          </div>
 
-        {/* Verdict Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
-          <span className="text-xs text-muted font-medium px-1 flex items-center gap-1 shrink-0">
-            <Filter className="w-3.5 h-3.5 text-amber-primary" />
-            <span>Verdict:</span>
-          </span>
-          <PillTabs
-            tabs={verdictTabs}
-            activeTab={activeVerdict}
-            onChange={handleVerdictChange}
-          />
-        </div>
+          {/* Controls Section */}
+          <div className="flex flex-wrap items-center gap-3 justify-between xl:justify-end">
+            {/* Verdict Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 xl:pb-0">
+              <span className="text-xs text-muted font-medium px-1 flex items-center gap-1 shrink-0">
+                <Filter className="w-3.5 h-3.5 text-amber-primary" />
+                <span>Verdict:</span>
+              </span>
+              <PillTabs
+                tabs={verdictTabs}
+                activeTab={activeVerdict}
+                onChange={handleVerdictChange}
+              />
+            </div>
 
-        {/* Page Size Select */}
-        <div className="flex items-center gap-2 text-xs text-muted shrink-0">
-          <span>Show:</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="bg-surface border border-white/10 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:border-amber-primary/50"
-          >
-            <option value="10">10 / page</option>
-            <option value="25">25 / page</option>
-            <option value="50">50 / page</option>
-          </select>
-        </div>
-      </GlowCard>
+            {/* Anomaly Vector Select */}
+            <div className="flex items-center gap-2 text-xs text-muted shrink-0">
+              <span className="flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-primary" />
+                <span>Vector:</span>
+              </span>
+              <select
+                value={selectedCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
+                className="bg-surface border border-white/10 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:border-amber-primary/50 max-w-[170px] truncate"
+              >
+                <option value="">All Vectors</option>
+                <option value="all_anomalies">All Anomalies (Any)</option>
+                <option value="Arithmetic & Math Mismatches">Arithmetic & Math</option>
+                <option value="Policy Limit & Benchmark Breaches">Policy Limit & Benchmark</option>
+                <option value="Spacetime & Teleportation Anomalies">Spacetime & Teleportation</option>
+                <option value="Cross-Insurer & Syndicate Rings">Cross-Insurer & Syndicate</option>
+                <option value="Document Forgery & Tampering">Document Forgery & Tampering</option>
+                <option value="Prompt Injection Attacks">Prompt Injection Attacks</option>
+                <option value="BQML Anomaly Outliers">BQML Anomaly Outliers</option>
+              </select>
+            </div>
+
+            {/* Page Size Select */}
+            <div className="flex items-center gap-2 text-xs text-muted shrink-0">
+              <span>Show:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-surface border border-white/10 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:border-amber-primary/50"
+              >
+                <option value="10">10 / page</option>
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+              </select>
+            </div>
+          </div>
+        </GlowCard>
+
+        {/* Active Filter Badges */}
+        {(selectedCategory || (activeVerdict && activeVerdict !== 'all')) && (
+          <div className="flex items-center gap-2 flex-wrap text-xs px-1">
+            <span className="text-text-secondary text-[11px] uppercase tracking-wider font-mono">Active Filters:</span>
+            {selectedCategory && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-primary font-medium text-xs">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <span>Vector: {selectedCategory === 'all_anomalies' ? 'All Anomalies' : selectedCategory}</span>
+                <button
+                  type="button"
+                  onClick={handleClearCategory}
+                  className="p-0.5 rounded-full hover:bg-amber-500/30 text-amber-primary transition-colors cursor-pointer"
+                  title="Clear vector filter"
+                  aria-label="Clear vector filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {activeVerdict && activeVerdict !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/15 text-text-primary font-medium text-xs">
+                <Filter className="w-3.5 h-3.5 text-amber-primary shrink-0" />
+                <span>Verdict: {activeVerdict.toUpperCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => handleVerdictChange('all')}
+                  className="p-0.5 rounded-full hover:bg-white/10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                  title="Clear verdict filter"
+                  aria-label="Clear verdict filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                handleVerdictChange('all');
+                handleClearCategory();
+              }}
+              className="text-[11px] font-mono text-app-muted hover:text-amber-primary underline cursor-pointer ml-1"
+            >
+              Reset all
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Claims Table Container */}
       <div className="bg-surface/80 border border-white/8 rounded-[20px] overflow-hidden shadow-2xs backdrop-blur-md">

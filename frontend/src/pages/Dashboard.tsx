@@ -107,7 +107,7 @@ export const Dashboard: React.FC = () => {
         name: cat.category,
         subtext: `${cat.claims_count} claims affected`,
         percentage: Math.round((cat.count / totalFindings) * 100),
-        onClick: () => navigate('/claims?verdict=reject'),
+        onClick: () => navigate(`/claims?category=${encodeURIComponent(cat.category)}`),
       }));
   }, [data?.fraud_categories, navigate]);
 
@@ -378,7 +378,7 @@ export const Dashboard: React.FC = () => {
               contextText={`${formatIndianCurrency(data.total_amount_claimed)} total billed`}
               contextTone="neutral"
               cornerGlow={true}
-              onClick={() => navigate('/claims')}
+              onClick={() => navigate('/claims?verdict=all')}
             />
             <KpiCard
               label="Fraud Loss Prevented"
@@ -484,6 +484,16 @@ export const Dashboard: React.FC = () => {
                   title="Top 4 Anomaly Vectors"
                   items={rankedFraudItems}
                   emptyMessage="No anomalies recorded"
+                  onTitleClick={() => navigate('/claims?category=all_anomalies')}
+                  headerAction={
+                    <button
+                      type="button"
+                      onClick={() => navigate('/claims?category=all_anomalies')}
+                      className="text-[11px] font-mono text-amber-primary hover:underline cursor-pointer"
+                    >
+                      View All &rarr;
+                    </button>
+                  }
                 />
               </GlowCard>
             </div>

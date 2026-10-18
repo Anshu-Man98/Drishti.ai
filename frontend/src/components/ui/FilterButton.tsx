@@ -29,8 +29,8 @@ export const FilterButton: React.FC<FilterButtonProps> = ({
         'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all duration-150',
         'border focus-visible:outline-2 focus-visible:outline-amber-primary',
         isOpen || activeCount > 0
-          ? 'bg-amber-primary/10 border-amber-primary/40 text-amber-primary'
-          : 'bg-white/[0.04] border-white/[0.08] text-app-secondary hover:text-app-primary hover:border-white/[0.16]',
+          ? 'bg-amber-primary/10 border-amber-primary/40 text-amber-primary shadow-xs'
+          : 'bg-app-surface dark:bg-white/[0.04] border-app-border text-app-secondary hover:text-app-primary hover:border-app-muted/40 dark:hover:border-white/[0.16] shadow-2xs',
         className
       )}
     >

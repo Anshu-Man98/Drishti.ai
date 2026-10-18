@@ -42,10 +42,10 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={clsx(
-          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-amber-primary',
+          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-amber-primary shadow-2xs',
           checked
             ? 'bg-amber-primary/20 border-amber-primary/50'
-            : 'bg-white/[0.06] border-white/[0.12]'
+            : 'bg-stone-200 dark:bg-white/[0.06] border-stone-300 dark:border-white/[0.16]'
         )}
       >
         <span
@@ -53,7 +53,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
             'pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full transition duration-200 ease-in-out mt-0.5',
             checked
               ? 'translate-x-4 bg-amber-primary shadow-[0_0_8px_rgba(245,165,36,0.6)]'
-              : 'translate-x-0.5 bg-white/40'
+              : 'translate-x-0.5 bg-stone-500 dark:bg-white/60 shadow-xs'
           )}
         />
       </button>

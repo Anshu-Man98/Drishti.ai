@@ -81,16 +81,16 @@ export const NetworkGraph: React.FC = () => {
       case 'doctor':
         return <Stethoscope className="w-3.5 h-3.5 text-amber-bright" />;
       case 'hospital':
-        return <Building2 className="w-3.5 h-3.5 text-text-primary" />;
+        return <Building2 className="w-3.5 h-3.5 text-app-primary" />;
       case 'claimant':
       default:
-        return <User className="w-3.5 h-3.5 text-muted" />;
+        return <User className="w-3.5 h-3.5 text-app-muted" />;
     }
   };
 
   if (loading && rings.length === 0) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-24 text-center text-text-secondary space-y-4">
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center text-app-secondary space-y-4">
         <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-primary" />
         <p className="text-sm font-medium font-mono">
           Querying BigQuery graph intelligence & extracting collusion clusters...
@@ -101,12 +101,12 @@ export const NetworkGraph: React.FC = () => {
 
   if (error && rings.length === 0) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4 bg-surface/80 border border-white/8 rounded-[20px] p-8">
+      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4 bg-app-surface border border-app-border rounded-[20px] p-8 shadow-2xs">
         <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
-        <h2 className="text-xl font-bold text-text-primary">
+        <h2 className="text-xl font-bold text-app-primary">
           Graph Intelligence Unavailable
         </h2>
-        <p className="text-text-secondary text-xs leading-relaxed">{error}</p>
+        <p className="text-app-secondary text-xs leading-relaxed">{error}</p>
         <button
           onClick={() => loadData()}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-primary hover:bg-amber-bright text-black text-xs font-semibold shadow-md shadow-amber-primary/20 transition-all"
@@ -128,11 +128,11 @@ export const NetworkGraph: React.FC = () => {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-primary flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-app-primary flex items-center gap-2">
             <Network className="w-6 h-6 text-amber-primary" />
             <span>Fraud-Ring Network Graph</span>
           </h1>
-          <p className="text-xs sm:text-sm text-text-secondary mt-1">
+          <p className="text-xs sm:text-sm text-app-secondary mt-1">
             Live BigQuery graph intelligence isolating collusive syndicates sharing bank accounts, doctors, and clinics.
           </p>
         </div>
@@ -149,7 +149,7 @@ export const NetworkGraph: React.FC = () => {
 
       {/* Ring Selector Horizontal Badges */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-muted font-semibold uppercase tracking-wider">
+        <div className="flex items-center justify-between text-xs text-app-muted font-semibold uppercase tracking-wider">
           <span>Detected Syndicates in BigQuery ({rings.length})</span>
           <span className="font-mono text-[11px] text-amber-primary">
             Real BQ Warehouse Traverse
@@ -167,11 +167,11 @@ export const NetworkGraph: React.FC = () => {
                 className={`p-4 rounded-xl border text-left transition-all ${
                   isSelected
                     ? 'bg-amber-primary/10 border-amber-primary/50 shadow-xs ring-1 ring-amber-primary/40'
-                    : 'bg-surface border-white/8 hover:border-amber-primary/30'
+                    : 'bg-app-surface border-app-border hover:border-amber-primary/40 shadow-2xs'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-bold text-text-primary truncate">
+                  <span className="text-xs font-bold text-app-primary truncate">
                     {r.title}
                   </span>
                   <Badge
@@ -202,15 +202,15 @@ export const NetworkGraph: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Canvas Graph View (8 cols) */}
           <div className="lg:col-span-8 space-y-3">
-            <div className="bg-surface/80 border border-white/8 rounded-[20px] p-4 shadow-2xs backdrop-blur-md">
+            <div className="bg-app-surface border border-app-border rounded-[20px] p-4 shadow-2xs backdrop-blur-md">
               <div className="flex items-center justify-between mb-3 px-1">
                 <div className="flex items-center gap-2">
                   <Layers className="w-4 h-4 text-amber-primary" />
-                  <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
+                  <span className="text-xs font-bold text-app-primary uppercase tracking-wider">
                     {ringDetail?.ring.title || 'Cluster Topology'}
                   </span>
                 </div>
-                <div className="text-[11px] text-muted font-mono">
+                <div className="text-[11px] text-app-muted font-mono">
                   {ringDetail?.nodes.length || 0} nodes • {ringDetail?.edges.length || 0} edges
                 </div>
               </div>
@@ -222,7 +222,7 @@ export const NetworkGraph: React.FC = () => {
                 onSelectNode={setSelectedNodeId}
               />
 
-              <div className="mt-3 flex items-center justify-between text-[11px] text-muted px-1">
+              <div className="mt-3 flex items-center justify-between text-[11px] text-app-muted px-1">
                 <span>Click any node to filter involved claims in the side panel. Drag to rearrange.</span>
                 <span className="font-mono">Scroll to zoom • Drag background to pan</span>
               </div>
@@ -233,13 +233,13 @@ export const NetworkGraph: React.FC = () => {
           <div className="lg:col-span-4 space-y-4">
             {/* Syndicate Overview Card */}
             {ringDetail && (
-              <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4 text-xs">
-                <div className="flex items-start justify-between gap-2 border-b border-white/8 pb-3">
+              <div className="bg-app-surface border border-app-border rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4 text-xs">
+                <div className="flex items-start justify-between gap-2 border-b border-app-border pb-3">
                   <div>
-                    <h3 className="font-bold text-sm text-text-primary">
+                    <h3 className="font-bold text-sm text-app-primary">
                       {ringDetail.ring.title}
                     </h3>
-                    <p className="text-[11px] font-mono text-muted mt-0.5">
+                    <p className="text-[11px] font-mono text-app-muted mt-0.5">
                       {ringDetail.ring.ring_id}
                     </p>
                   </div>
@@ -250,31 +250,31 @@ export const NetworkGraph: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="p-3 rounded-xl bg-surface-elevated/70 border border-white/8">
-                    <span className="text-[10px] text-muted block uppercase font-semibold">Total at Risk</span>
-                    <span className="text-sm font-bold font-mono text-text-primary tabular-nums">
+                  <div className="p-3 rounded-xl bg-app-elevated border border-app-border">
+                    <span className="text-[10px] text-app-muted block uppercase font-semibold">Total at Risk</span>
+                    <span className="text-sm font-bold font-mono text-app-primary tabular-nums">
                       {formatINR(ringDetail.ring.total_amount)}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-surface-elevated/70 border border-white/8">
-                    <span className="text-[10px] text-muted block uppercase font-semibold">Claimants</span>
+                  <div className="p-3 rounded-xl bg-app-elevated border border-app-border">
+                    <span className="text-[10px] text-app-muted block uppercase font-semibold">Claimants</span>
                     <span className="text-sm font-bold font-mono text-amber-primary tabular-nums">
                       {ringDetail.ring.claimant_count}
                     </span>
                   </div>
                 </div>
 
-                <p className="text-text-secondary leading-relaxed bg-surface-elevated/50 p-3.5 rounded-xl border border-white/6">
+                <p className="text-app-secondary leading-relaxed bg-app-elevated p-3.5 rounded-xl border border-app-border">
                   {ringDetail.ring.description}
                 </p>
 
                 {ringDetail.ring.sample_cities.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[11px] text-muted">Target Cities:</span>
+                    <span className="text-[11px] text-app-muted">Target Cities:</span>
                     {ringDetail.ring.sample_cities.map((city) => (
                       <span
                         key={city}
-                        className="text-[10px] px-2.5 py-0.5 rounded-full bg-surface-elevated text-text-primary border border-white/10 font-medium"
+                        className="text-[10px] px-2.5 py-0.5 rounded-full bg-app-elevated text-app-primary border border-app-border font-medium"
                       >
                         {city}
                       </span>
@@ -288,21 +288,21 @@ export const NetworkGraph: React.FC = () => {
             {selectedNode && (
               <div className="p-3.5 rounded-xl bg-amber-primary/10 border border-amber-primary/30 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-1.5 rounded-lg bg-surface text-amber-primary border border-amber-primary/30">
+                  <div className="p-1.5 rounded-lg bg-app-surface text-amber-primary border border-amber-primary/30">
                     {getNodeIcon(selectedNode.type)}
                   </div>
                   <div className="min-w-0">
                     <span className="text-[10px] uppercase font-bold text-amber-primary block">
                       Filtered by {selectedNode.type.replace('_', ' ')}
                     </span>
-                    <span className="font-semibold text-text-primary truncate block">
+                    <span className="font-semibold text-app-primary truncate block">
                       {selectedNode.label}
                     </span>
                   </div>
                 </div>
                 <button
                   onClick={() => setSelectedNodeId(null)}
-                  className="p-1 rounded-md text-muted hover:text-text-primary transition-colors"
+                  className="p-1 rounded-md text-app-muted hover:text-app-primary transition-colors cursor-pointer"
                   title="Clear filter"
                 >
                   <X className="w-4 h-4" />
@@ -311,12 +311,12 @@ export const NetworkGraph: React.FC = () => {
             )}
 
             {/* Member Claims List */}
-            <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-3">
-              <div className="flex items-center justify-between border-b border-white/8 pb-2.5">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted">
+            <div className="bg-app-surface border border-app-border rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-3">
+              <div className="flex items-center justify-between border-b border-app-border pb-2.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-app-muted">
                   Involved Claims ({filteredClaims.length})
                 </h4>
-                <span className="text-[10px] font-mono text-muted" data-testid="claims-count-caption">
+                <span className="text-[10px] font-mono text-app-muted" data-testid="claims-count-caption">
                   {ringDetail && ringDetail.ring.claim_count > filteredClaims.length
                     ? `showing ${filteredClaims.length} of ${ringDetail.ring.claim_count} claims`
                     : 'Live BigQuery Records'}
@@ -324,7 +324,7 @@ export const NetworkGraph: React.FC = () => {
               </div>
 
               {filteredClaims.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted">
+                <div className="py-8 text-center text-xs text-app-muted">
                   No claims found matching the selected entity filter.
                 </div>
               ) : (
@@ -332,7 +332,7 @@ export const NetworkGraph: React.FC = () => {
                   {filteredClaims.map((claim) => (
                     <div
                       key={claim.claim_id}
-                      className="p-3 rounded-xl bg-surface-elevated/70 border border-white/8 hover:border-amber-primary/30 transition-all space-y-1.5"
+                      className="p-3 rounded-xl bg-app-elevated border border-app-border hover:border-amber-primary/40 transition-all space-y-1.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <ClaimRefDisplay
@@ -343,12 +343,12 @@ export const NetworkGraph: React.FC = () => {
                           maxLen={17}
                           linkTo={`/claims/${claim.claim_id}`}
                         />
-                        <span className="text-xs font-mono font-bold text-text-primary tabular-nums shrink-0">
+                        <span className="text-xs font-mono font-bold text-app-primary tabular-nums shrink-0">
                           {formatINR(claim.total_claimed)}
                         </span>
                       </div>
 
-                      <div className="text-[10px] text-muted flex items-center justify-between font-mono pt-1 border-t border-white/6">
+                      <div className="text-[10px] text-app-muted flex items-center justify-between font-mono pt-1 border-t border-app-border">
                         <span>{formatDoctor(claim.doctor_id)}</span>
                         <span>{claim.city}</span>
                       </div>
@@ -361,26 +361,26 @@ export const NetworkGraph: React.FC = () => {
         </div>
       ) : (
         /* Accessible Table View (Full Width) */
-        <div className="bg-surface/80 border border-white/8 rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4">
-          <div className="flex items-center justify-between border-b border-white/8 pb-3">
+        <div className="bg-app-surface border border-app-border rounded-[20px] p-5 shadow-2xs backdrop-blur-md space-y-4">
+          <div className="flex items-center justify-between border-b border-app-border pb-3">
             <div>
-              <h3 className="text-sm font-bold text-text-primary">
+              <h3 className="text-sm font-bold text-app-primary">
                 {ringDetail?.ring.title || 'Syndicate Claims Data'}
               </h3>
-              <p className="text-xs text-text-secondary mt-0.5">
+              <p className="text-xs text-app-secondary mt-0.5">
                 Full tabulated records from BigQuery dataset `finshield.claims`.
               </p>
             </div>
-            <span className="text-xs font-mono text-muted" data-testid="table-claims-count-caption">
+            <span className="text-xs font-mono text-app-muted" data-testid="table-claims-count-caption">
               {ringDetail && ringDetail.ring.claim_count > (ringDetail.claims?.length || 0)
                 ? `Showing ${ringDetail.claims.length} of ${ringDetail.ring.claim_count} claims`
                 : `Showing ${ringDetail?.claims.length || 0} claims`}
             </span>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-white/8">
-            <table className="w-full text-left text-xs text-text-primary">
-              <thead className="bg-surface-elevated/80 border-b border-white/8 text-muted">
+          <div className="overflow-x-auto rounded-xl border border-app-border bg-app-surface shadow-2xs">
+            <table className="w-full text-left text-xs text-app-primary">
+              <thead className="bg-app-elevated border-b border-app-border text-app-muted">
                 <tr>
                   <th className="py-2.5 px-3 font-semibold">Claim ID</th>
                   <th className="py-2.5 px-3 font-semibold">Claimant</th>
@@ -392,11 +392,11 @@ export const NetworkGraph: React.FC = () => {
                   <th className="py-2.5 px-3 text-center font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/6 bg-surface-elevated/40">
+              <tbody className="divide-y divide-app-border bg-app-surface">
                 {ringDetail?.claims.map((claim) => (
                   <tr
                     key={claim.claim_id}
-                    className="hover:bg-white/3 transition-colors"
+                    className="hover:bg-app-elevated/60 transition-colors"
                   >
                     <td className="py-2.5 px-3 font-mono font-medium text-amber-primary">
                       <ClaimRefDisplay
@@ -407,32 +407,32 @@ export const NetworkGraph: React.FC = () => {
                         linkTo={`/claims/${claim.claim_id}`}
                       />
                     </td>
-                    <td className="py-2.5 px-3 font-medium text-text-primary">
+                    <td className="py-2.5 px-3 font-medium text-app-primary">
                       <div>{claim.claimant_name}</div>
-                      <div className="text-[10px] text-muted font-mono">{claim.claimant_id}</div>
+                      <div className="text-[10px] text-app-muted font-mono">{claim.claimant_id}</div>
                     </td>
-                    <td className="py-2.5 px-3 text-text-secondary font-mono">
+                    <td className="py-2.5 px-3 text-app-secondary font-mono">
                       {formatDoctor(claim.doctor_id)}
                     </td>
-                    <td className="py-2.5 px-3 text-text-secondary">
+                    <td className="py-2.5 px-3 text-app-secondary">
                       <div>{claim.hospital_name}</div>
-                      <div className="text-[10px] text-muted">{claim.city}</div>
+                      <div className="text-[10px] text-app-muted">{claim.city}</div>
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-muted text-[11px]">
+                    <td className="py-2.5 px-3 font-mono text-app-muted text-[11px]">
                       {formatDateTime(claim.admission_ts)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-text-primary">
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-app-primary">
                       {formatINR(claim.total_claimed)}
                     </td>
                     <td className="py-2.5 px-3">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/30 font-medium">
                         {claim.fraud_type}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <Link
                         to={`/claims/${claim.claim_id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-surface hover:bg-amber-primary hover:text-black text-amber-primary border border-amber-primary/30 transition-all text-[11px] font-medium"
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-app-surface hover:bg-amber-primary hover:text-black text-amber-primary border border-amber-primary/40 transition-all text-[11px] font-medium shadow-2xs"
                       >
                         <span>Audit</span>
                         <ArrowRight className="w-3 h-3" />

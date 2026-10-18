@@ -19,12 +19,18 @@
   --color-app-surface: var(--bg-surface);
   --color-app-elevated: var(--bg-elevated);
   --color-app-subtle: var(--bg-subtle);
+  --color-surface: var(--bg-surface);
+  --color-surface-elevated: var(--bg-elevated);
+  --color-surface-base: var(--bg-base);
 
   /* Text & Border Color mappings for Tailwind utilities (text-*, bg-*, fill-*, stroke-*, border-*) */
   --color-app-primary: var(--text-primary);
   --color-app-secondary: var(--text-secondary);
   --color-app-muted: var(--text-muted);
   --color-app-faint: var(--text-faint);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
   --color-app-default: var(--border-default);
   --color-app-border: var(--border-default);
 
@@ -337,3 +343,33 @@ html.tab-hidden *::after {
     transform: none !important;
   }
 }
+
+/* =========================================================================
+   5. Light Theme Frame & Border Contrast Guarantees
+   ========================================================================= */
+
+html.light,
+[data-theme="light"],
+:root:not(.dark) {
+  /* Ensure low-opacity white borders adapt to crisp theme borders in light mode */
+  .border-white\/8,
+  .border-white\/6,
+  .border-white\/10,
+  .border-white\/12,
+  .border-white\/15,
+  .border-white\/\[0\.08\],
+  .border-white\/\[0\.06\],
+  .border-white\/\[0\.10\],
+  .border-white\/\[0\.12\],
+  .border-white\/\[0\.14\],
+  .border-white\/\[0\.16\] {
+    border-color: var(--border-default) !important;
+  }
+
+  .divide-white\/6 > :not([hidden]) ~ :not([hidden]),
+  .divide-white\/8 > :not([hidden]) ~ :not([hidden]),
+  .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--border-default) !important;
+  }
+}
+

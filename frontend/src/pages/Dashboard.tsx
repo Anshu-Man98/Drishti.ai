@@ -289,7 +289,7 @@ export const Dashboard: React.FC = () => {
       {/* =========================================================================
           1. Nexa Top Search, Filter & Controls Row
          ========================================================================= */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-app-surface border border-app-border shadow-2xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         {/* Search Input & Filter Button */}
         <div className="flex items-center gap-3 flex-1 max-w-xl">
           <SearchBar
@@ -315,7 +315,7 @@ export const Dashboard: React.FC = () => {
 
           <button
             onClick={loadSummary}
-            className="p-2 rounded-xl border border-white/[0.08] bg-white/[0.03] text-app-muted hover:text-app-primary hover:border-white/[0.16] transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-app-border bg-app-surface dark:bg-white/[0.03] text-app-muted hover:text-app-primary hover:border-app-muted/40 dark:hover:border-white/[0.16] transition-colors cursor-pointer shadow-2xs"
             title="Refresh analytics data"
             aria-label="Refresh analytics data"
           >

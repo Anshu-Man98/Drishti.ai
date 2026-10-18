@@ -36,8 +36,8 @@ export const GlowCard: React.FC<GlowCardProps> = ({
   return (
     <div
       className={clsx(
-        'relative rounded-[20px] border border-white/[0.08] dark:border-white/[0.08] light:border-black/[0.08]',
-        'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)]',
+        'relative rounded-[20px] border border-app-border dark:border-white/[0.08]',
+        'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)] shadow-2xs',
         'transition-all duration-200 ease-out',
         elevationClasses,
         isGlowing && 'corner-glow-amber',

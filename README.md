@@ -211,3 +211,19 @@ FinShield includes 9 canonical golden demo claims (G1–G9) demonstrating end-to
   ```
 - **Automated CI**: GitHub Actions workflow at `.github/workflows/ci.yml` validates all backend tests and frontend compilation on pull requests and pushes to `main`.
 
+---
+
+## 🚀 Live Cloud Run Demo & Deployment
+
+- **Live Public URL**: [https://drishti-app-6lmavyq52q-el.a.run.app](https://drishti-app-6lmavyq52q-el.a.run.app)
+- **One-Command Cloud Run Deploy**:
+  ```bash
+  ./scripts/deploy_cloud_run.sh
+  ```
+- **Post-Deploy Live Verification Suite**:
+  ```bash
+  .venv/bin/python3 scripts/verify_live_post_deploy.py
+  ```
+- **Deployment Documentation**: Complete architecture, IAM roles, environment configuration, and cost management are documented in [docs/DEPLOY.md](docs/DEPLOY.md).
+
+

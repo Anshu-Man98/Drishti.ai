@@ -23,13 +23,14 @@ async function verifyPages() {
     { name: 'Adversarial Duel', path: '/duel', selector: 'h1, h2, button' },
   ];
 
+  const targetBase = process.env.TARGET_URL || 'http://localhost:3000';
   console.log('=== Drishti.ai Browser Verification (Playwright) ===');
-  console.log('Target Host: http://localhost:3000\n');
+  console.log(`Target Host: ${targetBase}\n`);
 
   let allPassed = true;
 
   for (const route of routes) {
-    const url = `http://localhost:3000${route.path}`;
+    const url = `${targetBase}${route.path}`;
     const beforeErrorCount = consoleErrors.length;
 
     try {

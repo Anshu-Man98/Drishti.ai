@@ -35,7 +35,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [loading, setLoading] = useState(false);
   const [streamingAnswer, setStreamingAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
   // Map aliases like F1, F2, Clause 3.1, PAT-XXX to actual finding_id
   const aliasMap = React.useMemo(() => {
@@ -63,6 +66,21 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     return map;
   }, [findings]);
 
+  const categorizeError = (err: any): string => {
+    const status = err?.status;
+    const msg = String(err?.message || '');
+    if (status === 429 || /429|rate limit/i.test(msg)) {
+      return 'Rate limit reached (10 requests/min for user role). Please wait a moment before trying again.';
+    }
+    if (status === 503 || /503|unavailable/i.test(msg)) {
+      return 'Case Assistant service is temporarily unavailable (503). Please retry in a moment.';
+    }
+    if (status === 403 || /403|forbidden/i.test(msg)) {
+      return 'Permission denied (403). Chat access is forbidden for this session.';
+    }
+    return msg || 'Error communicating with Case Assistant.';
+  };
+
   const loadHistory = React.useCallback(async () => {
     try {
       setError(null);
@@ -73,10 +91,31 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             ? (hist as Record<string, unknown>).messages as ChatMessage[]
             : []);
       setMessages(msgList);
-    } catch (e: unknown) {
+    } catch (e: any) {
       console.warn('Failed to load chat history:', e);
+      setError(categorizeError(e));
     }
   }, [claimId]);
+
+  // Focus management: capture active element on open, auto-focus input, restore on close
+  useEffect(() => {
+    if (isOpen) {
+      lastFocusedRef.current = document.activeElement as HTMLElement;
+      const t = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 60);
+      return () => clearTimeout(t);
+    }
+  }, [isOpen]);
+
+  const handleClose = React.useCallback(() => {
+    onClose();
+    if (lastFocusedRef.current && typeof lastFocusedRef.current.focus === 'function') {
+      setTimeout(() => {
+        lastFocusedRef.current?.focus();
+      }, 50);
+    }
+  }, [onClose]);
 
   // Load chat history on mount or claim change
   useEffect(() => {
@@ -97,6 +136,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     setError(null);
     setLoading(true);
     setStreamingAnswer('');
+    setLastFailedMessage(msg);
 
     // Append user message to UI
     const userMsg: ChatMessage = {
@@ -124,6 +164,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           setMessages((prev) => [...prev, assistantMsg]);
           setStreamingAnswer(null);
           setLoading(false);
+          setLastFailedMessage(null);
 
           // Auto-focus on primary cited finding if available
           if (completeRes.cited_finding_ids && completeRes.cited_finding_ids.length > 0) {
@@ -131,14 +172,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           }
         },
         (err) => {
-          setError(err.message || 'Error communicating with Case Assistant.');
+          setError(categorizeError(err));
           setStreamingAnswer(null);
           setLoading(false);
         }
       );
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Error communicating with Case Assistant.';
-      setError(errorMsg);
+      setError(categorizeError(err));
       setStreamingAnswer(null);
       setLoading(false);
     } finally {
@@ -186,11 +226,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
   return (
     <>
@@ -199,7 +242,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         className={`fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={onClose}
+        onClick={handleClose}
         aria-hidden="true"
       />
 
@@ -229,14 +272,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close Case Assistant"
             className="p-1.5 rounded-lg text-muted hover:text-text-primary hover:bg-white/10 transition-colors cursor-pointer"
             title="Close Case Assistant"
           >
             <X className="w-5 h-5" />
           </button>
-      </div>
+        </div>
 
       {/* Suggested Questions Quick Bar */}
       <div className="p-3 bg-surface-elevated/40 border-b border-white/6">
@@ -338,9 +381,23 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         )}
 
         {error && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span className="flex-1 leading-relaxed">{error}</span>
+            </div>
+            {lastFailedMessage && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => handleSend(lastFailedMessage)}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Retry Query</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -357,6 +414,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           className="flex items-center gap-2"
         >
           <input
+            ref={inputRef}
             type="text"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}

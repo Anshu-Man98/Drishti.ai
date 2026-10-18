@@ -155,6 +155,7 @@ export function formatIndianCurrency(amountInRupees: number | null | undefined):
 }
 
 export const formatINR = formatIndianCurrency;
+export const formatCurrencyINR = formatIndianCurrency;
 
 /**
  * Format number in Indian grouping system without currency symbol (e.g. 12,95,940)

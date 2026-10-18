@@ -8,8 +8,10 @@ import {
   Moon,
   CheckCircle,
   User,
+  Bot,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
+import { useAssistant } from '../../context/AssistantContext';
 import { SearchBar } from '../ui/SearchBar';
 import { fetchAnalyticsSummary } from '../../services/api';
 
@@ -28,11 +30,32 @@ interface TopBarProps {
  */
 export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
   const { theme, toggleTheme } = useTheme();
+  const { openAssistant } = useAssistant();
   const location = useLocation();
   const path = location.pathname;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [reviewCount, setReviewCount] = useState<number>(0);
+
+  const currentRole = (() => {
+    try {
+      const storedRole = localStorage.getItem('role');
+      if (storedRole) return storedRole;
+      const storedToken = localStorage.getItem('token') || '';
+      if (storedToken.includes('admin')) return 'admin';
+      if (storedToken.includes('user') || storedToken.includes('viewer')) return 'user';
+      return 'officer';
+    } catch {
+      return 'officer';
+    }
+  })();
+
+  const roleLabel =
+    currentRole === 'admin'
+      ? 'Administrator'
+      : currentRole === 'user'
+      ? 'Reviewer'
+      : 'Claims Officer';
 
   useEffect(() => {
     let isMounted = true;
@@ -118,10 +141,27 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
         </nav>
       </div>
 
-      {/* Right Controls: Global Search, Notification Bell, Theme Pill, User Chip */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right Controls: Assistant, Global Search, Notification Bell, Theme Pill, User Chip */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Persistent Case Assistant Entry (available on EVERY page) */}
+        <button
+          type="button"
+          onClick={() => openAssistant()}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-primary/14 hover:bg-amber-primary/24 text-amber-primary border border-amber-primary/35 shadow-[0_0_12px_-2px_rgba(245,165,36,0.3)] transition-all cursor-pointer group shrink-0"
+          title="Open Case Assistant (/ or ⌘K)"
+          aria-label="Open Case Assistant"
+        >
+          <Bot className="w-4 h-4 text-amber-primary group-hover:scale-105 transition-transform shrink-0" />
+          <span className="text-xs font-semibold tracking-tight text-app-primary">
+            Assistant
+          </span>
+          <kbd className="hidden md:inline-flex text-[9px] font-mono px-1 py-0.2 rounded bg-amber-primary/20 text-amber-primary border border-amber-primary/30">
+            ⌘K
+          </kbd>
+        </button>
+
         {/* Global Search Bar */}
-        <div className="hidden md:block w-48 lg:w-64">
+        <div className="hidden md:block w-40 lg:w-56">
           <SearchBar
             value={searchQuery}
             onChange={setSearchQuery}
@@ -190,7 +230,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobile }) => {
           </div>
           <div className="hidden sm:flex flex-col text-left">
             <span className="text-xs font-semibold text-app-primary leading-tight">
-              Claims Officer
+              {roleLabel}
             </span>
             <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono leading-tight">
               <span>Verified</span>

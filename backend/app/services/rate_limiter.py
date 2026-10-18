@@ -85,12 +85,18 @@ class RateLimiter:
         auth = request.headers.get("Authorization", "")
         token_fingerprint = auth[-12:] if len(auth) > 12 else auth
 
+        # Enforce role-specific limit for chat: 10/min for user role, default (60/min) for officers/admins
+        effective_limit = self.requests_per_minute
+        auth_lower = auth.lower()
+        if self.name == "chat" and ("user" in auth_lower or "viewer" in auth_lower):
+            effective_limit = min(effective_limit, 10)
+
         key = f"{self.name}:{client_ip}:{token_fingerprint}"
-        allowed, retry_after = rate_limit_manager.check(key, self.requests_per_minute, window_seconds=60.0)
+        allowed, retry_after = rate_limit_manager.check(key, effective_limit, window_seconds=60.0)
 
         if not allowed:
             raise HTTPException(
                 status_code=429,
-                detail=f"Too Many Requests: Rate limit for {self.name} exceeded ({self.requests_per_minute}/min). Try again in {retry_after}s.",
+                detail=f"Too Many Requests: Rate limit for {self.name} exceeded ({effective_limit}/min). Try again in {retry_after}s.",
                 headers={"Retry-After": str(retry_after)}
             )

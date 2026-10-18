@@ -164,7 +164,16 @@ export async function fetchChatHistory(claimId: string): Promise<import('../type
     headers: getAuthHeaders(),
   });
   if (!resp.ok) {
-    throw new Error(`Failed to fetch chat history: ${resp.statusText}`);
+    let errDetail = '';
+    try {
+      const errJson = await resp.json();
+      errDetail = errJson.detail || '';
+    } catch {
+      errDetail = await resp.text().catch(() => '');
+    }
+    const err: any = new Error(errDetail || `Failed to fetch chat history: ${resp.status} ${resp.statusText}`);
+    err.status = resp.status;
+    throw err;
   }
   return resp.json();
 }
@@ -187,7 +196,16 @@ export async function streamClaimChat(
     });
 
     if (!resp.ok) {
-      throw new Error(`Chat error: ${resp.statusText}`);
+      let errDetail = '';
+      try {
+        const errJson = await resp.json();
+        errDetail = errJson.detail || '';
+      } catch {
+        errDetail = await resp.text().catch(() => '');
+      }
+      const err: any = new Error(errDetail || `Chat error: ${resp.status} ${resp.statusText}`);
+      err.status = resp.status;
+      throw err;
     }
 
     if (!resp.body) {

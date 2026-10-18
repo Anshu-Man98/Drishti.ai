@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { useAssistant } from '../../context/AssistantContext';
+import { ClaimChatPickerModal } from '../common/ClaimChatPickerModal';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -19,6 +22,14 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     return localStorage.getItem('finshield-sidebar-collapsed') === 'true';
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isClaimPickerOpen, closeClaimPicker } = useAssistant();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const currentClaimId = (() => {
+    const m = location.pathname.match(/^\/claims\/([^/]+)$/);
+    return m ? m[1] : null;
+  })();
 
   const handleToggleCollapse = () => {
     setCollapsed((prev) => {
@@ -64,6 +75,17 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
           </span>
         </footer>
       </div>
+
+      {/* Claim Picker Dialog for Assistant (on non-claim routes) */}
+      <ClaimChatPickerModal
+        isOpen={isClaimPickerOpen}
+        onClose={closeClaimPicker}
+        currentClaimId={currentClaimId}
+        onSelectClaim={(claimId) => {
+          closeClaimPicker();
+          navigate(`/claims/${claimId}?chat=open`);
+        }}
+      />
     </div>
   );
 };

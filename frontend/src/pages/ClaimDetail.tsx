@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ShieldAlert, RefreshCw, MessageSquare } from 'lucide-react';
+import { useAssistant } from '../context/AssistantContext';
 import { Claim, Dossier, ProvenanceVerifyResponse } from '../types';
 import {
   fetchClaim,
@@ -42,6 +43,39 @@ export const ClaimDetail: React.FC = () => {
   const [layoutMode, setLayoutMode] = useState<'split' | 'doc' | 'audit' | 'spacetime'>('split');
   const [mobileTab, setMobileTab] = useState<'audit' | 'doc' | 'spacetime'>('audit');
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Assistant pulse and auto-open handling
+  const [searchParams] = useSearchParams();
+  const { registerClaimDetailChatOpener } = useAssistant();
+  const [hasPulsed, setHasPulsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('drishti_chat_pulsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleOpenChat = useCallback(() => {
+    setIsChatOpen(true);
+    if (!hasPulsed) {
+      setHasPulsed(true);
+      try {
+        localStorage.setItem('drishti_chat_pulsed', 'true');
+      } catch {
+        // Ignore storage write failures in incognito/quota modes
+      }
+    }
+  }, [hasPulsed]);
+
+  useEffect(() => {
+    return registerClaimDetailChatOpener(handleOpenChat);
+  }, [registerClaimDetailChatOpener, handleOpenChat]);
+
+  useEffect(() => {
+    if (searchParams.get('chat') === 'open') {
+      handleOpenChat();
+    }
+  }, [searchParams, handleOpenChat]);
 
   // Issue Sanction Note Modal state
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
@@ -175,7 +209,7 @@ export const ClaimDetail: React.FC = () => {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-32 space-y-6">
       {/* Top Header / Breadcrumb & View Toggle Controls */}
       <ClaimHeader
         claim={claim}
@@ -183,7 +217,7 @@ export const ClaimDetail: React.FC = () => {
         analyzing={analyzing}
         layoutMode={layoutMode}
         onLayoutChange={setLayoutMode}
-        onOpenChat={() => setIsChatOpen(true)}
+        onOpenChat={handleOpenChat}
         onOpenSanctionModal={() => {
           setSanctionAmount(claim.total_claimed.toString());
           setIsIssueModalOpen(true);
@@ -374,10 +408,21 @@ export const ClaimDetail: React.FC = () => {
       {/* Floating Case Assistant Pill */}
       {!isChatOpen && (
         <button
-          onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-amber-primary hover:bg-amber-bright text-black font-semibold shadow-xl shadow-amber-primary/25 border border-amber-primary/40 transition-all transform hover:scale-102"
+          type="button"
+          onClick={handleOpenChat}
+          aria-label="Ask Case Assistant"
+          className={`fixed z-40 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-amber-primary hover:bg-amber-bright text-black font-semibold shadow-xl shadow-amber-primary/25 border border-amber-primary/40 transition-all transform hover:scale-102 cursor-pointer ${
+            !hasPulsed
+              ? 'ring-2 ring-amber-bright shadow-[0_0_20px_rgba(245,165,36,0.6)] animate-pulse'
+              : ''
+          }`}
+          style={{
+            bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
+            right: 'calc(1.5rem + env(safe-area-inset-right, 0px))',
+          }}
+          title="Ask Case Assistant (/ or ⌘K)"
         >
-          <MessageSquare className="w-4 h-4 text-black" />
+          <MessageSquare className="w-4 h-4 text-black shrink-0" />
           <span className="text-xs font-bold">Ask Case Assistant</span>
           <span className="w-2 h-2 rounded-full bg-black animate-pulse" />
         </button>

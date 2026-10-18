@@ -57,7 +57,8 @@ async def create_claim(
     total_claimed: Optional[float] = Form(None),
     line_items_json: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
-    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_CLAIMS_PER_MIN, "claims"))
+    rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_CLAIMS_PER_MIN, "claims")),
+    current_user: Dict[str, Any] = Depends(require_adjuster_role)
 ):
 
     """
@@ -508,6 +509,7 @@ def analyze_claim(
     force_refresh: bool = False,
     async_mode: bool = Query(default=False, alias="async"),
     rate_limit: None = Depends(RateLimiter(settings.RATE_LIMIT_ANALYSES_PER_MIN, "analyze")),
+    current_user: Dict[str, Any] = Depends(require_adjuster_role),
 ):
     """
     Runs the multi-agent fraud pipeline via ADK Runner.

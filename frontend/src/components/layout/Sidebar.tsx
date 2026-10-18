@@ -12,9 +12,11 @@ import {
   HelpCircle,
   X,
   ExternalLink,
+  Bot,
 } from 'lucide-react';
 import { LiveDot } from '../ui/LiveDot';
 import { ScoringModal } from '../common/ScoringModal';
+import { useAssistant } from '../../context/AssistantContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -39,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
 }) => {
   const location = useLocation();
+  const { openAssistant } = useAssistant();
   const [isScoringModalOpen, setIsScoringModalOpen] = useState(false);
 
   const navItems = [
@@ -151,6 +154,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </NavLink>
             );
           })}
+
+          {/* AI Case Assistant Button */}
+          <div className="pt-2 mt-2 border-t border-white/[0.06]">
+            <button
+              type="button"
+              onClick={() => {
+                onCloseMobile();
+                openAssistant();
+              }}
+              title={collapsed ? 'Case Assistant (⌘K or /)' : undefined}
+              aria-label="Open Case Assistant"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all select-none text-app-muted hover:text-app-primary hover:bg-white/[0.04] border border-amber-primary/20 hover:border-amber-primary/40 bg-amber-primary/5 group cursor-pointer"
+            >
+              <Bot className="w-4 h-4 shrink-0 text-amber-primary group-hover:scale-105 transition-transform" />
+              {!collapsed && (
+                <div className="flex-1 flex items-center justify-between min-w-0">
+                  <span className="truncate font-semibold text-app-primary group-hover:text-amber-primary transition-colors">
+                    Case Assistant
+                  </span>
+                  <kbd className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-app-muted border border-white/10">
+                    ⌘K
+                  </kbd>
+                </div>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Sidebar Footer: System Status Card (Nexa bottom card position, NOT an upsell) */}

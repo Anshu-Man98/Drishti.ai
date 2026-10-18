@@ -107,15 +107,23 @@ def test_authenticated_bearer_tokens_and_roles():
         resp = client.get("/api/claims", headers=headers_viewer)
         assert resp.status_code == 200
 
-        # 2. Viewer token gets 403 Forbidden on issue-approval
+        # 2. User/Viewer token gets 403 Forbidden on issue-approval, upload, and analyze
         resp_forbid = client.post(
             "/api/claims/CLM-SEC-TEST/issue-approval",
             json={"amount_paise": 500000},
             headers=headers_viewer
         )
-        assert resp_forbid.status_code == 403, f"Expected 403, got {resp_forbid.status_code}"
+        assert resp_forbid.status_code == 403, f"Expected 403 on issue-approval, got {resp_forbid.status_code}"
 
-        # 3. Adjuster token succeeds on issue-approval
+        headers_user = {"Authorization": "Bearer user-token"}
+        resp_analyze_user = client.post("/api/claims/CLM-SEC-TEST/analyze", headers=headers_user)
+        assert resp_analyze_user.status_code == 403, f"Expected 403 on analyze for user role, got {resp_analyze_user.status_code}"
+
+        # 3. User token CAN still access chat
+        resp_chat_user = client.get("/api/claims/CLM-SEC-TEST/chat", headers=headers_user)
+        assert resp_chat_user.status_code == 200, f"Expected 200 on chat history for user role, got {resp_chat_user.status_code}"
+
+        # 4. Adjuster/Officer/Admin tokens succeed on issue-approval & analyze
         headers_adjuster = {"Authorization": "Bearer adjuster-token"}
         resp_ok = client.post(
             "/api/claims/CLM-SEC-TEST/issue-approval",
@@ -124,6 +132,22 @@ def test_authenticated_bearer_tokens_and_roles():
         )
         assert resp_ok.status_code == 200
         assert resp_ok.json()["amount_paise"] == 500000
+
+        headers_officer = {"Authorization": "Bearer officer-token"}
+        resp_off = client.post(
+            "/api/claims/CLM-SEC-TEST/issue-approval",
+            json={"amount_paise": 500000},
+            headers=headers_officer
+        )
+        assert resp_off.status_code == 200
+
+        headers_admin = {"Authorization": "Bearer admin-token"}
+        resp_adm = client.post(
+            "/api/claims/CLM-SEC-TEST/issue-approval",
+            json={"amount_paise": 500000},
+            headers=headers_admin
+        )
+        assert resp_adm.status_code == 200
     finally:
         app.dependency_overrides[get_current_user] = lambda: {
             "uid": "test-adjuster-1",

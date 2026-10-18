@@ -15,12 +15,13 @@ Tests:
 
 import sys
 import io
-import json
 import time
-import requests
+import json
+import os
 from pathlib import Path
+import requests
 
-BASE_URL = "https://drishti-app-6lmavyq52q-el.a.run.app"
+BASE_URL = os.environ.get("DRISHTI_URL") or (sys.argv[1] if len(sys.argv) > 1 else "https://drishti-app-6lmavyq52q-el.a.run.app")
 AUTH_HEADERS = {"Authorization": "Bearer adjuster-token"}
 
 
